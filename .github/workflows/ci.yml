@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Python syntax check
+        run: |
+          python -m py_compile \
+            run_editor.py \
+            check_editor_signing_readiness.py \
+            tests/test_run_editor_smoke.py \
+            tests/test_browser_playwright_smoke.py
+
+      - name: Frontend syntax check
+        run: |
+          node --check prototype_editor/app.js
+          node --check export_player_template/player.js
+
+      - name: Backend smoke tests
+        run: |
+          python -m unittest discover -s tests -p 'test_run_editor_smoke.py' -v

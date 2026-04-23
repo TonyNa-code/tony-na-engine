@@ -34,11 +34,11 @@ Tony Na Engine 当前更适合这样理解：
 - `Early Access / Preview`
 - `适合独立开发者、同人作者、内部测试成员先拿来试做项目`
 
-它已经具备非常丰富的编辑器能力和导出能力，但我也想诚实说明：
+当前版本已经具备较完整的编辑器能力、导出能力和自动化测试基础，但仍然保留以下发布边界：
 
 - 自动化测试已经比较完整
 - 但完整人工逐按钮长流程点测还没有全部做完
-- 所以现在更推荐把它当成一个**很强的开源预览版**，而不是“完全稳定的正式商业版”
+- 因此当前更适合作为**开源预览版**使用，而不是完全稳定的正式商业版
 
 ## 当前已经有的核心能力
 
@@ -72,6 +72,15 @@ Tony Na Engine 当前更适合这样理解：
 
 ## 快速开始
 
+### 运行环境
+
+- Python 3
+- macOS / Windows / Linux
+
+如果只想启动编辑器，默认依赖只有 Python 3。
+
+### 启动编辑器
+
 最简单的方式：
 
 - 双击 [`start_editor.command`](start_editor.command)
@@ -85,6 +94,29 @@ python3 run_editor.py
 ```
 
 ## 测试
+
+### 测试环境准备
+
+浏览器自动化测试依赖 Playwright。第一次运行前建议先执行：
+
+```bash
+cd tony-na-engine
+python3 -m pip install -r requirements-dev.txt
+python3 -m playwright install chromium
+```
+
+### 本地检查
+
+前端脚本与关键 Python 文件语法检查：
+
+```bash
+cd tony-na-engine
+node --check prototype_editor/app.js
+node --check export_player_template/player.js
+python3 -m py_compile run_editor.py
+```
+
+### 自动化测试
 
 后端 smoke：
 
@@ -105,24 +137,32 @@ python3 -m unittest discover -s tests -p 'test_browser_playwright_smoke.py' -v
 - [`run_tests.command`](run_tests.command)
 - [`run_browser_tests.command`](run_browser_tests.command)
 
+### GitHub Actions
+
+仓库已内置最小 CI，会在 `push / pull request` 时自动执行：
+
+- Python 语法检查
+- 前端脚本语法检查
+- 后端 smoke 测试
+
 ## 免费预览版分发
 
-如果你现在还没有商业签名证书，也可以先把它当成：
+在还没有商业签名证书之前，项目仍然可以作为：
 
 - `Preview`
 - `内测版`
 - `开源创作者预览版`
 
-直接通过 GitHub Releases 或压缩包分发。
+通过 GitHub Releases 或压缩包形式分发。
 
-建议先看：
+发布前建议先看：
 
 - [`README_预览版发布说明.md`](README_预览版发布说明.md)
 - [`RELEASE_预览版文案模板.md`](RELEASE_预览版文案模板.md)
 
 ## 商业签名 / 公证
 
-如果你后面要做商业分发，可以继续看：
+如果后续需要做商业签名与公证，可继续参考：
 
 - [`README_商业签名与公证操作指南.md`](README_商业签名与公证操作指南.md)
 - [`editor_signing.env.example`](editor_signing.env.example)
@@ -131,7 +171,7 @@ python3 -m unittest discover -s tests -p 'test_browser_playwright_smoke.py' -v
 
 ## 其他设计文档
 
-如果你想继续看更早期的引擎规划和数据设计：
+如果需要继续查看更早期的引擎规划和数据设计，可参考：
 
 - [`galgame_engine_blueprint.md`](galgame_engine_blueprint.md)
 - [`v1_ui_structure.md`](v1_ui_structure.md)
@@ -139,20 +179,19 @@ python3 -m unittest discover -s tests -p 'test_browser_playwright_smoke.py' -v
 
 ## 开源许可
 
-当前先按 **MIT License** 整理：
+当前仓库采用 **MIT License**：
 
 - [`LICENSE`](LICENSE)
-
-如果后面你更想换成 `Apache-2.0`、`GPL`、或者“源码可见但禁止商用”的自定义协议，也可以继续调整。
 
 ## 贡献
 
 欢迎提 Issue、提想法、做测试反馈。
 
-先看：
+贡献前建议先看：
 
 - [`CONTRIBUTING.md`](CONTRIBUTING.md)
 - [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)
+- [`SECURITY.md`](SECURITY.md)
 
 Issue / PR 模板也已经准备好了：
 
