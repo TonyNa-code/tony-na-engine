@@ -10,6 +10,7 @@ import os
 import tarfile
 import unittest
 import re
+import plistlib
 from pathlib import Path
 from urllib.parse import urljoin
 from urllib.request import urlopen
@@ -55,6 +56,34 @@ def create_fake_runtime_archive(archive_path: Path, platform_key: str) -> Path:
         with tarfile.open(archive_path, "w:gz") as archive:
             archive.add(root, arcname="python")
     return archive_path
+
+
+def create_fake_nwjs_runtime_dir(runtime_dir: Path, platform_key: str) -> Path:
+    runtime_dir.mkdir(parents=True, exist_ok=True)
+
+    if platform_key == "macos":
+        app_bundle = runtime_dir / "nwjs.app"
+        (app_bundle / "Contents" / "MacOS").mkdir(parents=True, exist_ok=True)
+        (app_bundle / "Contents" / "Resources").mkdir(parents=True, exist_ok=True)
+        executable_path = app_bundle / "Contents" / "MacOS" / "nwjs"
+        executable_path.write_text("fake-nwjs", encoding="utf-8")
+        executable_path.chmod(0o755)
+        with (app_bundle / "Contents" / "Info.plist").open("wb") as plist_file:
+            plistlib.dump({"CFBundleExecutable": "nwjs", "CFBundleName": "nwjs"}, plist_file)
+        return runtime_dir
+
+    required_files = {
+        "windows": ["nw.exe", "icudtl.dat", "libEGL.dll", "libGLESv2.dll", "nw_100_percent.pak", "resources.pak", "v8_context_snapshot.bin"],
+        "linux": ["nw", "icudtl.dat", "resources.pak", "v8_context_snapshot.bin"],
+    }
+    for file_name in required_files[platform_key]:
+        file_path = runtime_dir / file_name
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        file_path.write_text("fake-runtime", encoding="utf-8")
+        if file_name in {"nw", "nw.exe"}:
+            file_path.chmod(0o755)
+    (runtime_dir / "locales").mkdir(parents=True, exist_ok=True)
+    return runtime_dir
 
 
 def create_fake_iscc_script(script_path: Path) -> Path:
@@ -117,6 +146,11 @@ class BrowserPlaywrightSmokeTests(unittest.TestCase):
             "windows": create_fake_runtime_archive(cls.repo_copy / ".tmp_fake_windows_runtime.tar.gz", "windows"),
             "linux": create_fake_runtime_archive(cls.repo_copy / ".tmp_fake_linux_runtime.tar.gz", "linux"),
         }
+        cls.fake_nwjs_runtime_dirs = {
+            "macos": create_fake_nwjs_runtime_dir(cls.repo_copy / ".tmp_fake_nwjs_macos", "macos"),
+            "windows": create_fake_nwjs_runtime_dir(cls.repo_copy / ".tmp_fake_nwjs_windows", "windows"),
+            "linux": create_fake_nwjs_runtime_dir(cls.repo_copy / ".tmp_fake_nwjs_linux", "linux"),
+        }
         cls.fake_iscc = create_fake_iscc_script(cls.repo_copy / ".tmp_fake_iscc.sh")
         cls.fake_signtool = create_fake_signtool_script(cls.repo_copy / ".tmp_fake_signtool.sh")
 
@@ -128,9 +162,12 @@ class BrowserPlaywrightSmokeTests(unittest.TestCase):
                 "TONY_NA_EDITOR_RUNTIME_ARCHIVE_MACOS": str(cls.fake_runtime_archives["macos"]),
                 "TONY_NA_EDITOR_RUNTIME_ARCHIVE_WINDOWS": str(cls.fake_runtime_archives["windows"]),
                 "TONY_NA_EDITOR_RUNTIME_ARCHIVE_LINUX": str(cls.fake_runtime_archives["linux"]),
+                "TONY_NA_NWJS_RUNTIME_DIR_MACOS": str(cls.fake_nwjs_runtime_dirs["macos"]),
+                "TONY_NA_NWJS_RUNTIME_DIR_WINDOWS": str(cls.fake_nwjs_runtime_dirs["windows"]),
+                "TONY_NA_NWJS_RUNTIME_DIR_LINUX": str(cls.fake_nwjs_runtime_dirs["linux"]),
                 "TONY_NA_EDITOR_WINDOWS_ISCC": str(cls.fake_iscc),
                 "TONY_NA_EDITOR_WINDOWS_SIGNTOOL": str(cls.fake_signtool),
-                "TONY_NA_EDITOR_WINDOWS_CERT_SUBJECT": "Tony Na Studio",
+                "TONY_NA_EDITOR_WINDOWS_CERT_SUBJECT": "Tony Na Engine Project",
             }
         )
         cls.server_process = subprocess.Popen(
@@ -433,6 +470,37 @@ class BrowserPlaywrightSmokeTests(unittest.TestCase):
         self.assertTrue(download_path.exists())
         self.assertGreater(download_path.stat().st_size, 0)
 
+    def test_preview_flow_can_export_macos_and_linux_builds(self) -> None:
+        self.create_blank_project("浏览器烟测项目_D2")
+        self.create_first_chapter()
+        self.open_preview_screen()
+
+        self.page.get_by_role("button", name="导出 macOS 桌面包").click()
+        self.page.get_by_text("原生 .app 应用包").wait_for(timeout=20000)
+        mac_download_link = self.page.get_by_role("link", name="下载桌面包压缩档")
+        mac_download_link.wait_for(timeout=40000)
+
+        with self.page.expect_download() as mac_download_info:
+            mac_download_link.click()
+        mac_download = mac_download_info.value
+        mac_download_path = self.repo_copy / mac_download.suggested_filename
+        mac_download.save_as(str(mac_download_path))
+        self.assertTrue(mac_download_path.exists())
+        self.assertGreater(mac_download_path.stat().st_size, 0)
+
+        self.page.get_by_role("button", name="导出 Linux 桌面包").click()
+        self.page.get_by_text("原生 Linux 可执行目录").wait_for(timeout=20000)
+        linux_download_link = self.page.get_by_role("link", name="下载桌面包压缩档")
+        linux_download_link.wait_for(timeout=40000)
+
+        with self.page.expect_download() as linux_download_info:
+            linux_download_link.click()
+        linux_download = linux_download_info.value
+        linux_download_path = self.repo_copy / linux_download.suggested_filename
+        linux_download.save_as(str(linux_download_path))
+        self.assertTrue(linux_download_path.exists())
+        self.assertGreater(linux_download_path.stat().st_size, 0)
+
     def test_preview_flow_can_export_editor_desktop_build(self) -> None:
         self.create_blank_project("浏览器烟测项目_Editor")
         self.create_first_chapter()
@@ -468,9 +536,9 @@ class BrowserPlaywrightSmokeTests(unittest.TestCase):
         self.page.get_by_text("Linux：").wait_for(timeout=10000)
         self.page.get_by_text("安装器：已编译 Windows 安装器").wait_for(timeout=10000)
         self.page.get_by_text("已签名并加时间戳").wait_for(timeout=10000)
-        self.page.get_by_role("link", name="打开签名操作手册").wait_for(timeout=10000)
-        self.page.get_by_role("link", name="打开签名配置模板").wait_for(timeout=10000)
-        self.page.get_by_role("link", name="打开签名前自检脚本").wait_for(timeout=10000)
+        self.page.get_by_role("link", name="打开维护者签名说明").wait_for(timeout=10000)
+        self.page.get_by_role("link", name="打开维护者签名模板").wait_for(timeout=10000)
+        self.page.get_by_role("link", name="打开签名自检脚本").wait_for(timeout=10000)
 
     def test_exported_player_can_formal_save_and_load(self) -> None:
         self.create_blank_project("浏览器烟测项目_E")

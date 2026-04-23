@@ -2,7 +2,7 @@
 
 ## Supported Versions
 
-当前仓库仍处于 `Open Source Preview` 阶段，默认只维护主分支上的最新代码与最近一次公开预览版。
+当前仓库仍处于 `Source-Available Preview` 阶段，默认只维护主分支上的最新代码与最近一次公开预览版。
 
 ## Reporting a Vulnerability
 

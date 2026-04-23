@@ -1316,6 +1316,12 @@ const DIALOG_THEME_LABELS = {
   paper: "纸页回忆",
 };
 
+const UI_THEME_MODE_LABELS = {
+  auto: "自动切换",
+  light: "浅色模式",
+  dark: "深色模式",
+};
+
 const DASHBOARD_SEARCH_MODE_LABELS = {
   all: "全部结果",
   scenes: "场景",
@@ -1494,6 +1500,7 @@ const SCRIPT_ISSUE_FILTER_LABELS = {
 const PREVIEW_PLAYBACK_DEFAULTS = {
   textSpeed: "normal",
   dialogTheme: "warm",
+  uiThemeMode: "auto",
   autoPlay: false,
   skipRead: false,
   voiceEnabled: true,
@@ -1605,6 +1612,43 @@ const state = {
   beginnerTutorialStep: 0,
 };
 
+function getSafeUiThemeMode(mode) {
+  return Object.hasOwn(UI_THEME_MODE_LABELS, mode) ? mode : "auto";
+}
+
+function getUiThemeModeLabel(mode) {
+  return UI_THEME_MODE_LABELS[getSafeUiThemeMode(mode)];
+}
+
+function resolveUiTheme(mode = state.previewPlayback?.uiThemeMode ?? PREVIEW_PLAYBACK_DEFAULTS.uiThemeMode, now = new Date()) {
+  const safeMode = getSafeUiThemeMode(mode);
+
+  if (safeMode === "light" || safeMode === "dark") {
+    return safeMode;
+  }
+
+  const hour = now.getHours();
+  return hour >= 7 && hour < 19 ? "light" : "dark";
+}
+
+function applyEditorUiTheme(mode = state.previewPlayback?.uiThemeMode ?? PREVIEW_PLAYBACK_DEFAULTS.uiThemeMode) {
+  const safeMode = getSafeUiThemeMode(mode);
+  document.documentElement.dataset.uiThemeMode = safeMode;
+  document.documentElement.dataset.uiTheme = resolveUiTheme(safeMode);
+}
+
+function scheduleEditorUiThemeAutoRefresh() {
+  if (editorUiThemeAutoRefreshTimer) {
+    window.clearInterval(editorUiThemeAutoRefreshTimer);
+  }
+
+  editorUiThemeAutoRefreshTimer = window.setInterval(() => {
+    if (getSafeUiThemeMode(state.previewPlayback?.uiThemeMode) === "auto") {
+      applyEditorUiTheme("auto");
+    }
+  }, 60 * 1000);
+}
+
 let toastTimer = null;
 let autoSaveTimer = null;
 let autoSavePromise = null;
@@ -1613,6 +1657,7 @@ let previewAutoAdvanceTimer = null;
 let previewAutoAdvanceKey = null;
 let previewMusicAudio = null;
 let previewCurrentMusicAssetId = null;
+let editorUiThemeAutoRefreshTimer = null;
 const previewActiveSfxAudios = new Set();
 const assetPreviewAudio = new Audio();
 assetPreviewAudio.preload = "none";
@@ -1712,6 +1757,7 @@ const refs = {
   previewNextButton: document.getElementById("previewNextButton"),
   previewTextSpeedSelect: document.getElementById("previewTextSpeedSelect"),
   previewDialogThemeSelect: document.getElementById("previewDialogThemeSelect"),
+  previewUiThemeSelect: document.getElementById("previewUiThemeSelect"),
   previewBgmVolumeRange: document.getElementById("previewBgmVolumeRange"),
   previewBgmVolumeValue: document.getElementById("previewBgmVolumeValue"),
   previewSfxVolumeRange: document.getElementById("previewSfxVolumeRange"),
@@ -1731,6 +1777,7 @@ const refs = {
   previewSystemMenuSummary: document.getElementById("previewSystemMenuSummary"),
   previewMenuTextSpeedSelect: document.getElementById("previewMenuTextSpeedSelect"),
   previewMenuDialogThemeSelect: document.getElementById("previewMenuDialogThemeSelect"),
+  previewMenuUiThemeSelect: document.getElementById("previewMenuUiThemeSelect"),
   previewMenuBgmVolumeRange: document.getElementById("previewMenuBgmVolumeRange"),
   previewMenuBgmVolumeValue: document.getElementById("previewMenuBgmVolumeValue"),
   previewMenuSfxVolumeRange: document.getElementById("previewMenuSfxVolumeRange"),
@@ -2303,6 +2350,7 @@ function hydrateProjectRuntime(data) {
     state.projectCenter.activeProjectId = data.currentProject.projectId;
   }
   state.previewPlayback = loadStoredPreviewPlaybackSettings(data.project);
+  applyEditorUiTheme(state.previewPlayback.uiThemeMode);
   state.previewAutoResume = loadStoredPreviewAutoResume(data.project);
   state.previewReadHistory = loadStoredPreviewReadHistory(data.project);
   state.previewSaveSlots = loadStoredPreviewSaveSlots(data.project);
@@ -2839,8 +2887,7 @@ function hasBeginnerTutorialPreviewProgress() {
 function getRuntimeExportSupportSummary() {
   return {
     windows: "游戏成品现在支持网页试玩包和 Windows 桌面包，Windows 这边可以走可运行桌面包链路。",
-    macLinux:
-      "macOS 和 Linux 的游戏成品原生桌面包目前还没有单独做出来，当前更推荐先导网页试玩包分发。",
+    macLinux: "macOS 和 Linux 现在也已经能导出原生桌面包，三端都走同一套 NW.js 原生桌面壳链路。",
     editor:
       "编辑器本体已经能导出三系统桌面套装，所以创作工具和游戏成品的支持范围现在不是完全一样的。",
   };
@@ -4942,6 +4989,16 @@ function handleChange(event) {
     return;
   }
 
+  if (target.id === "previewUiThemeSelect" || target.id === "previewMenuUiThemeSelect") {
+    state.previewPlayback.uiThemeMode = getSafeUiThemeMode(target.value);
+    persistPreviewPlaybackSettings();
+    applyEditorUiTheme(state.previewPlayback.uiThemeMode);
+    renderPreviewPlaybackControls(getCurrentPreviewSnapshot());
+    renderPreviewSystemMenu();
+    setSaveStatus(`试玩界面主题已切到：${getUiThemeModeLabel(state.previewPlayback.uiThemeMode)}`);
+    return;
+  }
+
   if (target.matches("[data-preview-debug-variable]")) {
     updatePreviewDebugDraftValueFromField(target);
     setSaveStatus("分支调试值已改，点“写入当前试玩”就能立刻试路线");
@@ -5470,6 +5527,7 @@ function triggerPreviewNext({ showToastMessage = false } = {}) {
 function resetPreviewPlaybackSettings() {
   state.previewPlayback = { ...PREVIEW_PLAYBACK_DEFAULTS };
   persistPreviewPlaybackSettings();
+  applyEditorUiTheme(state.previewPlayback.uiThemeMode);
   stopPreviewAutoAdvance();
   updatePreviewAudioVolumes();
   renderPreviewScreen();
@@ -6122,6 +6180,10 @@ function renderPreviewSystemMenu() {
     refs.previewMenuDialogThemeSelect.value = getSafeDialogTheme(state.previewPlayback.dialogTheme);
   }
 
+  if (refs.previewMenuUiThemeSelect) {
+    refs.previewMenuUiThemeSelect.value = getSafeUiThemeMode(state.previewPlayback.uiThemeMode);
+  }
+
   if (refs.previewMenuBgmVolumeRange) {
     refs.previewMenuBgmVolumeRange.value = String(getSafeVolumePercent(state.previewPlayback.bgmVolume, 72));
   }
@@ -6151,6 +6213,8 @@ function renderPreviewSystemMenu() {
     .forEach((button) => {
       button.disabled = !snapshot || isCurrentProjectBlank();
     });
+
+  applyEditorUiTheme(state.previewPlayback.uiThemeMode);
 
   refs.previewSystemMenu
     .querySelectorAll("[data-action='open-preview-load-from-menu'], [data-action='quick-load-preview']")
@@ -17166,6 +17230,7 @@ function sanitizePreviewPlaybackSettings(source = {}) {
   return {
     textSpeed: getSafeTextSpeed(source.textSpeed ?? PREVIEW_PLAYBACK_DEFAULTS.textSpeed),
     dialogTheme: getSafeDialogTheme(source.dialogTheme ?? PREVIEW_PLAYBACK_DEFAULTS.dialogTheme),
+    uiThemeMode: getSafeUiThemeMode(source.uiThemeMode ?? PREVIEW_PLAYBACK_DEFAULTS.uiThemeMode),
     autoPlay: Boolean(source.autoPlay ?? PREVIEW_PLAYBACK_DEFAULTS.autoPlay),
     skipRead: Boolean(source.skipRead ?? PREVIEW_PLAYBACK_DEFAULTS.skipRead),
     voiceEnabled: source.voiceEnabled !== false,
@@ -18169,6 +18234,10 @@ function renderPreviewPlaybackControls(snapshot) {
     refs.previewDialogThemeSelect.value = getSafeDialogTheme(state.previewPlayback.dialogTheme);
   }
 
+  if (refs.previewUiThemeSelect) {
+    refs.previewUiThemeSelect.value = getSafeUiThemeMode(state.previewPlayback.uiThemeMode);
+  }
+
   if (refs.previewBgmVolumeRange) {
     refs.previewBgmVolumeRange.value = String(getSafeVolumePercent(state.previewPlayback.bgmVolume, 72));
   }
@@ -18216,6 +18285,8 @@ function renderPreviewPlaybackControls(snapshot) {
   if (refs.previewSystemMenuButton) {
     refs.previewSystemMenuButton.disabled = !state.data;
   }
+
+  applyEditorUiTheme(state.previewPlayback.uiThemeMode);
 
   renderPreviewAutoResumePanel();
   renderPreviewSaveSlots();
@@ -21954,34 +22025,34 @@ function buildReleaseChecklistItems() {
     },
     {
       severity:
-        exportResult?.target === "windows_nwjs" && exportResult.runtimeMode === "nwjs"
+        ["windows_nwjs", "macos_nwjs", "linux_nwjs"].includes(exportResult?.target) && exportResult.runtimeMode === "nwjs"
           ? "good"
-          : exportResult?.target === "windows_nwjs"
+          : ["windows_nwjs", "macos_nwjs", "linux_nwjs"].includes(exportResult?.target)
             ? "warn"
             : "warn",
-      title: "Windows 桌面壳",
+      title: "原生桌面壳",
       toneClass:
-        exportResult?.target === "windows_nwjs" && exportResult.runtimeMode === "nwjs"
+        ["windows_nwjs", "macos_nwjs", "linux_nwjs"].includes(exportResult?.target) && exportResult.runtimeMode === "nwjs"
           ? "good-text"
-          : exportResult?.target === "windows_nwjs"
+          : ["windows_nwjs", "macos_nwjs", "linux_nwjs"].includes(exportResult?.target)
             ? "warn-text"
             : "",
       status:
-        exportResult?.target === "windows_nwjs" && exportResult.runtimeMode === "nwjs"
+        ["windows_nwjs", "macos_nwjs", "linux_nwjs"].includes(exportResult?.target) && exportResult.runtimeMode === "nwjs"
           ? "已走真桌面壳"
-          : exportResult?.target === "windows_nwjs"
+          : ["windows_nwjs", "macos_nwjs", "linux_nwjs"].includes(exportResult?.target)
             ? "当前是兜底模式"
             : "还没导过桌面包",
       description:
-        exportResult?.target === "windows_nwjs" && exportResult.runtimeMode === "nwjs"
+        ["windows_nwjs", "macos_nwjs", "linux_nwjs"].includes(exportResult?.target) && exportResult.runtimeMode === "nwjs"
           ? `最近一次桌面包已经走到 ${exportResult.packageModeLabel ?? "桌面壳模式"}。`
-          : exportResult?.target === "windows_nwjs"
+          : ["windows_nwjs", "macos_nwjs", "linux_nwjs"].includes(exportResult?.target)
             ? `最近一次桌面包没有拿到完整 NW.js 运行壳。${exportResult.runtimeWarning ? `原因：${exportResult.runtimeWarning}` : ""}`
-            : "建议至少导一次 Windows 桌面包，确认桌面壳、图标和启动画面都已经齐了。",
+            : "建议至少导一次原生桌面包，确认桌面壳、图标和启动画面都已经齐了。",
       action: {
-        label: "再导一版桌面包",
-        action: "export-build",
-        dataset: { "export-target": "windows_nwjs" },
+        label: "去预览导出页",
+        action: "switch-screen",
+        screen: "preview",
       },
     },
   ];
@@ -22779,11 +22850,17 @@ function renderProjectValidationSummary() {
     }
     <article class="detail-card">
       <strong>正式导出</strong>
-      <p>现在已经支持三种导出：网页试玩包适合先试跑，Windows 桌面包适合正式交付，而编辑器桌面包适合把整套创作工具发给别的创作者继续做。</p>
+      <p>现在已经支持五种导出：网页试玩包适合先试跑，Windows / macOS / Linux 桌面包适合正式交付，而编辑器桌面包适合把整套创作工具发给别的创作者继续做。</p>
       <div class="detail-actions">
         <button class="toolbar-button" data-action="export-build" data-export-target="web">导出试玩包</button>
         <button class="toolbar-button toolbar-button-primary" data-action="export-build" data-export-target="windows_nwjs">
           导出 Windows 桌面包
+        </button>
+        <button class="toolbar-button" data-action="export-build" data-export-target="macos_nwjs">
+          导出 macOS 桌面包
+        </button>
+        <button class="toolbar-button" data-action="export-build" data-export-target="linux_nwjs">
+          导出 Linux 桌面包
         </button>
         <button class="toolbar-button" data-action="export-build" data-export-target="editor_desktop">
           导出编辑器桌面包
@@ -22806,7 +22883,7 @@ function renderProjectValidationSummary() {
             : ""
         }
         ${
-          exportResult?.target === "windows_nwjs" && exportResult?.archivePublicUrl
+          ["windows_nwjs", "macos_nwjs", "linux_nwjs"].includes(exportResult?.target) && exportResult?.archivePublicUrl
             ? `
               <a
                 class="toolbar-button"
@@ -22917,7 +22994,7 @@ function renderProjectValidationSummary() {
                 target="_blank"
                 rel="noreferrer"
               >
-                打开签名操作手册
+                打开维护者签名说明
               </a>
             `
             : ""
@@ -22931,7 +23008,7 @@ function renderProjectValidationSummary() {
                 target="_blank"
                 rel="noreferrer"
               >
-                打开签名配置模板
+                打开维护者签名模板
               </a>
             `
             : ""
@@ -22945,7 +23022,7 @@ function renderProjectValidationSummary() {
                 target="_blank"
                 rel="noreferrer"
               >
-                打开签名前自检脚本
+                打开签名自检脚本
               </a>
             `
             : ""
@@ -22968,14 +23045,14 @@ function renderProjectValidationSummary() {
       <div class="detail-meta">
         ${
           exportResult
-            ? exportResult.target === "windows_nwjs"
+            ? ["windows_nwjs", "macos_nwjs", "linux_nwjs"].includes(exportResult.target)
               ? `最近一次导出：${escapeHtml(exportResult.buildPath)}<br />发布版本：${escapeHtml(
                   exportResult.releaseVersion ?? "1.0.0-preview"
                 )}<br />启动文件：${escapeHtml(
                   exportResult.launcherFileName ?? "未生成"
                 )}<br />推荐启动：${escapeHtml(
-                  exportResult.startHelperFileName ?? "启动游戏.cmd"
-                )}<br />桌面模式：${escapeHtml(exportResult.runtimeModeLabel ?? "Windows 桌面包")}<br />打包方式：${escapeHtml(
+                  exportResult.startHelperFileName ?? "启动游戏"
+                )}<br />桌面模式：${escapeHtml(exportResult.runtimeModeLabel ?? `${exportResult.targetLabel ?? "桌面包"}`)}<br />打包方式：${escapeHtml(
                   exportResult.packageModeLabel ?? "文件夹版"
                 )}<br />压缩档：${escapeHtml(
                   exportResult.archivePath ?? "未生成"
@@ -23008,6 +23085,10 @@ function renderProjectValidationSummary() {
                     ? `<br />桌面运行壳：NW.js ${escapeHtml(exportResult.runtimeVersion)}${
                         exportResult.runtimeDownloaded ? "（这次已自动下载）" : "（已使用本地或缓存运行壳）"
                       }`
+                    : ""
+                }${
+                  exportResult.runtimeArchLabel
+                    ? `<br />目标架构：${escapeHtml(exportResult.runtimeArchLabel)}`
                     : ""
                 }${
                   exportResult.runtimeWarning && !exportResult.runtimeWarning.includes("不完整")
@@ -23055,17 +23136,17 @@ function renderProjectValidationSummary() {
                     exportResult.splashPath ? "launch_splash.svg" : "未生成"
                   )}<br />说明文档：${escapeHtml(
                     exportResult.readmePath ?? "未生成"
-                  )}<br />商业发布说明：${escapeHtml(
+                  )}<br />维护者发布说明：${escapeHtml(
                     exportResult.commercialReadmePath ?? "未生成"
                   )}<br />发行配置：${escapeHtml(
                     exportResult.distributionConfigPath ?? "未生成"
                   )}<br />发行快照：${escapeHtml(
                     exportResult.distributionSnapshotPath ?? "未生成"
-                  )}<br />签名操作手册：${escapeHtml(
+                  )}<br />维护者签名说明：${escapeHtml(
                     exportResult.signingGuidePath ?? "未生成"
-                  )}<br />签名配置模板：${escapeHtml(
+                  )}<br />维护者签名模板：${escapeHtml(
                     exportResult.signingEnvExamplePath ?? "未生成"
-                  )}<br />签名前自检脚本：${escapeHtml(
+                  )}<br />签名自检脚本：${escapeHtml(
                     exportResult.signingCheckScriptPath ?? "未生成"
                   )}<br />签名前自检启动器：${escapeHtml(
                     exportResult.signingCheckCommandPath ?? "未生成"
@@ -23119,11 +23200,11 @@ function renderProjectValidationSummary() {
                     exportResult.distributionConfigPath ?? "未生成"
                   )}<br />发行快照：${escapeHtml(
                     exportResult.distributionSnapshotPath ?? "未生成"
-                  )}<br />签名操作手册：${escapeHtml(
+                  )}<br />维护者签名说明：${escapeHtml(
                     exportResult.signingGuidePath ?? "未生成"
-                  )}<br />签名配置模板：${escapeHtml(
+                  )}<br />维护者签名模板：${escapeHtml(
                     exportResult.signingEnvExamplePath ?? "未生成"
-                  )}<br />签名前自检脚本：${escapeHtml(
+                  )}<br />签名自检脚本：${escapeHtml(
                     exportResult.signingCheckScriptPath ?? "未生成"
                   )}<br />签名前自检启动器：${escapeHtml(
                     exportResult.signingCheckCommandPath ?? "未生成"
@@ -23158,7 +23239,7 @@ function renderProjectValidationSummary() {
                     ? `<br />未找到：${escapeHtml(exportResult.missingAssetNames.join(" / "))}`
                     : ""
                 }`
-            : "现在已经可以导出网页试玩包、Windows 桌面包，以及第一阶段的编辑器桌面包。"
+            : "现在已经可以导出网页试玩包、Windows / macOS / Linux 桌面包，以及第一阶段的编辑器桌面包。"
         }
       </div>
     </article>
@@ -24303,7 +24384,9 @@ function buildReleaseFixOrder(routeOverview) {
   }
 
   const desktopReady =
-    exportResult?.target === "windows_nwjs" && exportResult.runtimeMode === "nwjs" && (exportResult.missingAssets ?? 0) === 0;
+    ["windows_nwjs", "macos_nwjs", "linux_nwjs"].includes(exportResult?.target) &&
+    exportResult.runtimeMode === "nwjs" &&
+    (exportResult.missingAssets ?? 0) === 0;
 
   steps.push({
     tone: desktopReady ? "good" : "warn",
@@ -24311,12 +24394,22 @@ function buildReleaseFixOrder(routeOverview) {
     statusLabel: desktopReady ? "最近一版已经接近正式交付" : "用最新内容再验证一次桌面包",
     description: desktopReady
       ? "最后再导一次桌面包，确认发布版本、启动画面、图标和素材缺口都没有回退。"
-      : "前面的修复做完后，最后一定要重新导一版 Windows 桌面包，确认真壳、图标和素材都跟上了。",
+      : "前面的修复做完后，最后一定要重新导一版原生桌面包，确认真壳、图标和素材都跟上了。",
     actions: [
       {
         label: "导出 Windows 桌面包",
         action: "export-build",
         dataset: { "export-target": "windows_nwjs" },
+      },
+      {
+        label: "导出 macOS 桌面包",
+        action: "export-build",
+        dataset: { "export-target": "macos_nwjs" },
+      },
+      {
+        label: "导出 Linux 桌面包",
+        action: "export-build",
+        dataset: { "export-target": "linux_nwjs" },
       },
       { label: "去预览导出页", action: "switch-screen", screen: "preview" },
     ],
@@ -28471,6 +28564,10 @@ async function exportBuild(target = "web") {
   const exportTarget =
     target === "windows_nwjs"
       ? "windows_nwjs"
+      : target === "macos_nwjs"
+        ? "macos_nwjs"
+        : target === "linux_nwjs"
+          ? "linux_nwjs"
       : target === "editor_desktop"
         ? "editor_desktop"
         : target === "editor_desktop_suite"
@@ -28479,6 +28576,10 @@ async function exportBuild(target = "web") {
   const targetLabel =
     exportTarget === "windows_nwjs"
       ? "Windows 桌面包"
+      : exportTarget === "macos_nwjs"
+        ? "macOS 桌面包"
+        : exportTarget === "linux_nwjs"
+          ? "Linux 桌面包"
       : exportTarget === "editor_desktop"
         ? "编辑器桌面包"
         : exportTarget === "editor_desktop_suite"
@@ -28499,6 +28600,18 @@ async function exportBuild(target = "web") {
     if (exportTarget === "windows_nwjs") {
       setSaveStatus("Windows 桌面包已经导出，可以打包发给别人了");
       showToast("Windows 桌面包已经导出");
+      return;
+    }
+
+    if (exportTarget === "macos_nwjs") {
+      setSaveStatus("macOS 桌面包已经导出，可以打包发给别人了");
+      showToast("macOS 桌面包已经导出");
+      return;
+    }
+
+    if (exportTarget === "linux_nwjs") {
+      setSaveStatus("Linux 桌面包已经导出，可以打包发给别人了");
+      showToast("Linux 桌面包已经导出");
       return;
     }
 
@@ -34046,3 +34159,6 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
 }
+
+applyEditorUiTheme(PREVIEW_PLAYBACK_DEFAULTS.uiThemeMode);
+scheduleEditorUiThemeAutoRefresh();

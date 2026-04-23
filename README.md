@@ -10,17 +10,16 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/status-open%20source%20preview-3fb7ff?style=for-the-badge" alt="Status: Open Source Preview" />
+  <img src="https://img.shields.io/badge/status-source--available%20preview-3fb7ff?style=for-the-badge" alt="Status: Source-Available Preview" />
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-0e1628?style=for-the-badge" alt="Platforms" />
   <img src="https://img.shields.io/badge/tests-smoke%20%2B%20playwright-1fc98b?style=for-the-badge" alt="Tests" />
-  <img src="https://img.shields.io/badge/license-MIT-f5c451?style=for-the-badge" alt="MIT License" />
+  <img src="https://img.shields.io/badge/license-Creator%20License%201.0-f5c451?style=for-the-badge" alt="Creator License 1.0" />
 </p>
 
 <p align="center">
   <a href="#快速开始">快速开始</a> ·
   <a href="#当前已经有的核心能力">核心能力</a> ·
-  <a href="#免费预览版分发">预览版分发</a> ·
-  <a href="#商业签名--公证">商业签名 / 公证</a> ·
+  <a href="#发布状态">发布状态</a> ·
   <a href="CONTRIBUTING.md">参与贡献</a>
 </p>
 
@@ -30,7 +29,7 @@
 
 Tony Na Engine 当前更适合这样理解：
 
-- `开源创作者预览版`
+- `源码可见创作者预览版`
 - `Early Access / Preview`
 - `适合独立开发者、同人作者、内部测试成员先拿来试做项目`
 
@@ -38,7 +37,7 @@ Tony Na Engine 当前更适合这样理解：
 
 - 自动化测试已经比较完整
 - 但完整人工逐按钮长流程点测还没有全部做完
-- 因此当前更适合作为**开源预览版**使用，而不是完全稳定的正式商业版
+- 因此当前更适合作为**源码可见预览版**使用，而不是完全稳定的正式商业版
 
 ## 当前已经有的核心能力
 
@@ -88,7 +87,7 @@ Tony Na Engine 当前更适合这样理解：
 或者命令行启动：
 
 ```bash
-git clone https://github.com/najinxiang-byte/tony-na-engine.git
+git clone https://github.com/<your-github-account>/tony-na-engine.git
 cd tony-na-engine
 python3 run_editor.py
 ```
@@ -145,29 +144,16 @@ python3 -m unittest discover -s tests -p 'test_browser_playwright_smoke.py' -v
 - 前端脚本语法检查
 - 后端 smoke 测试
 
-## 免费预览版分发
+## 发布状态
 
-在还没有商业签名证书之前，项目仍然可以作为：
+当前仓库以 **源码可见创作者预览版** 方式维护。
 
-- `Preview`
-- `内测版`
-- `开源创作者预览版`
+- 源码可直接在本地启动与修改
+- 自动化测试已经接通
+- GitHub Releases 可用于提供编辑器预览包
+- 导出链和桌面打包链已经具备原型级完整度
 
-通过 GitHub Releases 或压缩包形式分发。
-
-发布前建议先看：
-
-- [`README_预览版发布说明.md`](README_预览版发布说明.md)
-- [`RELEASE_预览版文案模板.md`](RELEASE_预览版文案模板.md)
-
-## 商业签名 / 公证
-
-如果后续需要做商业签名与公证，可继续参考：
-
-- [`README_商业签名与公证操作指南.md`](README_商业签名与公证操作指南.md)
-- [`editor_signing.env.example`](editor_signing.env.example)
-- [`check_editor_signing_readiness.py`](check_editor_signing_readiness.py)
-- [`run_signing_readiness.command`](run_signing_readiness.command)
+维护者相关的发布与签名资料已经挪到 `docs/maintainers/release` 与 `tools/release`，不再作为公开首页的主要内容展示。
 
 ## 其他设计文档
 
@@ -177,11 +163,19 @@ python3 -m unittest discover -s tests -p 'test_browser_playwright_smoke.py' -v
 - [`v1_ui_structure.md`](v1_ui_structure.md)
 - [`v1_data_format.md`](v1_data_format.md)
 
-## 开源许可
+## 许可说明
 
-当前仓库采用 **MIT License**：
+当前仓库采用 **Tony Na Engine Creator License 1.0**：
 
 - [`LICENSE`](LICENSE)
+
+这份许可的核心口径是：
+
+- 允许使用本引擎制作并商业发布游戏
+- 允许为了自己的项目修改引擎
+- 不允许把引擎本体或修改版引擎当作引擎产品再次商业化出售
+
+因此它不是标准 OSI 意义上的开源协议，而是更接近“源码可见 / source-available”的创作者许可。
 
 ## 贡献
 

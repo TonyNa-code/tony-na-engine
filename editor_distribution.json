@@ -2,17 +2,17 @@
   "productName": "Tony Na Engine Editor",
   "bundleIdentifier": "com.tonyna.engine.editor",
   "publisherName": "Tony Na",
-  "companyName": "Tony Na Studio",
+  "companyName": "Tony Na Engine Project",
   "website": "",
   "supportEmail": "",
-  "copyright": "© 2026 Tony Na. All rights reserved.",
+  "copyright": "Copyright (c) 2026 Tony Na Engine Contributors",
   "macOS": {
     "minimumSystemVersion": "12.0",
     "category": "public.app-category.developer-tools"
   },
   "windows": {
     "appId": "com.tonyna.engine.editor",
-    "publisher": "Tony Na Studio",
+    "publisher": "Tony Na Engine Project",
     "installerCompilerPath": "",
     "installerCompilerRunner": ""
   },

@@ -9,6 +9,7 @@
   <body>
     <div class="player-shell">
       <header class="player-topbar">
+        <img class="player-brand-logo" src="./assets/brand-logo.png" alt="Tony Na Engine logo" />
         <div class="player-brand-copy">
           <div class="eyebrow">Tony Na Engine · 网页试玩包</div>
           <div class="player-brand-title-row">
@@ -73,9 +74,7 @@
             <div class="start-card">
               <div class="start-brand-banner" aria-hidden="true">
                 <div class="start-brand-mark">
-                  <span class="start-brand-core">TN</span>
-                  <span class="start-brand-grid"></span>
-                  <span class="start-brand-orbit"></span>
+                  <img class="start-brand-logo-image" src="./assets/brand-logo.png" alt="" />
                 </div>
                 <div class="start-brand-copy">
                   <strong>Tony Na Engine</strong>
@@ -130,6 +129,14 @@
                     <option value="warm" selected>暖光标准</option>
                     <option value="moonlight">夜色月光</option>
                     <option value="paper">纸页回忆</option>
+                  </select>
+                </label>
+                <label class="playback-setting">
+                  <span>界面主题</span>
+                  <select id="uiThemeSelect">
+                    <option value="auto" selected>自动切换</option>
+                    <option value="light">浅色模式</option>
+                    <option value="dark">深色模式</option>
                   </select>
                 </label>
               </div>
@@ -378,6 +385,14 @@
                   <option value="warm">暖光标准</option>
                   <option value="moonlight">夜色月光</option>
                   <option value="paper">纸页回忆</option>
+                </select>
+              </label>
+              <label class="playback-setting">
+                <span>界面主题</span>
+                <select id="menuUiThemeSelect">
+                  <option value="auto">自动切换</option>
+                  <option value="light">浅色模式</option>
+                  <option value="dark">深色模式</option>
                 </select>
               </label>
             </div>

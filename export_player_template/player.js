@@ -44,6 +44,7 @@ const refs = {
   startResumeSummary: document.getElementById("startResumeSummary"),
   textSpeedSelect: document.getElementById("textSpeedSelect"),
   dialogThemeSelect: document.getElementById("dialogThemeSelect"),
+  uiThemeSelect: document.getElementById("uiThemeSelect"),
   bgmVolumeRange: document.getElementById("bgmVolumeRange"),
   bgmVolumeValue: document.getElementById("bgmVolumeValue"),
   sfxVolumeRange: document.getElementById("sfxVolumeRange"),
@@ -89,6 +90,7 @@ const refs = {
   systemMenuReturnTitleButton: document.getElementById("systemMenuReturnTitleButton"),
   menuTextSpeedSelect: document.getElementById("menuTextSpeedSelect"),
   menuDialogThemeSelect: document.getElementById("menuDialogThemeSelect"),
+  menuUiThemeSelect: document.getElementById("menuUiThemeSelect"),
   menuBgmVolumeRange: document.getElementById("menuBgmVolumeRange"),
   menuBgmVolumeValue: document.getElementById("menuBgmVolumeValue"),
   menuSfxVolumeRange: document.getElementById("menuSfxVolumeRange"),
@@ -149,6 +151,43 @@ const refs = {
   cancelSaveConfirmButton: document.getElementById("cancelSaveConfirmButton"),
   confirmSaveConfirmButton: document.getElementById("confirmSaveConfirmButton"),
 };
+
+function getSafeUiThemeMode(mode) {
+  return Object.hasOwn(UI_THEME_MODE_LABELS, mode) ? mode : "auto";
+}
+
+function getUiThemeModeLabel(mode) {
+  return UI_THEME_MODE_LABELS[getSafeUiThemeMode(mode)];
+}
+
+function resolveUiTheme(mode = state.playback?.uiThemeMode ?? PLAYBACK_DEFAULTS.uiThemeMode, now = new Date()) {
+  const safeMode = getSafeUiThemeMode(mode);
+
+  if (safeMode === "light" || safeMode === "dark") {
+    return safeMode;
+  }
+
+  const hour = now.getHours();
+  return hour >= 7 && hour < 19 ? "light" : "dark";
+}
+
+function applyRuntimeUiTheme(mode = state.playback?.uiThemeMode ?? PLAYBACK_DEFAULTS.uiThemeMode) {
+  const safeMode = getSafeUiThemeMode(mode);
+  document.documentElement.dataset.uiThemeMode = safeMode;
+  document.documentElement.dataset.uiTheme = resolveUiTheme(safeMode);
+}
+
+function scheduleRuntimeUiThemeAutoRefresh() {
+  if (runtimeUiThemeAutoRefreshTimer) {
+    window.clearInterval(runtimeUiThemeAutoRefreshTimer);
+  }
+
+  runtimeUiThemeAutoRefreshTimer = window.setInterval(() => {
+    if (getSafeUiThemeMode(state.playback?.uiThemeMode) === "auto") {
+      applyRuntimeUiTheme("auto");
+    }
+  }, 60 * 1000);
+}
 
 const state = {
   started: false,
@@ -1104,9 +1143,16 @@ const DIALOG_THEME_LABELS = {
   paper: "纸页回忆",
 };
 
+const UI_THEME_MODE_LABELS = {
+  auto: "自动切换",
+  light: "浅色模式",
+  dark: "深色模式",
+};
+
 const PLAYBACK_DEFAULTS = {
   textSpeed: "normal",
   dialogTheme: "warm",
+  uiThemeMode: "auto",
   autoPlay: false,
   skipRead: false,
   voiceEnabled: true,
@@ -1120,12 +1166,14 @@ const FORMAL_SAVE_SLOT_COUNT = 24;
 const SAVE_DIALOG_PAGE_SIZE = 6;
 let musicRoomAudio = null;
 let voiceReplayAudio = null;
+let runtimeUiThemeAutoRefreshTimer = null;
 
 init();
 
 function init() {
   applyProjectResolutionStyles();
   state.playback = loadStoredPlaybackSettings();
+  applyRuntimeUiTheme(state.playback.uiThemeMode);
   state.autoResume = loadStoredAutoResume();
   state.readHistory = loadStoredReadHistory();
   state.saveSlots = loadStoredSaveSlots();
@@ -1163,6 +1211,7 @@ function init() {
   refs.startMusicRoomButton?.addEventListener("click", openMusicRoomDialog);
   refs.textSpeedSelect?.addEventListener("change", handleTextSpeedChange);
   refs.dialogThemeSelect?.addEventListener("change", handleDialogThemeChange);
+  refs.uiThemeSelect?.addEventListener("change", handleUiThemeModeChange);
   refs.bgmVolumeRange?.addEventListener("input", handleBgmVolumeChange);
   refs.sfxVolumeRange?.addEventListener("input", handleSfxVolumeChange);
   refs.voiceVolumeRange?.addEventListener("input", handleVoiceVolumeChange);
@@ -1220,6 +1269,7 @@ function init() {
   refs.confirmSaveConfirmButton?.addEventListener("click", confirmSaveIntent);
   refs.menuTextSpeedSelect?.addEventListener("change", handleTextSpeedChange);
   refs.menuDialogThemeSelect?.addEventListener("change", handleDialogThemeChange);
+  refs.menuUiThemeSelect?.addEventListener("change", handleUiThemeModeChange);
   refs.menuBgmVolumeRange?.addEventListener("input", handleBgmVolumeChange);
   refs.menuSfxVolumeRange?.addEventListener("input", handleSfxVolumeChange);
   refs.menuVoiceVolumeRange?.addEventListener("input", handleVoiceVolumeChange);
@@ -1231,6 +1281,7 @@ function init() {
   window.addEventListener("beforeunload", stopOneShotAudio);
   window.addEventListener("beforeunload", stopVoicePlayback);
   renderPlaybackControls();
+  scheduleRuntimeUiThemeAutoRefresh();
   renderStartSummary();
   renderBuildInfo();
   renderMissingAssets();
@@ -4299,6 +4350,7 @@ function sanitizePlaybackSettings(source = {}) {
   return {
     textSpeed: getSafeTextSpeed(source.textSpeed ?? PLAYBACK_DEFAULTS.textSpeed),
     dialogTheme: getSafeDialogTheme(source.dialogTheme ?? PLAYBACK_DEFAULTS.dialogTheme),
+    uiThemeMode: getSafeUiThemeMode(source.uiThemeMode ?? PLAYBACK_DEFAULTS.uiThemeMode),
     autoPlay: Boolean(source.autoPlay ?? PLAYBACK_DEFAULTS.autoPlay),
     skipRead: Boolean(source.skipRead ?? PLAYBACK_DEFAULTS.skipRead),
     voiceEnabled: source.voiceEnabled !== false,
@@ -6031,12 +6083,20 @@ function renderPlaybackControls(snapshot = getCurrentSnapshot()) {
     refs.dialogThemeSelect.value = getSafeDialogTheme(state.playback.dialogTheme);
   }
 
+  if (refs.uiThemeSelect) {
+    refs.uiThemeSelect.value = getSafeUiThemeMode(state.playback.uiThemeMode);
+  }
+
   if (refs.menuTextSpeedSelect) {
     refs.menuTextSpeedSelect.value = getSafeTextSpeed(state.playback.textSpeed);
   }
 
   if (refs.menuDialogThemeSelect) {
     refs.menuDialogThemeSelect.value = getSafeDialogTheme(state.playback.dialogTheme);
+  }
+
+  if (refs.menuUiThemeSelect) {
+    refs.menuUiThemeSelect.value = getSafeUiThemeMode(state.playback.uiThemeMode);
   }
 
   if (refs.bgmVolumeRange) {
@@ -6107,6 +6167,8 @@ function renderPlaybackControls(snapshot = getCurrentSnapshot()) {
     refs.replayVoiceButton.disabled = !getVoiceAssetId(snapshot);
   }
 
+  applyRuntimeUiTheme(state.playback.uiThemeMode);
+
   if (refs.systemMenuButton) {
     refs.systemMenuButton.disabled = false;
   }
@@ -6131,6 +6193,13 @@ function handleTextSpeedChange(event) {
 function handleDialogThemeChange(event) {
   state.playback.dialogTheme = getSafeDialogTheme(event.target.value);
   persistPlaybackSettings();
+  renderPlaybackControls();
+}
+
+function handleUiThemeModeChange(event) {
+  state.playback.uiThemeMode = getSafeUiThemeMode(event.target.value);
+  persistPlaybackSettings();
+  applyRuntimeUiTheme(state.playback.uiThemeMode);
   renderPlaybackControls();
 }
 
@@ -6232,6 +6301,7 @@ function replayCurrentVoice() {
 function resetPlaybackSettings() {
   state.playback = { ...PLAYBACK_DEFAULTS };
   persistPlaybackSettings();
+  applyRuntimeUiTheme(state.playback.uiThemeMode);
   stopRuntimeAutoAdvance();
   updateRuntimeAudioVolumes();
 

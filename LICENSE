@@ -1,21 +1,91 @@
-MIT License
+Tony Na Engine Creator License 1.0
 
 Copyright (c) 2026 Tony Na
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+This license governs the Tony Na Engine source code, editor, runtime templates,
+packaging scripts, documentation, and bundled assets in this repository
+("Engine").
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+1. Granted Rights
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+Subject to the terms below, you may:
+
+- use, study, and run the Engine;
+- copy the Engine for backup, evaluation, learning, and internal development;
+- modify the Engine for your own projects;
+- create games, visual novels, demos, prototypes, or other interactive works
+  using the Engine ("Created Works");
+- distribute and commercially monetize your Created Works without paying
+  royalties for the Engine itself, provided the Created Works are not a
+  substitute for the Engine.
+
+2. Redistribution of the Engine
+
+You may:
+
+- fork this repository on code hosting platforms;
+- share unmodified or modified source copies of the Engine for
+  non-commercial collaboration, review, contribution, archival, education,
+  and testing;
+- submit patches, pull requests, or issue reproductions back to the
+  maintainers.
+
+3. Prohibited Commercialization of the Engine
+
+You may not, without prior written permission from the copyright holder:
+
+- sell, sublicense, or commercially redistribute the Engine itself;
+- sell, license, or monetize modified versions or forks of the Engine as an
+  engine, toolkit, framework, SDK, starter kit, editor, template product, or
+  middleware product;
+- offer the Engine, or a modified version of it, as a hosted service,
+  low-code/no-code platform, or paid creation tool for third parties;
+- bundle the Engine as the primary commercial value of a product whose main
+  purpose is to give others access to the Engine;
+- remove this license and replace it with another license for the Engine or
+  derivative engine distributions.
+
+For clarity: commercial distribution of games made with the Engine is allowed;
+commercial distribution of the Engine itself is not.
+
+4. Attribution and Notices
+
+If you redistribute source copies of the Engine under the permissions in this
+license, you must keep:
+
+- this license text;
+- existing copyright notices;
+- reasonable credit to "Tony Na Engine" as the original engine project.
+
+Created Works do not need to be open-sourced, and attribution inside the game
+is recommended but not mandatory.
+
+5. Trademarks and Branding
+
+"Tony Na", "Tony Na Engine", associated logos, and related branding are not
+licensed as trademarks under this license. You may not market your own engine,
+fork, service, or toolkit using confusingly similar branding without prior
+written permission.
+
+6. Contributions
+
+Unless explicitly stated otherwise in writing, any contribution intentionally
+submitted to this repository for inclusion in the Engine grants the maintainer
+a perpetual, worldwide, non-exclusive, royalty-free right to use, modify,
+publish, and redistribute that contribution as part of the Engine under this
+license or a later license chosen for the Engine.
+
+7. No Warranty
+
+THE ENGINE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM,
+OUT OF, OR IN CONNECTION WITH THE ENGINE OR THE USE OF THE ENGINE.
+
+8. Termination
+
+If you violate this license, your rights under it terminate automatically.
+They may be reinstated only by explicit written permission from the copyright
+holder.

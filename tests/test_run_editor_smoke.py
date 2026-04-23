@@ -4,6 +4,7 @@ import base64
 import copy
 import json
 import os
+import plistlib
 import shutil
 import tempfile
 import tarfile
@@ -55,6 +56,32 @@ def create_fake_runtime_archive(archive_path: Path, platform_key: str) -> Path:
     return archive_path
 
 
+def create_fake_nwjs_runtime_dir(runtime_dir: Path, platform_key: str) -> Path:
+    config = run_editor.get_nwjs_runtime_config(platform_key)
+    runtime_dir.mkdir(parents=True, exist_ok=True)
+
+    if platform_key == run_editor.NWJS_GAME_PLATFORM_MACOS:
+        app_bundle = runtime_dir / str(config.get("appBundleName") or "nwjs.app")
+        (app_bundle / "Contents" / "MacOS").mkdir(parents=True, exist_ok=True)
+        (app_bundle / "Contents" / "Resources").mkdir(parents=True, exist_ok=True)
+        executable_path = app_bundle / "Contents" / "MacOS" / "nwjs"
+        executable_path.write_text("fake-nwjs", encoding="utf-8")
+        executable_path.chmod(0o755)
+        with (app_bundle / "Contents" / "Info.plist").open("wb") as plist_file:
+            plistlib.dump({"CFBundleExecutable": "nwjs", "CFBundleName": "nwjs"}, plist_file)
+        return runtime_dir
+
+    for file_name in config.get("requiredFiles") or []:
+        file_path = runtime_dir / str(file_name)
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        file_path.write_text("fake-runtime", encoding="utf-8")
+        if file_path.name in {"nw", "nw.exe"}:
+            file_path.chmod(0o755)
+    for dir_name in config.get("requiredDirs") or []:
+        (runtime_dir / str(dir_name)).mkdir(parents=True, exist_ok=True)
+    return runtime_dir
+
+
 def create_fake_iscc_script(script_path: Path) -> Path:
     script_path.write_text(
         """#!/bin/sh
@@ -104,6 +131,20 @@ class RunEditorSmokeTests(unittest.TestCase):
             self.test_root / "desktop_runtime",
             self.test_root / "desktop_runtime" / "windows",
         ]
+        self.fake_nwjs_runtime_dirs = {
+            run_editor.NWJS_GAME_PLATFORM_WINDOWS: create_fake_nwjs_runtime_dir(
+                self.test_root / "fake_nwjs_windows_runtime",
+                run_editor.NWJS_GAME_PLATFORM_WINDOWS,
+            ),
+            run_editor.NWJS_GAME_PLATFORM_MACOS: create_fake_nwjs_runtime_dir(
+                self.test_root / "fake_nwjs_macos_runtime",
+                run_editor.NWJS_GAME_PLATFORM_MACOS,
+            ),
+            run_editor.NWJS_GAME_PLATFORM_LINUX: create_fake_nwjs_runtime_dir(
+                self.test_root / "fake_nwjs_linux_runtime",
+                run_editor.NWJS_GAME_PLATFORM_LINUX,
+            ),
+        }
         self.portable_runtime_archives = {
             run_editor.EDITOR_PLATFORM_MACOS: create_fake_runtime_archive(
                 self.test_root / "fake_macos_runtime.tar.gz",
@@ -140,6 +181,14 @@ class RunEditorSmokeTests(unittest.TestCase):
             )
             for platform_key in self.portable_runtime_archives
         }
+        self.original_env.update(
+            {
+                run_editor.get_nwjs_runtime_dir_override_env_var(platform_key): os.environ.get(
+                    run_editor.get_nwjs_runtime_dir_override_env_var(platform_key)
+                )
+                for platform_key in self.fake_nwjs_runtime_dirs
+            }
+        )
         self.original_env[run_editor.EDITOR_WINDOWS_ISCC_ENV] = os.environ.get(run_editor.EDITOR_WINDOWS_ISCC_ENV)
         self.original_env[run_editor.EDITOR_WINDOWS_SIGNTOOL_ENV] = os.environ.get(run_editor.EDITOR_WINDOWS_SIGNTOOL_ENV)
         self.original_env[run_editor.EDITOR_WINDOWS_CERT_SUBJECT_ENV] = os.environ.get(
@@ -163,9 +212,11 @@ class RunEditorSmokeTests(unittest.TestCase):
         run_editor.HAS_SELECTED_PROJECT = False
         for platform_key, archive_path in self.portable_runtime_archives.items():
             os.environ[run_editor.get_portable_runtime_override_env_var(platform_key)] = str(archive_path)
+        for platform_key, runtime_dir in self.fake_nwjs_runtime_dirs.items():
+            os.environ[run_editor.get_nwjs_runtime_dir_override_env_var(platform_key)] = str(runtime_dir)
         os.environ[run_editor.EDITOR_WINDOWS_ISCC_ENV] = str(self.fake_iscc)
         os.environ[run_editor.EDITOR_WINDOWS_SIGNTOOL_ENV] = str(self.fake_signtool)
-        os.environ[run_editor.EDITOR_WINDOWS_CERT_SUBJECT_ENV] = "Tony Na Studio"
+        os.environ[run_editor.EDITOR_WINDOWS_CERT_SUBJECT_ENV] = "Tony Na Engine Project"
 
     def tearDown(self) -> None:
         run_editor.PROJECTS_DIR = self.original_globals["PROJECTS_DIR"]
@@ -472,6 +523,68 @@ class RunEditorSmokeTests(unittest.TestCase):
             manifest["engine"]["releaseVersion"],
             run_editor.DEFAULT_EXPORT_RELEASE_VERSION,
         )
+
+    def test_macos_nwjs_build_smoke(self) -> None:
+        _, chapter_result = self.create_blank_project_with_chapter()
+
+        self.save_scene_with_blocks(
+            chapter_result["chapterId"],
+            chapter_result["scene"],
+            [
+                {
+                    "id": "block_001",
+                    "type": "dialogue",
+                    "speakerId": "heroine",
+                    "expressionId": "",
+                    "text": "这是 macOS 桌面导出烟测。",
+                }
+            ],
+        )
+
+        export_result = run_editor.export_macos_nwjs_build()
+
+        manifest_path = Path(export_result["manifestPath"])
+        self.assertEqual(export_result["target"], run_editor.EXPORT_TARGET_MACOS_NWJS)
+        self.assertTrue(Path(export_result["appBundlePath"]).is_dir())
+        self.assertTrue(Path(export_result["startHelperPath"]).is_file())
+        self.assertTrue(Path(export_result["archivePath"]).is_file())
+        self.assertTrue(manifest_path.is_file())
+
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        self.assertEqual(manifest["engine"]["exportTarget"], run_editor.EXPORT_TARGET_MACOS_NWJS)
+        self.assertEqual(manifest["runtime"]["version"], run_editor.NWJS_RUNTIME_VERSION)
+
+    def test_linux_nwjs_build_smoke(self) -> None:
+        _, chapter_result = self.create_blank_project_with_chapter()
+
+        self.save_scene_with_blocks(
+            chapter_result["chapterId"],
+            chapter_result["scene"],
+            [
+                {
+                    "id": "block_001",
+                    "type": "dialogue",
+                    "speakerId": "heroine",
+                    "expressionId": "",
+                    "text": "这是 Linux 桌面导出烟测。",
+                }
+            ],
+        )
+
+        export_result = run_editor.export_linux_nwjs_build()
+
+        build_dir = Path(export_result["buildPath"])
+        manifest_path = Path(export_result["manifestPath"])
+        self.assertEqual(export_result["target"], run_editor.EXPORT_TARGET_LINUX_NWJS)
+        self.assertTrue(Path(export_result["launcherPath"]).is_file())
+        self.assertTrue(Path(export_result["startHelperPath"]).is_file())
+        self.assertTrue(Path(export_result["archivePath"]).is_file())
+        self.assertTrue((build_dir / "package.nw").is_file())
+        self.assertTrue(manifest_path.is_file())
+
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        self.assertEqual(manifest["engine"]["exportTarget"], run_editor.EXPORT_TARGET_LINUX_NWJS)
+        self.assertEqual(manifest["runtime"]["version"], run_editor.NWJS_RUNTIME_VERSION)
 
     def test_editor_desktop_build_smoke(self) -> None:
         export_result = run_editor.export_editor_desktop_build()

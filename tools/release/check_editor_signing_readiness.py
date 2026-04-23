@@ -4,7 +4,12 @@ from __future__ import annotations
 import argparse
 import json
 import shutil
+import sys
 from pathlib import Path
+
+ROOT_DIR = Path(__file__).resolve().parents[2]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
 import run_editor
 
@@ -77,7 +82,7 @@ def build_report() -> dict:
 
 
 def print_human_report(report: dict) -> None:
-    print("Tony Na Engine 商业签名准备检查")
+    print("Tony Na Engine 维护者签名准备检查")
     print("")
     print(f"发行配置：{report['distributionConfigPath']}")
     print(f"产品名：{report['productName']}")
@@ -110,13 +115,13 @@ def print_human_report(report: dict) -> None:
     print(f"- 时间戳地址：{report['windows']['timestampUrl'] or '未配置'}")
     print("")
     print("[总览]")
-    print(f"- mac 商业签名就绪：{bool_label(report['summary']['macCommercialReady'])}")
+    print(f"- mac 签名链就绪：{bool_label(report['summary']['macCommercialReady'])}")
     print(f"- mac 公证就绪：{bool_label(report['summary']['macNotaryReady'])}")
-    print(f"- Windows 商业安装器就绪：{bool_label(report['summary']['windowsCommercialReady'])}")
+    print(f"- Windows 安装器签名链就绪：{bool_label(report['summary']['windowsCommercialReady'])}")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="检查 Tony Na Engine 编辑器商业签名与公证准备状态")
+    parser = argparse.ArgumentParser(description="检查 Tony Na Engine 编辑器维护者签名与公证准备状态")
     parser.add_argument("--json", action="store_true", help="输出 JSON")
     args = parser.parse_args()
 

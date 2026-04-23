@@ -6,6 +6,7 @@ import html
 import json
 import os
 import platform
+import plistlib
 import re
 import socket
 import struct
@@ -13,6 +14,7 @@ import subprocess
 import shutil
 import sys
 import tarfile
+import tempfile
 import webbrowser
 import zipfile
 import zlib
@@ -22,7 +24,7 @@ from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import quote, urlparse
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 
 ROOT_DIR = Path(__file__).resolve().parent
@@ -93,39 +95,84 @@ AUDIO_EXTENSIONS = {".mp3", ".ogg", ".wav", ".m4a", ".aac", ".flac"}
 VIDEO_EXTENSIONS = {".mp4", ".webm", ".mov", ".m4v"}
 EXPORT_TARGET_WEB = "web"
 EXPORT_TARGET_WINDOWS_NWJS = "windows_nwjs"
+EXPORT_TARGET_MACOS_NWJS = "macos_nwjs"
+EXPORT_TARGET_LINUX_NWJS = "linux_nwjs"
 EXPORT_TARGET_EDITOR_DESKTOP = "editor_desktop"
 EXPORT_TARGET_EDITOR_DESKTOP_SUITE = "editor_desktop_suite"
-NWJS_WINDOWS_RUNTIME_VERSION = "v0.105.0"
-NWJS_WINDOWS_RUNTIME_ARCHIVE_NAME = f"nwjs-{NWJS_WINDOWS_RUNTIME_VERSION}-win-x64.zip"
-NWJS_WINDOWS_RUNTIME_DOWNLOAD_URL = f"https://dl.nwjs.io/{NWJS_WINDOWS_RUNTIME_VERSION}/{NWJS_WINDOWS_RUNTIME_ARCHIVE_NAME}"
+NWJS_RUNTIME_VERSION = "v0.105.0"
+NWJS_GAME_PLATFORM_WINDOWS = "windows"
+NWJS_GAME_PLATFORM_MACOS = "macos"
+NWJS_GAME_PLATFORM_LINUX = "linux"
+NWJS_GAME_RUNTIME_PLATFORM_CONFIG = {
+    NWJS_GAME_PLATFORM_WINDOWS: {
+        "label": "Windows",
+        "target": EXPORT_TARGET_WINDOWS_NWJS,
+        "archiveFormat": "zip",
+        "archiveName": f"nwjs-{NWJS_RUNTIME_VERSION}-win-x64.zip",
+        "runtimeCacheSuffix": "win_x64",
+        "runtimeExecutable": "nw.exe",
+        "localRuntimeDirs": ["windows"],
+        "requiredFiles": [
+            "nw.exe",
+            "icudtl.dat",
+            "libEGL.dll",
+            "libGLESv2.dll",
+            "nw_100_percent.pak",
+            "resources.pak",
+            "v8_context_snapshot.bin",
+        ],
+        "requiredDirs": ["locales"],
+    },
+    NWJS_GAME_PLATFORM_MACOS: {
+        "label": "macOS",
+        "target": EXPORT_TARGET_MACOS_NWJS,
+        "archiveFormat": "zip",
+        "runtimeCacheSuffix": "osx",
+        "localRuntimeDirs": ["macos"],
+        "appBundleName": "nwjs.app",
+        "requiredFiles": [
+            "Contents/Info.plist",
+            "Contents/MacOS/nwjs",
+        ],
+        "requiredDirs": ["Contents/Resources"],
+    },
+    NWJS_GAME_PLATFORM_LINUX: {
+        "label": "Linux",
+        "target": EXPORT_TARGET_LINUX_NWJS,
+        "archiveFormat": "gztar",
+        "archiveName": f"nwjs-{NWJS_RUNTIME_VERSION}-linux-x64.tar.gz",
+        "runtimeCacheSuffix": "linux_x64",
+        "runtimeExecutable": "nw",
+        "localRuntimeDirs": ["linux"],
+        "requiredFiles": [
+            "nw",
+            "icudtl.dat",
+            "resources.pak",
+            "v8_context_snapshot.bin",
+        ],
+        "requiredDirs": ["locales"],
+    },
+}
 LOCAL_NWJS_RUNTIME_DIRS = [
     ROOT_DIR / "desktop_runtime",
     ROOT_DIR / "desktop_runtime" / "windows",
 ]
 LOCAL_NWJS_RUNTIME_GUIDE_NAME = "README_把_NWJS_运行壳放这里.txt"
-NWJS_REQUIRED_RUNTIME_FILES = [
-    "nw.exe",
-    "icudtl.dat",
-    "libEGL.dll",
-    "libGLESv2.dll",
-    "nw_100_percent.pak",
-    "resources.pak",
-    "v8_context_snapshot.bin",
-]
-NWJS_REQUIRED_RUNTIME_DIRS = [
-    "locales",
-]
 EDITOR_PACKAGE_VERSION = "1.0.0-preview"
 EDITOR_BUNDLE_DIR_NAME = "editor_bundle"
 EDITOR_MAC_APP_NAME = "Tony Na Engine Editor.app"
 EDITOR_MAC_APP_EXECUTABLE = "TonyNaEngineEditor"
 EDITOR_MAC_INSTALLER_NAME = "Tony Na Engine Editor Installer.pkg"
 EDITOR_EDITOR_README_NAME = "README_编辑器包先看这里.txt"
-EDITOR_COMMERCIAL_README_NAME = "README_商业发布先看这里.txt"
-EDITOR_SIGNING_GUIDE_NAME = "README_商业签名与公证操作指南.md"
+EDITOR_COMMERCIAL_README_NAME = "README_编辑器发布维护先看这里.txt"
+EDITOR_SIGNING_GUIDE_NAME = "README_编辑器签名与公证维护说明.md"
 EDITOR_SIGNING_ENV_EXAMPLE_NAME = "editor_signing.env.example"
 EDITOR_SIGNING_CHECK_SCRIPT_NAME = "check_editor_signing_readiness.py"
 EDITOR_SIGNING_CHECK_COMMAND_NAME = "run_signing_readiness.command"
+EDITOR_SIGNING_GUIDE_SOURCE = ROOT_DIR / "docs" / "maintainers" / "release" / "editor_signing_guide.md"
+EDITOR_SIGNING_ENV_EXAMPLE_SOURCE = ROOT_DIR / "docs" / "maintainers" / "release" / "editor_signing.env.example"
+EDITOR_SIGNING_CHECK_SCRIPT_SOURCE = ROOT_DIR / "tools" / "release" / "check_editor_signing_readiness.py"
+EDITOR_SIGNING_CHECK_COMMAND_SOURCE = ROOT_DIR / "tools" / "release" / "run_signing_readiness.command"
 EDITOR_DISTRIBUTION_CONFIG_NAME = "editor_distribution.json"
 EDITOR_DISTRIBUTION_SNAPSHOT_NAME = "editor_distribution.snapshot.json"
 EDITOR_WINDOWS_INSTALLER_SCRIPT_NAME = "Tony Na Engine Editor Installer.iss"
@@ -202,17 +249,17 @@ def build_default_editor_distribution_config() -> dict:
         "productName": "Tony Na Engine Editor",
         "bundleIdentifier": "com.tonyna.engine.editor",
         "publisherName": "Tony Na",
-        "companyName": "Tony Na Studio",
+        "companyName": "Tony Na Engine Project",
         "website": "",
         "supportEmail": "",
-        "copyright": "© 2026 Tony Na. All rights reserved.",
+        "copyright": "Copyright (c) 2026 Tony Na Engine Contributors",
         "macOS": {
             "minimumSystemVersion": "12.0",
             "category": "public.app-category.developer-tools",
         },
         "windows": {
             "appId": "com.tonyna.engine.editor",
-            "publisher": "Tony Na Studio",
+            "publisher": "Tony Na Engine Project",
             "installerCompilerPath": "",
             "installerCompilerRunner": "",
         },
@@ -270,7 +317,9 @@ def normalize_editor_distribution_config(raw_config: dict | None = None) -> dict
     merged["companyName"] = str(merged.get("companyName") or merged["publisherName"]).strip() or merged["publisherName"]
     merged["website"] = str(merged.get("website") or "").strip()
     merged["supportEmail"] = str(merged.get("supportEmail") or "").strip()
-    merged["copyright"] = str(merged.get("copyright") or "").strip() or "© 2026 Tony Na. All rights reserved."
+    merged["copyright"] = (
+        str(merged.get("copyright") or "").strip() or "Copyright (c) 2026 Tony Na Engine Contributors"
+    )
     merged["macOS"]["minimumSystemVersion"] = (
         str(merged["macOS"].get("minimumSystemVersion") or "12.0").strip() or "12.0"
     )
@@ -3077,49 +3126,49 @@ def distance_to_segment(px: float, py: float, x1: float, y1: float, x2: float, y
 def build_export_icon_palette(project: dict) -> dict:
     presets = [
         {
-            "backgroundTop": (8, 18, 34),
-            "backgroundBottom": (28, 78, 148),
-            "panelTop": (16, 28, 48),
-            "panelBottom": (9, 16, 30),
-            "heart": (244, 249, 255),
-            "shadow": (2, 6, 14),
-            "highlight": (164, 226, 255),
-            "spark": (108, 214, 255),
-            "ring": (204, 239, 255),
-            "grid": (114, 168, 236),
+            "backgroundTop": (13, 18, 44),
+            "backgroundBottom": (42, 54, 128),
+            "panelTop": (18, 24, 58),
+            "panelBottom": (12, 14, 32),
+            "heart": (255, 176, 223),
+            "shadow": (4, 7, 20),
+            "highlight": (154, 234, 255),
+            "spark": (255, 214, 248),
+            "ring": (223, 235, 255),
+            "grid": (118, 134, 219),
             "monogram": (245, 250, 255),
-            "monogramAccent": (156, 233, 255),
-            "orbit": (73, 118, 255),
+            "monogramAccent": (159, 228, 255),
+            "orbit": (122, 118, 255),
         },
         {
-            "backgroundTop": (15, 20, 45),
-            "backgroundBottom": (66, 84, 188),
-            "panelTop": (20, 24, 57),
-            "panelBottom": (11, 15, 34),
-            "heart": (246, 246, 255),
-            "shadow": (4, 5, 16),
-            "highlight": (198, 214, 255),
-            "spark": (133, 211, 255),
-            "ring": (227, 234, 255),
-            "grid": (120, 143, 227),
+            "backgroundTop": (18, 22, 56),
+            "backgroundBottom": (95, 82, 186),
+            "panelTop": (24, 22, 60),
+            "panelBottom": (13, 14, 35),
+            "heart": (255, 188, 233),
+            "shadow": (5, 6, 18),
+            "highlight": (194, 220, 255),
+            "spark": (255, 224, 244),
+            "ring": (229, 233, 255),
+            "grid": (136, 133, 218),
             "monogram": (247, 249, 255),
-            "monogramAccent": (196, 217, 255),
-            "orbit": (124, 118, 255),
+            "monogramAccent": (180, 224, 255),
+            "orbit": (154, 120, 255),
         },
         {
-            "backgroundTop": (6, 28, 42),
-            "backgroundBottom": (16, 108, 118),
-            "panelTop": (11, 33, 45),
-            "panelBottom": (7, 18, 27),
-            "heart": (244, 252, 251),
-            "shadow": (2, 10, 14),
-            "highlight": (170, 240, 224),
-            "spark": (107, 231, 204),
-            "ring": (220, 255, 247),
-            "grid": (93, 188, 176),
+            "backgroundTop": (8, 28, 49),
+            "backgroundBottom": (24, 88, 126),
+            "panelTop": (12, 27, 48),
+            "panelBottom": (8, 17, 30),
+            "heart": (255, 180, 216),
+            "shadow": (2, 9, 15),
+            "highlight": (167, 240, 237),
+            "spark": (238, 214, 255),
+            "ring": (221, 248, 255),
+            "grid": (96, 174, 190),
             "monogram": (243, 251, 249),
-            "monogramAccent": (168, 240, 226),
-            "orbit": (77, 170, 214),
+            "monogramAccent": (170, 236, 244),
+            "orbit": (84, 176, 223),
         },
     ]
     seed_source = f"{project.get('projectId') or ''}:{project.get('title') or ''}"
@@ -3142,37 +3191,80 @@ def build_export_icon_png(project: dict, size: int = 256) -> bytes:
     inner_top = inner_margin
     inner_size = size - inner_margin * 2
     inner_radius = size * 0.14
-    ring_radius_a = size * 0.34
-    ring_radius_b = size * 0.25
+    ring_radius_a = size * 0.31
+    ring_radius_b = size * 0.23
     ring_thickness = size * 0.012
-    aura_a_x = size * 0.22
-    aura_a_y = size * 0.2
-    aura_b_x = size * 0.8
-    aura_b_y = size * 0.24
-    aura_radius_a = size * 0.42
-    aura_radius_b = size * 0.34
-    sparkle_center_x = size * 0.78
-    sparkle_center_y = size * 0.24
-    sparkle_radius = size * 0.06
+    aura_a_x = size * 0.24
+    aura_a_y = size * 0.18
+    aura_b_x = size * 0.82
+    aura_b_y = size * 0.22
+    aura_radius_a = size * 0.44
+    aura_radius_b = size * 0.36
+    sparkle_center_x = size * 0.77
+    sparkle_center_y = size * 0.22
+    sparkle_radius = size * 0.058
 
-    t_bar_left = size * 0.28
-    t_bar_top = size * 0.30
-    t_bar_width = size * 0.22
-    t_bar_height = size * 0.056
-    t_stem_left = size * 0.362
-    t_stem_top = size * 0.30
-    t_stem_width = size * 0.058
-    t_stem_height = size * 0.39
-    n_left_left = size * 0.545
-    n_left_top = size * 0.30
-    n_bar_width = size * 0.056
-    n_bar_height = size * 0.39
-    n_right_left = size * 0.70
-    n_diag_thickness = size * 0.025
-    n_diag_x1 = size * 0.571
-    n_diag_y1 = size * 0.318
-    n_diag_x2 = size * 0.724
-    n_diag_y2 = size * 0.686
+    crest_center_x = size * 0.5
+    crest_center_y = size * 0.49
+    crest_radius = size * 0.205
+    crest_inner_radius = size * 0.168
+    crest_glow_radius = size * 0.29
+
+    moon_outer_radius = size * 0.11
+    moon_inner_radius = size * 0.088
+    moon_center_x = size * 0.44
+    moon_center_y = size * 0.43
+    moon_cut_x = moon_center_x + size * 0.04
+    moon_cut_y = moon_center_y - size * 0.012
+
+    petal_a_center_x = size * 0.62
+    petal_a_center_y = size * 0.34
+    petal_b_center_x = size * 0.67
+    petal_b_center_y = size * 0.405
+    petal_rx = size * 0.03
+    petal_ry = size * 0.075
+    petal_a_cos = 0.819
+    petal_a_sin = 0.574
+    petal_b_cos = 0.643
+    petal_b_sin = 0.766
+
+    t_bar_left = size * 0.34
+    t_bar_top = size * 0.515
+    t_bar_width = size * 0.14
+    t_bar_height = size * 0.038
+    t_stem_left = size * 0.392
+    t_stem_top = size * 0.515
+    t_stem_width = size * 0.041
+    t_stem_height = size * 0.18
+    n_left_left = size * 0.515
+    n_left_top = size * 0.515
+    n_bar_width = size * 0.041
+    n_bar_height = size * 0.18
+    n_right_left = size * 0.63
+    n_diag_thickness = size * 0.02
+    n_diag_x1 = size * 0.536
+    n_diag_y1 = size * 0.53
+    n_diag_x2 = size * 0.651
+    n_diag_y2 = size * 0.69
+
+    def circle_distance(px: float, py: float, cx: float, cy: float, radius: float) -> float:
+        return ((px - cx) ** 2 + (py - cy) ** 2) ** 0.5 - radius
+
+    def rotated_ellipse_distance(
+        px: float,
+        py: float,
+        cx: float,
+        cy: float,
+        radius_x: float,
+        radius_y: float,
+        cos_angle: float,
+        sin_angle: float,
+    ) -> float:
+        dx = px - cx
+        dy = py - cy
+        rotated_x = dx * cos_angle + dy * sin_angle
+        rotated_y = -dx * sin_angle + dy * cos_angle
+        return ((rotated_x / max(1.0, radius_x)) ** 2 + (rotated_y / max(1.0, radius_y)) ** 2) ** 0.5 - 1.0
 
     for y in range(size):
         for x in range(size):
@@ -3240,6 +3332,54 @@ def build_export_icon_png(project: dict, size: int = 256) -> bytes:
                 ring_alpha_b = clamp_color_channel((1.0 - ring_distance_b / max(1.0, ring_thickness * 1.8)) * 36)
                 pixel = blend_rgba(pixel, (*palette["orbit"], ring_alpha_b))
 
+            crest_glow_distance = circle_distance(x, y, crest_center_x, crest_center_y, crest_glow_radius)
+            if crest_glow_distance <= 0:
+                crest_glow_alpha = clamp_color_channel((1.0 - max(crest_glow_distance, -crest_glow_radius) / crest_glow_radius) * 22)
+                pixel = blend_rgba(pixel, (*palette["highlight"], crest_glow_alpha))
+
+            crest_distance = circle_distance(x, y, crest_center_x, crest_center_y, crest_radius)
+            if crest_distance <= 0:
+                crest_ratio = max(0.0, min(1.0, (y - (crest_center_y - crest_radius)) / max(1.0, crest_radius * 2)))
+                crest_color = mix_rgb(palette["panelTop"], palette["backgroundBottom"], crest_ratio * 0.68)
+                crest_alpha = 255 if crest_distance <= -1.0 else clamp_color_channel((1.0 - max(crest_distance, 0.0)) * 196)
+                pixel = blend_rgba(pixel, (*crest_color, crest_alpha))
+
+            crest_inner_distance = circle_distance(x, y, crest_center_x, crest_center_y, crest_inner_radius)
+            if crest_inner_distance <= 0:
+                inner_crest_alpha = 255 if crest_inner_distance <= -0.8 else clamp_color_channel((1.0 - max(crest_inner_distance, 0.0)) * 168)
+                pixel = blend_rgba(pixel, (*palette["shadow"], inner_crest_alpha))
+
+            crest_ring_distance = abs(((x - crest_center_x) ** 2 + (y - crest_center_y) ** 2) ** 0.5 - crest_radius)
+            if crest_ring_distance <= size * 0.018:
+                crest_ring_alpha = clamp_color_channel((1.0 - crest_ring_distance / max(1.0, size * 0.018)) * 148)
+                pixel = blend_rgba(pixel, (*palette["ring"], crest_ring_alpha))
+
+            moon_outer_distance = circle_distance(x, y, moon_center_x, moon_center_y, moon_outer_radius)
+            moon_inner_distance = circle_distance(x, y, moon_cut_x, moon_cut_y, moon_inner_radius)
+            if moon_outer_distance <= 0 and moon_inner_distance > 0:
+                moon_alpha = 255 if moon_outer_distance <= -0.8 else clamp_color_channel((1.0 - max(moon_outer_distance, 0.0)) * 255)
+                moon_color = mix_rgb(palette["ring"], palette["highlight"], 0.18)
+                pixel = blend_rgba(pixel, (*moon_color, moon_alpha))
+            elif moon_outer_distance <= size * 0.03 and moon_inner_distance > -size * 0.02:
+                moon_glow_alpha = clamp_color_channel((1.0 - max(moon_outer_distance, 0.0) / max(1.0, size * 0.03)) * 88)
+                pixel = blend_rgba(pixel, (*palette["highlight"], moon_glow_alpha))
+
+            petal_a_distance = rotated_ellipse_distance(
+                x, y, petal_a_center_x, petal_a_center_y, petal_rx, petal_ry, petal_a_cos, petal_a_sin
+            )
+            petal_b_distance = rotated_ellipse_distance(
+                x, y, petal_b_center_x, petal_b_center_y, petal_rx * 0.95, petal_ry * 0.92, petal_b_cos, petal_b_sin
+            )
+            petal_distance = min(petal_a_distance, petal_b_distance)
+            if petal_distance <= 0:
+                petal_alpha = 255 if petal_distance <= -0.08 else clamp_color_channel((1.0 - max(petal_distance, 0.0)) * 255)
+                petal_ratio = max(0.0, min(1.0, (y - size * 0.28) / max(1.0, size * 0.2)))
+                petal_color = mix_rgb(palette["heart"], palette["spark"], petal_ratio * 0.55)
+                pixel = blend_rgba(pixel, (*petal_color, petal_alpha))
+            elif petal_distance <= 0.24:
+                petal_glow_alpha = clamp_color_channel((1.0 - petal_distance / 0.24) * 68)
+                pixel = blend_rgba(pixel, (*palette["heart"], petal_glow_alpha))
+
             t_bar_distance = rounded_rect_signed_distance(
                 x, y, t_bar_left, t_bar_top, t_bar_width, t_bar_height, size * 0.016
             )
@@ -3262,13 +3402,13 @@ def build_export_icon_png(project: dict, size: int = 256) -> bytes:
                 n_diag_distance,
             )
             if monogram_distance <= 0:
-                monogram_ratio = max(0.0, min(1.0, (y - size * 0.28) / max(1.0, size * 0.42)))
+                monogram_ratio = max(0.0, min(1.0, (y - size * 0.5) / max(1.0, size * 0.22)))
                 monogram_color = mix_rgb(palette["monogram"], palette["monogramAccent"], monogram_ratio)
                 monogram_alpha = 255 if monogram_distance <= -0.6 else clamp_color_channel((1.0 - max(monogram_distance, 0.0)) * 255)
                 pixel = blend_rgba(pixel, (*monogram_color, monogram_alpha))
 
-                highlight_distance = ((x - size * 0.36) ** 2 + (y - size * 0.33) ** 2) ** 0.5
-                highlight_radius = size * 0.12
+                highlight_distance = ((x - size * 0.39) ** 2 + (y - size * 0.53) ** 2) ** 0.5
+                highlight_radius = size * 0.085
                 if highlight_distance <= highlight_radius:
                     highlight_alpha = clamp_color_channel((1.0 - highlight_distance / highlight_radius) * 126)
                     pixel = blend_rgba(pixel, (*palette["highlight"], highlight_alpha))
@@ -3430,13 +3570,13 @@ def build_export_splash_svg(project: dict, release_version: str, target_label: s
     <linearGradient id="bg" x1="0" y1="0" x2="1600" y2="900" gradientUnits="userSpaceOnUse">
       <stop stop-color="{background_top}"/>
       <stop offset="0.52" stop-color="{background_bottom}"/>
-      <stop offset="1" stop-color="#050A13"/>
+      <stop offset="1" stop-color="#120D24"/>
     </linearGradient>
-    <radialGradient id="auraA" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(260 164) rotate(26) scale(420 300)">
-      <stop stop-color="{spark_color}" stop-opacity="0.34"/>
-      <stop offset="1" stop-color="{spark_color}" stop-opacity="0"/>
+    <radialGradient id="auraA" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(280 188) rotate(22) scale(460 320)">
+      <stop stop-color="{heart_color}" stop-opacity="0.34"/>
+      <stop offset="1" stop-color="{heart_color}" stop-opacity="0"/>
     </radialGradient>
-    <radialGradient id="auraB" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1280 170) rotate(122) scale(420 320)">
+    <radialGradient id="auraB" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1288 176) rotate(122) scale(448 330)">
       <stop stop-color="{highlight_color}" stop-opacity="0.28"/>
       <stop offset="1" stop-color="{highlight_color}" stop-opacity="0"/>
     </radialGradient>
@@ -3445,12 +3585,12 @@ def build_export_splash_svg(project: dict, release_version: str, target_label: s
       <stop offset="0.5" stop-color="white" stop-opacity="0.06"/>
       <stop offset="1" stop-color="white" stop-opacity="0.16"/>
     </linearGradient>
-    <linearGradient id="logoFill" x1="612" y1="232" x2="988" y2="608" gradientUnits="userSpaceOnUse">
-      <stop stop-color="white"/>
-      <stop offset="0.48" stop-color="{highlight_color}"/>
-      <stop offset="1" stop-color="{spark_color}"/>
+    <linearGradient id="crestFill" x1="626" y1="248" x2="978" y2="622" gradientUnits="userSpaceOnUse">
+      <stop stop-color="{highlight_color}"/>
+      <stop offset="0.52" stop-color="{spark_color}"/>
+      <stop offset="1" stop-color="{heart_color}"/>
     </linearGradient>
-    <radialGradient id="logoGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(800 420) rotate(90) scale(260 260)">
+    <radialGradient id="logoGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(800 420) rotate(90) scale(280 280)">
       <stop stop-color="{spark_color}" stop-opacity="0.36"/>
       <stop offset="1" stop-color="{spark_color}" stop-opacity="0"/>
     </radialGradient>
@@ -3468,9 +3608,9 @@ def build_export_splash_svg(project: dict, release_version: str, target_label: s
   <rect x="96" y="96" width="1408" height="708" rx="28" stroke="rgba(255,255,255,0.05)"/>
 
   <g opacity="0.88">
-    <ellipse cx="260" cy="164" rx="420" ry="300" fill="url(#auraA)">
-      <animate attributeName="cx" values="250;286;262;250" dur="26s" repeatCount="indefinite"/>
-      <animate attributeName="cy" values="164;182;154;164" dur="26s" repeatCount="indefinite"/>
+    <ellipse cx="280" cy="188" rx="460" ry="320" fill="url(#auraA)">
+      <animate attributeName="cx" values="272;304;286;272" dur="26s" repeatCount="indefinite"/>
+      <animate attributeName="cy" values="188;208;178;188" dur="26s" repeatCount="indefinite"/>
     </ellipse>
     <ellipse cx="1280" cy="170" rx="420" ry="320" fill="url(#auraB)">
       <animate attributeName="cx" values="1280;1248;1294;1280" dur="30s" repeatCount="indefinite"/>
@@ -3497,23 +3637,29 @@ def build_export_splash_svg(project: dict, release_version: str, target_label: s
   </g>
 
   <g>
-    <rect x="668" y="286" width="264" height="264" rx="58" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.16)"/>
-    <rect x="690" y="308" width="220" height="220" rx="44" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.08)"/>
-    <path d="M725 332H859V368H767V430H844V466H767V544H725V332Z" fill="url(#logoFill)"/>
-    <path d="M875 332H917V544H875V332ZM875 332L990 492V544H949L875 440V332Z" fill="url(#logoFill)"/>
-    <path d="M1010 228L1028 184L1046 228L1090 246L1046 264L1028 308L1010 264L966 246L1010 228Z" fill="{spark_color}" fill-opacity="0.88">
+    <rect x="664" y="282" width="272" height="272" rx="64" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.16)"/>
+    <rect x="688" y="306" width="224" height="224" rx="46" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.08)"/>
+    <circle cx="822" cy="364" r="34" fill="{heart_color}"/>
+    <circle cx="832" cy="364" r="27" fill="rgba(84,120,255,0.96)"/>
+    <circle cx="800" cy="418" r="92" stroke="url(#crestFill)" stroke-width="3.6"/>
+    <circle cx="800" cy="418" r="70" stroke="rgba(255,255,255,0.14)" stroke-width="1.3"/>
+    <path d="M720 518V338H736L778 404L820 338H836V518H820V392L783 447H774L736 392V518H720Z" fill="white"/>
+    <path d="M858 338H874V518H858V338ZM858 338L960 470V518H942L858 406V338Z" fill="white"/>
+    <path d="M690 554C708 525 732 515 764 514C745 536 742 559 750 582C722 580 703 571 690 554Z" fill="{heart_color}"/>
+    <path d="M738 578C752 557 772 548 797 547C784 564 783 584 789 602C766 600 750 593 738 578Z" fill="{heart_color}" fill-opacity="0.84"/>
+    <path d="M1018 236L1034 194L1050 236L1092 252L1050 268L1034 310L1018 268L976 252L1018 236Z" fill="{spark_color}" fill-opacity="0.9">
       <animate attributeName="opacity" values="0.48;0.92;0.48" dur="7s" repeatCount="indefinite"/>
     </path>
-    <path d="M564 596L576 566L588 596L618 608L588 620L576 650L564 620L534 608L564 596Z" fill="rgba(255,255,255,0.74)">
+    <path d="M560 602L572 570L584 602L616 614L584 626L572 658L560 626L528 614L560 602Z" fill="rgba(255,255,255,0.74)">
       <animate attributeName="opacity" values="0.24;0.72;0.24" dur="6s" repeatCount="indefinite"/>
     </path>
   </g>
 
   <g>
-    <text x="160" y="642" fill="rgba(159,232,255,0.86)" font-size="20" font-weight="700" letter-spacing="10" font-family="'Avenir Next','PingFang SC','Microsoft YaHei','Noto Sans SC',sans-serif">REALTIME VISUAL NARRATIVE SYSTEM</text>
+    <text x="160" y="642" fill="rgba(159,232,255,0.86)" font-size="20" font-weight="700" letter-spacing="10" font-family="'Avenir Next','PingFang SC','Microsoft YaHei','Noto Sans SC',sans-serif">MOON ARC VISUAL NARRATIVE SYSTEM</text>
     <text x="160" y="714" fill="white" font-size="78" font-weight="700" font-family="'Avenir Next','PingFang SC','Microsoft YaHei','Noto Sans SC',sans-serif">{safe_title}</text>
     <text x="160" y="776" fill="rgba(255,255,255,0.78)" font-size="28" font-weight="500" font-family="'PingFang SC','Microsoft YaHei','Noto Sans SC',sans-serif">{safe_subtitle}</text>
-    <text x="160" y="816" fill="rgba(255,255,255,0.58)" font-size="21" font-weight="500" font-family="'PingFang SC','Microsoft YaHei','Noto Sans SC',sans-serif">发布版本 {safe_version} · Tony Na Engine Runtime</text>
+    <text x="160" y="816" fill="rgba(255,255,255,0.58)" font-size="21" font-weight="500" font-family="'PingFang SC','Microsoft YaHei','Noto Sans SC',sans-serif">发布版本 {safe_version} · Tony Na Engine Moonlight Runtime</text>
   </g>
 </svg>
 """
@@ -3989,7 +4135,7 @@ def write_editor_root_launchers(build_dir: Path) -> dict:
 def build_editor_package_readme(target_label: str, runtime_info: dict | None = None) -> str:
     runtime_info = runtime_info or {}
     lines = [
-        "Tony Na Engine 编辑器本体正式打包（商业发布准备版）",
+        "Tony Na Engine 编辑器本体正式打包（维护发布准备版）",
         "",
         f"当前包类型：{target_label}",
         "这是一份可以直接分发的编辑器桌面包，里面已经带了编辑器前端、样板项目、导出模板和启动器。",
@@ -4034,7 +4180,7 @@ def build_editor_package_readme(target_label: str, runtime_info: dict | None = N
             "- desktop_runtime：Windows 导出真壳说明目录",
             "- projects / exports：空目录，后续会在这里生成你的项目和导出结果",
             "",
-            "如果你准备继续做正式商业发布，还可以直接看这些：",
+            "如果你准备继续维护桌面发布链，还可以直接看这些：",
             f"- {EDITOR_COMMERCIAL_README_NAME}",
             f"- {EDITOR_SIGNING_GUIDE_NAME}",
             f"- {EDITOR_SIGNING_ENV_EXAMPLE_NAME}",
@@ -4048,7 +4194,7 @@ def build_editor_package_readme(target_label: str, runtime_info: dict | None = N
                 "",
                 "macOS 附加说明：",
                 f"- {EDITOR_MAC_APP_NAME} 已经会把编辑器资源一起打进去，双击即可直接启动。",
-                "- 如果后面补上开发者签名与公证，它就更接近真正可分发的商业安装版。",
+                "- 如果后面补上开发者签名与公证，它就更接近真正可分发的正式安装版。",
             ]
         )
     return "\n".join(lines) + "\n"
@@ -4068,10 +4214,10 @@ def write_editor_distribution_snapshot(build_dir: Path, config: dict) -> Path:
 
 def copy_editor_signing_support_files(target_dir: Path) -> dict:
     target_dir.mkdir(parents=True, exist_ok=True)
-    guide_source = ROOT_DIR / EDITOR_SIGNING_GUIDE_NAME
-    env_source = ROOT_DIR / EDITOR_SIGNING_ENV_EXAMPLE_NAME
-    check_script_source = ROOT_DIR / EDITOR_SIGNING_CHECK_SCRIPT_NAME
-    check_command_source = ROOT_DIR / EDITOR_SIGNING_CHECK_COMMAND_NAME
+    guide_source = EDITOR_SIGNING_GUIDE_SOURCE
+    env_source = EDITOR_SIGNING_ENV_EXAMPLE_SOURCE
+    check_script_source = EDITOR_SIGNING_CHECK_SCRIPT_SOURCE
+    check_command_source = EDITOR_SIGNING_CHECK_COMMAND_SOURCE
     guide_target = target_dir / EDITOR_SIGNING_GUIDE_NAME
     env_target = target_dir / EDITOR_SIGNING_ENV_EXAMPLE_NAME
     check_script_target = target_dir / EDITOR_SIGNING_CHECK_SCRIPT_NAME
@@ -4181,7 +4327,7 @@ def build_editor_windows_installer_base_name(config: dict) -> str:
 def build_editor_windows_installer_script(config: dict) -> str:
     app_name = config.get("productName") or "Tony Na Engine Editor"
     app_id = (config.get("windows") or {}).get("appId") or config.get("bundleIdentifier") or "com.tonyna.engine.editor"
-    publisher = (config.get("windows") or {}).get("publisher") or config.get("companyName") or "Tony Na Studio"
+    publisher = (config.get("windows") or {}).get("publisher") or config.get("companyName") or "Tony Na Engine Project"
     website = config.get("website") or "https://example.com"
     support_url = config.get("website") or website
     support_email = config.get("supportEmail") or "support@example.com"
@@ -4481,7 +4627,7 @@ def attempt_macos_editor_signing(build_dir: Path, app_path: Path | None, install
     }
 
     if sys.platform != "darwin" or not app_path:
-        result["statusLabel"] = "当前平台未执行 mac 商业签名"
+        result["statusLabel"] = "当前平台未执行 mac 签名"
         return result
 
     codesign_path = shutil.which("codesign")
@@ -4593,7 +4739,7 @@ def build_editor_commercial_readme(
     extra_notes: list[str] | None = None,
 ) -> str:
     lines = [
-        f"Tony Na Engine 编辑器商业发布说明（{platform_label}）",
+        f"Tony Na Engine 编辑器发布维护说明（{platform_label}）",
         "",
         f"发行配置文件：{config_path}",
         f"本次打包快照：{distribution_snapshot_path.name}",
@@ -4601,7 +4747,7 @@ def build_editor_commercial_readme(
         f"包标识：{config.get('bundleIdentifier')}",
         f"发行方：{config.get('publisherName')}",
         f"公司名：{config.get('companyName')}",
-        f"商业发布状态：{signing_result.get('statusLabel')}",
+        f"维护发布状态：{signing_result.get('statusLabel')}",
         f"Windows 安装器编译状态：{signing_result.get('windowsInstallerStatusLabel') or '未编译（待配置 Inno Setup 编译器）'}",
         f"Windows 安装器签名状态：{signing_result.get('windowsSigningStatusLabel') or '未签名（待配置 Windows 证书/签名工具）'}",
         f"签名操作手册：{EDITOR_SIGNING_GUIDE_NAME}",
@@ -4609,14 +4755,14 @@ def build_editor_commercial_readme(
         f"签名前自检脚本：{EDITOR_SIGNING_CHECK_SCRIPT_NAME}",
         f"签名前自检启动器：{EDITOR_SIGNING_CHECK_COMMAND_NAME}",
         "",
-        "如果你要把它作为真正的商业安装版对外分发，最后还需要确认这些：",
+        "如果你要继续维护正式安装包与签名链，最后还需要确认这些：",
         "1. 填好 editor_distribution.json 里的发行信息。",
         f"2. 如需 mac 正式分发，请提供 {EDITOR_MAC_APP_IDENTITY_ENV} / {EDITOR_MAC_INSTALLER_IDENTITY_ENV} / {EDITOR_MAC_NOTARY_PROFILE_ENV}。",
         f"3. 如需 Windows 正式分发，请提供 {EDITOR_WINDOWS_SIGNTOOL_ENV}，以及证书主题/指纹/PFX（见发行配置）。",
         "4. Windows 包里会附带 Inno Setup 脚本模板；Linux 包里会附带安装脚本和桌面入口。",
         "5. 如果已经配置好 Inno Setup 编译器，Windows 包会直接多出一个可分发的 .exe 安装器。",
         "6. 先运行签名前自检脚本，确认当前机器上的签名工具、证书和公证配置是否齐全。",
-        "7. 真正公开发布前，建议再做一轮完整人工安装与启动走查。",
+        "7. 对外发布前，建议再做一轮完整人工安装与启动走查。",
     ]
     if extra_notes:
         lines.extend(["", *extra_notes])
@@ -4655,7 +4801,17 @@ def copy_editor_distribution_tree(target_dir: Path) -> None:
     target_dir.mkdir(parents=True, exist_ok=True)
 
     for file_name in EDITOR_EXPORT_FILES:
-        shutil.copy2(ROOT_DIR / file_name, target_dir / file_name)
+        if file_name == EDITOR_SIGNING_GUIDE_NAME:
+            source_path = EDITOR_SIGNING_GUIDE_SOURCE
+        elif file_name == EDITOR_SIGNING_ENV_EXAMPLE_NAME:
+            source_path = EDITOR_SIGNING_ENV_EXAMPLE_SOURCE
+        elif file_name == EDITOR_SIGNING_CHECK_SCRIPT_NAME:
+            source_path = EDITOR_SIGNING_CHECK_SCRIPT_SOURCE
+        elif file_name == EDITOR_SIGNING_CHECK_COMMAND_NAME:
+            source_path = EDITOR_SIGNING_CHECK_COMMAND_SOURCE
+        else:
+            source_path = ROOT_DIR / file_name
+        shutil.copy2(source_path, target_dir / file_name)
 
     for directory_name in EDITOR_EXPORT_DIRECTORIES:
         source_dir = ROOT_DIR / directory_name
@@ -5044,7 +5200,7 @@ def export_editor_suite_platform_package(
         "timestampUrl": "",
     }
     signing_result = {
-        "statusLabel": "当前平台未执行商业签名",
+        "statusLabel": "当前平台未执行签名",
         "appSigned": False,
         "installerSigned": False,
         "notarized": False,
@@ -5269,6 +5425,73 @@ def ensure_export_runtime_cache_dir() -> Path:
     return EXPORT_RUNTIME_CACHE_DIR
 
 
+def download_remote_file(url: str, target_path: Path) -> None:
+    request = Request(url, headers={"User-Agent": "Mozilla/5.0 TonyNaEngine/1.0"})
+    with urlopen(request) as response, target_path.open("wb") as output:
+        shutil.copyfileobj(response, output)
+
+
+def get_nwjs_macos_arch() -> str:
+    override = str(os.environ.get("TONY_NA_NWJS_MACOS_ARCH") or "").strip().lower()
+    if override in {"arm64", "x64"}:
+        return override
+    machine = platform.machine().lower()
+    return "arm64" if machine in {"arm64", "aarch64"} else "x64"
+
+
+def get_nwjs_runtime_config(platform_key: str) -> dict:
+    config = dict(NWJS_GAME_RUNTIME_PLATFORM_CONFIG[platform_key])
+    if platform_key == NWJS_GAME_PLATFORM_MACOS:
+        macos_arch = get_nwjs_macos_arch()
+        archive_name = f"nwjs-{NWJS_RUNTIME_VERSION}-osx-{macos_arch}.zip"
+        config["archiveName"] = archive_name
+        config["runtimeCacheSuffix"] = f"osx_{macos_arch}"
+        config["archLabel"] = "Apple Silicon" if macos_arch == "arm64" else "Intel"
+    return config
+
+
+def get_nwjs_runtime_archive_name(platform_key: str) -> str:
+    return str(get_nwjs_runtime_config(platform_key).get("archiveName") or "")
+
+
+def get_nwjs_runtime_download_url(platform_key: str) -> str:
+    archive_name = get_nwjs_runtime_archive_name(platform_key)
+    return f"https://dl.nwjs.io/{NWJS_RUNTIME_VERSION}/{archive_name}"
+
+
+def get_nwjs_runtime_cache_dir(platform_key: str) -> Path:
+    config = get_nwjs_runtime_config(platform_key)
+    return ensure_export_runtime_cache_dir() / f"nwjs_{NWJS_RUNTIME_VERSION}_{config['runtimeCacheSuffix']}"
+
+
+def get_nwjs_runtime_dir_override_env_var(platform_key: str) -> str:
+    return f"TONY_NA_NWJS_RUNTIME_DIR_{platform_key.upper()}"
+
+
+def get_nwjs_runtime_archive_override_env_var(platform_key: str) -> str:
+    return f"TONY_NA_NWJS_RUNTIME_ARCHIVE_{platform_key.upper()}"
+
+
+def strip_archive_extensions(name: str) -> str:
+    for suffix in (".tar.gz", ".zip", ".tgz", ".tar.xz", ".tar"):
+        if name.endswith(suffix):
+            return name[: -len(suffix)]
+    return Path(name).stem
+
+
+def get_nwjs_local_runtime_dirs(platform_key: str) -> list[Path]:
+    config = get_nwjs_runtime_config(platform_key)
+    local_dirs: list[Path] = []
+    for base_dir in LOCAL_NWJS_RUNTIME_DIRS:
+        if base_dir not in local_dirs:
+            local_dirs.append(base_dir)
+    for subdir_name in config.get("localRuntimeDirs") or []:
+        candidate = ROOT_DIR / "desktop_runtime" / str(subdir_name)
+        if candidate not in local_dirs:
+            local_dirs.append(candidate)
+    return local_dirs
+
+
 def ensure_local_nwjs_runtime_dropin_guide() -> Path:
     guide_dir = ROOT_DIR / "desktop_runtime"
     guide_dir.mkdir(parents=True, exist_ok=True)
@@ -5276,116 +5499,220 @@ def ensure_local_nwjs_runtime_dropin_guide() -> Path:
     lines = [
         "Tony Na Engine · NW.js 本地运行壳投放说明",
         "",
-        "如果你想在外网受限的环境里也导出真正的 Windows .exe 桌面包，可以把 NW.js Windows x64 运行壳手动放到这里。",
+        "如果你想在外网受限的环境里导出真正的原生桌面包，可以把 NW.js 运行壳手动放到这里。",
+        "",
+        "当前支持这些运行壳：",
+        f"- Windows：{get_nwjs_runtime_archive_name(NWJS_GAME_PLATFORM_WINDOWS)}",
+        f"- macOS：{get_nwjs_runtime_archive_name(NWJS_GAME_PLATFORM_MACOS)}",
+        f"- Linux：{get_nwjs_runtime_archive_name(NWJS_GAME_PLATFORM_LINUX)}",
         "",
         "支持这几种放法：",
-        f"1. 直接把压缩包放成：{NWJS_WINDOWS_RUNTIME_ARCHIVE_NAME}",
-        f"2. 解压成目录放成：nwjs-{NWJS_WINDOWS_RUNTIME_VERSION}-win-x64",
-        "3. 或者用环境变量指定：TONY_NA_NWJS_RUNTIME_DIR / TONY_NA_NWJS_RUNTIME_ZIP",
+        "1. 直接把压缩包放进 desktop_runtime/ 或对应平台子目录（windows / macos / linux）",
+        "2. 解压成目录后放进去",
+        "3. 或者用环境变量指定：TONY_NA_NWJS_RUNTIME_DIR_<PLATFORM> / TONY_NA_NWJS_RUNTIME_ARCHIVE_<PLATFORM>",
+        "   例如：TONY_NA_NWJS_RUNTIME_DIR_WINDOWS、TONY_NA_NWJS_RUNTIME_ARCHIVE_MACOS",
         "",
-        "编辑器下次导出 Windows 桌面包时，会先找这里的本地运行壳，再尝试联网下载。",
+        "编辑器下次导出桌面包时，会先找这里的本地运行壳，再尝试联网下载。",
     ]
     guide_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return guide_path
 
 
-def describe_nwjs_runtime_requirements() -> str:
-    required_files = " / ".join(NWJS_REQUIRED_RUNTIME_FILES)
-    required_dirs = " / ".join(NWJS_REQUIRED_RUNTIME_DIRS)
+def describe_nwjs_runtime_requirements(platform_key: str) -> str:
+    config = get_nwjs_runtime_config(platform_key)
+    required_files = " / ".join(config.get("requiredFiles") or [])
+    required_dirs = " / ".join(config.get("requiredDirs") or [])
     return f"至少要包含这些文件：{required_files}；以及这些目录：{required_dirs}"
 
 
-def validate_nwjs_runtime_dir(runtime_dir: Path) -> list[str]:
+def find_nwjs_macos_app_bundle(runtime_dir: Path) -> Path | None:
+    if runtime_dir.name.endswith(".app"):
+        return runtime_dir
+    direct_bundle = runtime_dir / "nwjs.app"
+    if direct_bundle.is_dir():
+        return direct_bundle
+    first_bundle = next((item for item in runtime_dir.glob("*.app") if item.is_dir()), None)
+    return first_bundle
+
+
+def normalize_nwjs_runtime_dir(platform_key: str, runtime_dir: Path) -> Path:
+    if platform_key == NWJS_GAME_PLATFORM_MACOS and runtime_dir.name.endswith(".app"):
+        return runtime_dir.parent
+    return runtime_dir
+
+
+def validate_nwjs_runtime_dir(platform_key: str, runtime_dir: Path) -> list[str]:
+    runtime_root = normalize_nwjs_runtime_dir(platform_key, runtime_dir)
+    config = get_nwjs_runtime_config(platform_key)
     missing_items: list[str] = []
-    for file_name in NWJS_REQUIRED_RUNTIME_FILES:
-        if not (runtime_dir / file_name).is_file():
+
+    if platform_key == NWJS_GAME_PLATFORM_MACOS:
+        app_bundle = find_nwjs_macos_app_bundle(runtime_root)
+        if app_bundle is None:
+            return [str(config.get("appBundleName") or "nwjs.app")]
+        for file_name in config.get("requiredFiles") or []:
+            if not (app_bundle / file_name).is_file():
+                missing_items.append(f"{app_bundle.name}/{file_name}")
+        for dir_name in config.get("requiredDirs") or []:
+            if not (app_bundle / dir_name).is_dir():
+                missing_items.append(f"{app_bundle.name}/{dir_name}/")
+        return missing_items
+
+    for file_name in config.get("requiredFiles") or []:
+        if not (runtime_root / file_name).is_file():
             missing_items.append(file_name)
-    for dir_name in NWJS_REQUIRED_RUNTIME_DIRS:
-        if not (runtime_dir / dir_name).is_dir():
+    for dir_name in config.get("requiredDirs") or []:
+        if not (runtime_root / dir_name).is_dir():
             missing_items.append(f"{dir_name}/")
     return missing_items
 
 
-def extract_nwjs_windows_runtime_archive(archive_path: Path, runtime_dir: Path) -> None:
+def copytree_with_symlinks(source: Path, target: Path) -> None:
+    shutil.copytree(source, target, dirs_exist_ok=True, symlinks=True)
+
+
+def extract_nwjs_runtime_archive(platform_key: str, archive_path: Path, runtime_dir: Path) -> None:
     if runtime_dir.exists():
         shutil.rmtree(runtime_dir, ignore_errors=True)
     runtime_dir.mkdir(parents=True, exist_ok=True)
 
     try:
-        with zipfile.ZipFile(archive_path, "r") as zip_file:
-            for member in zip_file.infolist():
-                member_name = member.filename.replace("\\", "/")
-                if not member_name or member_name.endswith("/"):
-                    continue
+        with tempfile.TemporaryDirectory() as temp_dir_name:
+            temp_dir = Path(temp_dir_name)
+            archive_name = archive_path.name.lower()
+            if archive_name.endswith(".zip"):
+                extracted = False
+                for command in (
+                    ["ditto", "-x", "-k", str(archive_path), str(temp_dir)],
+                    ["unzip", "-q", str(archive_path), "-d", str(temp_dir)],
+                ):
+                    try:
+                        subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        extracted = True
+                        break
+                    except (FileNotFoundError, subprocess.CalledProcessError):
+                        continue
+                if not extracted:
+                    with zipfile.ZipFile(archive_path, "r") as zip_file:
+                        zip_file.extractall(temp_dir)
+            else:
+                extracted = False
+                try:
+                    subprocess.run(
+                        ["tar", "-xf", str(archive_path), "-C", str(temp_dir)],
+                        check=True,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    extracted = True
+                except (FileNotFoundError, subprocess.CalledProcessError):
+                    pass
+                if not extracted:
+                    with tarfile.open(archive_path, "r:*") as archive:
+                        try:
+                            archive.extractall(temp_dir, filter="data")
+                        except (TypeError, OSError):
+                            archive.extractall(temp_dir)
 
-                parts = [part for part in member_name.split("/") if part]
-                if len(parts) < 2:
-                    continue
-
-                relative_parts = parts[1:]
-                target_path = runtime_dir.joinpath(*relative_parts)
-                target_path.parent.mkdir(parents=True, exist_ok=True)
-                with zip_file.open(member, "r") as source, target_path.open("wb") as output:
-                    shutil.copyfileobj(source, output)
+            extracted_entries = [entry for entry in temp_dir.iterdir() if entry.name != "__MACOSX"]
+            if (
+                len(extracted_entries) == 1
+                and extracted_entries[0].is_dir()
+                and not (platform_key == NWJS_GAME_PLATFORM_MACOS and extracted_entries[0].name.endswith(".app"))
+            ):
+                source_root = extracted_entries[0]
+            else:
+                source_root = temp_dir
+            for item in source_root.iterdir():
+                target_path = runtime_dir / item.name
+                if item.is_dir():
+                    copytree_with_symlinks(item, target_path)
+                else:
+                    target_path.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(item, target_path)
     except Exception as error:
-        raise ValueError(f"解压 Windows 桌面运行壳失败：{error}") from error
+        raise ValueError(f"解压 {get_nwjs_runtime_config(platform_key)['label']} 桌面运行壳失败：{error}") from error
 
-    missing_items = validate_nwjs_runtime_dir(runtime_dir)
+    missing_items = validate_nwjs_runtime_dir(platform_key, runtime_dir)
     if missing_items:
         raise ValueError(
-            "Windows 桌面运行壳缺少这些关键文件或目录："
+            f"{get_nwjs_runtime_config(platform_key)['label']} 桌面运行壳缺少这些关键文件或目录："
             + " / ".join(missing_items)
             + "。"
-            + describe_nwjs_runtime_requirements()
+            + describe_nwjs_runtime_requirements(platform_key)
         )
 
 
-def resolve_local_nwjs_runtime_source(cache_dir: Path) -> tuple[str, Path, str] | None:
+def resolve_nwjs_runtime_dir_override(platform_key: str) -> Path | None:
+    env_var_names = [get_nwjs_runtime_dir_override_env_var(platform_key)]
+    if platform_key == NWJS_GAME_PLATFORM_WINDOWS:
+        env_var_names.append("TONY_NA_NWJS_RUNTIME_DIR")
+    for env_var_name in env_var_names:
+        env_value = str(os.environ.get(env_var_name) or "").strip()
+        if env_value:
+            candidate = Path(env_value).expanduser()
+            if candidate.exists():
+                return candidate
+    return None
+
+
+def resolve_nwjs_runtime_archive_override(platform_key: str) -> Path | None:
+    env_var_names = [get_nwjs_runtime_archive_override_env_var(platform_key)]
+    if platform_key == NWJS_GAME_PLATFORM_WINDOWS:
+        env_var_names.append("TONY_NA_NWJS_RUNTIME_ZIP")
+    for env_var_name in env_var_names:
+        env_value = str(os.environ.get(env_var_name) or "").strip()
+        if env_value:
+            candidate = Path(env_value).expanduser()
+            if candidate.is_file():
+                return candidate
+    return None
+
+
+def resolve_local_nwjs_runtime_source(platform_key: str, cache_dir: Path) -> tuple[str, Path, str] | None:
     runtime_dir = cache_dir / "runtime"
-    if runtime_dir.is_dir() and (runtime_dir / "nw.exe").is_file():
+    if runtime_dir.is_dir() and not validate_nwjs_runtime_dir(platform_key, runtime_dir):
         return "runtime_dir", runtime_dir, "本地缓存的 NW.js 运行壳"
 
-    archive_path = cache_dir / NWJS_WINDOWS_RUNTIME_ARCHIVE_NAME
+    archive_path = cache_dir / get_nwjs_runtime_archive_name(platform_key)
     if archive_path.is_file():
         return "archive", archive_path, "你手动放进缓存目录的 NW.js 压缩包"
 
-    env_runtime_dir = str(os.environ.get("TONY_NA_NWJS_RUNTIME_DIR") or "").strip()
-    if env_runtime_dir:
-        candidate_dir = Path(env_runtime_dir).expanduser()
-        if candidate_dir.is_dir() and (candidate_dir / "nw.exe").is_file():
-            return "runtime_dir", candidate_dir, "环境变量指定的 NW.js 目录"
+    env_runtime_dir = resolve_nwjs_runtime_dir_override(platform_key)
+    if env_runtime_dir and env_runtime_dir.exists():
+        return "runtime_dir", env_runtime_dir, "环境变量指定的 NW.js 目录"
 
-    env_runtime_zip = str(os.environ.get("TONY_NA_NWJS_RUNTIME_ZIP") or "").strip()
-    if env_runtime_zip:
-        candidate_zip = Path(env_runtime_zip).expanduser()
-        if candidate_zip.is_file():
-            return "archive", candidate_zip, "环境变量指定的 NW.js 压缩包"
+    env_runtime_archive = resolve_nwjs_runtime_archive_override(platform_key)
+    if env_runtime_archive:
+        return "archive", env_runtime_archive, "环境变量指定的 NW.js 压缩包"
 
     candidate_names = [
-        NWJS_WINDOWS_RUNTIME_ARCHIVE_NAME,
-        f"nwjs-{NWJS_WINDOWS_RUNTIME_VERSION}-win-x64",
+        get_nwjs_runtime_archive_name(platform_key),
+        strip_archive_extensions(get_nwjs_runtime_archive_name(platform_key)),
+        *(["nwjs.app"] if platform_key == NWJS_GAME_PLATFORM_MACOS else []),
     ]
-    for base_dir in LOCAL_NWJS_RUNTIME_DIRS:
+    for base_dir in get_nwjs_local_runtime_dirs(platform_key):
         for candidate_name in candidate_names:
             candidate_path = base_dir / candidate_name
-            if candidate_path.is_dir() and (candidate_path / "nw.exe").is_file():
+            if candidate_path.is_dir() and not validate_nwjs_runtime_dir(platform_key, candidate_path):
                 return "runtime_dir", candidate_path, "项目目录里手动放入的 NW.js 目录"
-            if candidate_path.is_file() and candidate_path.suffix.lower() == ".zip":
+            if candidate_path.is_file():
                 return "archive", candidate_path, "项目目录里手动放入的 NW.js 压缩包"
 
     return None
 
 
-def ensure_nwjs_windows_runtime() -> tuple[Path, bool, str, str]:
-    cache_dir = ensure_export_runtime_cache_dir() / f"nwjs_{NWJS_WINDOWS_RUNTIME_VERSION}_win_x64"
+def ensure_nwjs_runtime(platform_key: str) -> tuple[Path, bool, str, str]:
+    config = get_nwjs_runtime_config(platform_key)
+    cache_dir = get_nwjs_runtime_cache_dir(platform_key)
     runtime_dir = cache_dir / "runtime"
     cache_dir.mkdir(parents=True, exist_ok=True)
 
-    local_source = resolve_local_nwjs_runtime_source(cache_dir)
+    local_source = resolve_local_nwjs_runtime_source(platform_key, cache_dir)
     if local_source:
         source_type, source_path, source_label = local_source
         if source_type == "runtime_dir":
-            missing_items = validate_nwjs_runtime_dir(source_path)
+            missing_items = validate_nwjs_runtime_dir(platform_key, source_path)
             if missing_items:
                 raise ValueError(
                     "本地 NW.js 运行壳不完整，缺少这些关键文件或目录："
@@ -5393,28 +5720,27 @@ def ensure_nwjs_windows_runtime() -> tuple[Path, bool, str, str]:
                     + "。"
                     + f"你可以参考 {ROOT_DIR / 'desktop_runtime' / LOCAL_NWJS_RUNTIME_GUIDE_NAME}。"
                 )
-            return source_path, False, source_label, str(source_path)
-        extract_nwjs_windows_runtime_archive(source_path, runtime_dir)
+            return normalize_nwjs_runtime_dir(platform_key, source_path), False, source_label, str(source_path)
+        extract_nwjs_runtime_archive(platform_key, source_path, runtime_dir)
         return runtime_dir, False, source_label, str(source_path)
 
-    archive_path = cache_dir / NWJS_WINDOWS_RUNTIME_ARCHIVE_NAME
+    archive_path = cache_dir / get_nwjs_runtime_archive_name(platform_key)
 
     try:
-        with urlopen(NWJS_WINDOWS_RUNTIME_DOWNLOAD_URL) as response, archive_path.open("wb") as output:
-            shutil.copyfileobj(response, output)
+        download_remote_file(get_nwjs_runtime_download_url(platform_key), archive_path)
     except Exception as error:
-        raise ValueError(f"下载 Windows 桌面运行壳失败：{error}") from error
+        raise ValueError(f"下载 {config['label']} 桌面运行壳失败：{error}") from error
 
-    extract_nwjs_windows_runtime_archive(archive_path, runtime_dir)
+    extract_nwjs_runtime_archive(platform_key, archive_path, runtime_dir)
     return runtime_dir, True, "这次自动下载的 NW.js 运行壳", str(archive_path)
 
 
-def build_windows_package_json(project: dict, icon_path: str | None = None) -> dict:
+def build_nwjs_package_json(project: dict, target_label: str, icon_path: str | None = None) -> dict:
     resolution = project.get("resolution") or {"width": 1280, "height": 720}
     return {
         "name": sanitize_export_filename(project.get("projectId") or project.get("title") or "tony_na_game"),
         "version": get_export_release_version(project),
-        "description": f"{project.get('title') or 'Tony Na Engine Game'} Windows 桌面发布包",
+        "description": f"{project.get('title') or 'Tony Na Engine Game'} {target_label}",
         "main": "index.html",
         "window": {
             "title": project.get("title") or "Tony Na Engine Game",
@@ -5447,6 +5773,167 @@ def build_nwjs_single_file_executable(runtime_executable: Path, package_path: Pa
         shutil.copyfileobj(package_file, output)
 
 
+def sanitize_bundle_identifier_fragment(value: str) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9]+", "-", value or "").strip("-").lower()
+    return cleaned or "game"
+
+
+def build_game_bundle_identifier(project: dict) -> str:
+    fragment = sanitize_bundle_identifier_fragment(project.get("projectId") or project.get("title") or "game")
+    return f"com.tonyna.engine.game.{fragment}"
+
+
+def build_macos_app_bundle_name(project: dict) -> str:
+    safe_name = re.sub(r'[\\/:*?"<>|]+', " ", str(project.get("title") or "Tony Na Engine Game")).strip()
+    return f"{safe_name or 'Tony Na Engine Game'}.app"
+
+
+def build_macos_executable_name(project: dict) -> str:
+    return sanitize_export_filename(project.get("projectId") or project.get("title") or "TonyNaGame")
+
+
+def customize_macos_nwjs_app_bundle(app_bundle_path: Path, project: dict, release_version: str) -> str:
+    info_plist_path = app_bundle_path / "Contents" / "Info.plist"
+    executable_dir = app_bundle_path / "Contents" / "MacOS"
+    if not info_plist_path.is_file():
+        raise ValueError("macOS 运行壳缺少 Contents/Info.plist。")
+
+    with info_plist_path.open("rb") as plist_file:
+        info_plist = plistlib.load(plist_file)
+
+    old_executable_name = str(info_plist.get("CFBundleExecutable") or "nwjs")
+    new_executable_name = build_macos_executable_name(project)
+    old_executable_path = executable_dir / old_executable_name
+    new_executable_path = executable_dir / new_executable_name
+
+    if old_executable_path.is_file() and old_executable_name != new_executable_name:
+        old_executable_path.rename(new_executable_path)
+    elif old_executable_path.is_file():
+        new_executable_path = old_executable_path
+
+    if not new_executable_path.is_file():
+        raise ValueError("macOS 运行壳缺少可执行文件。")
+    new_executable_path.chmod(0o755)
+
+    project_title = str(project.get("title") or "Tony Na Engine Game").strip() or "Tony Na Engine Game"
+    info_plist["CFBundleDisplayName"] = project_title
+    info_plist["CFBundleName"] = project_title
+    info_plist["CFBundleExecutable"] = new_executable_name
+    info_plist["CFBundleIdentifier"] = build_game_bundle_identifier(project)
+    info_plist["CFBundleShortVersionString"] = release_version
+    info_plist["CFBundleVersion"] = release_version
+
+    with info_plist_path.open("wb") as plist_file:
+        plistlib.dump(info_plist, plist_file)
+
+    return new_executable_name
+
+
+def build_macos_start_helper_script(app_bundle_name: str) -> str:
+    return f"""#!/bin/zsh
+set -e
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+APP_PATH="$SCRIPT_DIR/{app_bundle_name}"
+
+if [ ! -d "$APP_PATH" ]; then
+  echo "没有找到应用包：$APP_PATH"
+  read -r -n 1 -s -p "按任意键关闭..."
+  echo
+  exit 1
+fi
+
+open "$APP_PATH"
+"""
+
+
+def write_macos_start_helper(build_dir: Path, app_bundle_name: str) -> Path:
+    helper_path = build_dir / "启动游戏.command"
+    helper_path.write_text(build_macos_start_helper_script(app_bundle_name), encoding="utf-8")
+    helper_path.chmod(0o755)
+    return helper_path
+
+
+def build_linux_start_helper_script(target_name: str) -> str:
+    return f"""#!/bin/sh
+set -eu
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+GAME_TARGET="$SCRIPT_DIR/{target_name}"
+
+if [ ! -f "$GAME_TARGET" ]; then
+  echo "没有找到启动文件：$GAME_TARGET"
+  exit 1
+fi
+
+chmod +x "$GAME_TARGET"
+exec "$GAME_TARGET"
+"""
+
+
+def write_linux_start_helper(build_dir: Path, target_name: str) -> Path:
+    helper_path = build_dir / "启动游戏.sh"
+    helper_path.write_text(build_linux_start_helper_script(target_name), encoding="utf-8")
+    helper_path.chmod(0o755)
+    return helper_path
+
+
+def write_macos_package_readme(
+    build_dir: Path,
+    app_bundle_name: str,
+    start_helper_name: str,
+    runtime_downloaded: bool,
+    runtime_source_label: str,
+    manifest_name: str,
+    release_version: str,
+) -> Path:
+    readme_path = build_dir / "README_先看这里.txt"
+    lines = [
+        "Tony Na Engine macOS 桌面发布包",
+        "",
+        f"1. 优先双击 {start_helper_name}；也可以直接打开 {app_bundle_name}。",
+        "2. 如果你要发给别人，建议把整个文件夹一起打包，不要只拿出 .app 单独发。",
+        "3. 应用包里已经内嵌了 Runtime、试玩页面和素材文件。",
+        f"4. {manifest_name} 里记录了这次导出的版本、素材缺口和运行壳信息。",
+        "",
+        f"当前发布版本：{release_version}",
+    ]
+    lines.append("")
+    if runtime_downloaded:
+        lines.append(f"这次导出时已经自动下载并缓存了 macOS 运行壳：NW.js {NWJS_RUNTIME_VERSION}")
+    else:
+        lines.append(f"这次桌面包直接使用了本地 NW.js 运行壳：{runtime_source_label or '已使用本地或缓存运行壳'}")
+    readme_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return readme_path
+
+
+def write_linux_package_readme(
+    build_dir: Path,
+    executable_name: str,
+    start_helper_name: str,
+    runtime_downloaded: bool,
+    runtime_source_label: str,
+    manifest_name: str,
+    release_version: str,
+) -> Path:
+    readme_path = build_dir / "README_先看这里.txt"
+    lines = [
+        "Tony Na Engine Linux 桌面发布包",
+        "",
+        f"1. 优先双击 {start_helper_name}；也可以直接运行 ./{executable_name}。",
+        "2. 如果当前文件没有可执行权限，可以先执行：chmod +x 启动游戏.sh",
+        "3. app/assets 文件夹里是已经复制进来的素材文件。",
+        f"4. {manifest_name} 里记录了这次导出的版本、素材缺口和运行壳信息。",
+        "",
+        f"当前发布版本：{release_version}",
+    ]
+    lines.append("")
+    if runtime_downloaded:
+        lines.append(f"这次导出时已经自动下载并缓存了 Linux 运行壳：NW.js {NWJS_RUNTIME_VERSION}")
+    else:
+        lines.append(f"这次桌面包直接使用了本地 NW.js 运行壳：{runtime_source_label or '已使用本地或缓存运行壳'}")
+    readme_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return readme_path
+
+
 def write_windows_package_readme(
     build_dir: Path,
     executable_name: str,
@@ -5474,7 +5961,7 @@ def write_windows_package_readme(
     ]
     if runtime_mode == "nwjs" and runtime_downloaded:
         lines.append("")
-        lines.append(f"这次导出时已经自动下载并缓存了 Windows 运行壳：NW.js {NWJS_WINDOWS_RUNTIME_VERSION}")
+        lines.append(f"这次导出时已经自动下载并缓存了 Windows 运行壳：NW.js {NWJS_RUNTIME_VERSION}")
     elif runtime_mode == "nwjs":
         lines.append("")
         lines.append(
@@ -5574,7 +6061,7 @@ def export_windows_nwjs_build() -> dict:
     root_icon_files = write_export_icon_files(build_dir, icon_png_bytes, icon_ico_bytes)
     (app_dir / "package.json").write_text(
         json.dumps(
-            build_windows_package_json(bundle["project"], icon_path=app_icon_files["pngRelativePath"]),
+            build_nwjs_package_json(bundle["project"], "Windows 桌面发布包", icon_path=app_icon_files["pngRelativePath"]),
             ensure_ascii=False,
             indent=2,
         )
@@ -5593,7 +6080,9 @@ def export_windows_nwjs_build() -> dict:
 
     try:
         create_package_nw_archive(app_dir, package_path)
-        runtime_dir, runtime_downloaded, runtime_source_label, runtime_source_path = ensure_nwjs_windows_runtime()
+        runtime_dir, runtime_downloaded, runtime_source_label, runtime_source_path = ensure_nwjs_runtime(
+            NWJS_GAME_PLATFORM_WINDOWS
+        )
         for runtime_path in runtime_dir.iterdir():
             target_path = build_dir / runtime_path.name
             if runtime_path.is_dir():
@@ -5649,7 +6138,7 @@ def export_windows_nwjs_build() -> dict:
             "modeLabel": runtime_mode_label,
             "packageMode": package_mode,
             "packageModeLabel": package_mode_label,
-            "version": NWJS_WINDOWS_RUNTIME_VERSION if runtime_mode == "nwjs" else "",
+            "version": NWJS_RUNTIME_VERSION if runtime_mode == "nwjs" else "",
             "warning": runtime_warning,
             "sourceLabel": runtime_source_label,
             "sourcePath": runtime_source_path,
@@ -5683,9 +6172,267 @@ def export_windows_nwjs_build() -> dict:
         "runtimeModeLabel": runtime_mode_label,
         "packageMode": package_mode,
         "packageModeLabel": package_mode_label,
-        "runtimeVersion": NWJS_WINDOWS_RUNTIME_VERSION if runtime_mode == "nwjs" else "",
+        "runtimeVersion": NWJS_RUNTIME_VERSION if runtime_mode == "nwjs" else "",
         "runtimeDownloaded": runtime_downloaded,
         "runtimeWarning": runtime_warning,
+        "runtimeSourceLabel": runtime_source_label,
+        "runtimeSourcePath": runtime_source_path,
+        "runtimeGuidePath": str(runtime_guide_path),
+        "releaseVersion": release_version,
+        "manifestPath": str(manifest_path),
+        "manifestPublicUrl": f"/exports/{build_dir.name}/{manifest_path.name}",
+        "iconPngPath": str(root_icon_files["pngPath"]),
+        "iconIcoPath": str(root_icon_files["icoPath"]),
+        "iconPngPublicUrl": f"/exports/{build_dir.name}/{root_icon_files['pngFileName']}",
+        "iconIcoPublicUrl": f"/exports/{build_dir.name}/{root_icon_files['icoFileName']}",
+        "splashPath": str(root_splash_file["path"]),
+        "splashPublicUrl": f"/exports/{build_dir.name}/{root_splash_file['fileName']}",
+        "readmePath": str(readme_path),
+        "copiedAssets": copied_assets,
+        "missingAssets": len(missing_assets),
+        "missingAssetNames": [asset.get("name") or asset.get("id") or "未命名素材" for asset in missing_assets[:5]],
+    }
+
+
+def export_macos_nwjs_build() -> dict:
+    build_dir = create_export_build_dir("macos_build")
+    bundle = load_project_bundle()
+    runtime_guide_path = ensure_local_nwjs_runtime_dropin_guide()
+    app_dir = build_dir / "app"
+    app_dir.mkdir(parents=True, exist_ok=True)
+    export_assets_doc, copied_assets, missing_assets = copy_assets_for_export(bundle["assets"], app_dir)
+    export_payload = build_export_payload(bundle, export_assets_doc, copied_assets, missing_assets)
+    release_version = get_export_release_version(bundle["project"])
+    splash_file = write_export_splash_asset(app_dir, bundle["project"], release_version, "Tony Na Engine macOS 桌面发布包")
+    root_splash_file = write_export_splash_asset(build_dir, bundle["project"], release_version, "Tony Na Engine macOS 桌面发布包")
+    export_payload["buildInfo"]["releaseVersion"] = release_version
+    export_payload["buildInfo"]["exportTargetLabel"] = "macOS 桌面包"
+    export_payload["buildInfo"]["splashImageUrl"] = splash_file["relativePath"]
+    write_export_app_files(app_dir, export_payload)
+    icon_png_bytes = build_export_icon_png(bundle["project"])
+    icon_ico_bytes = build_export_icon_ico(icon_png_bytes)
+    app_icon_files = write_export_icon_files(app_dir, icon_png_bytes, icon_ico_bytes)
+    root_icon_files = write_export_icon_files(build_dir, icon_png_bytes, icon_ico_bytes)
+    (app_dir / "package.json").write_text(
+        json.dumps(
+            build_nwjs_package_json(bundle["project"], "macOS 桌面发布包", icon_path=app_icon_files["pngRelativePath"]),
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    package_path = build_dir / "package.nw"
+    create_package_nw_archive(app_dir, package_path)
+    runtime_dir, runtime_downloaded, runtime_source_label, runtime_source_path = ensure_nwjs_runtime(NWJS_GAME_PLATFORM_MACOS)
+    runtime_bundle = find_nwjs_macos_app_bundle(runtime_dir)
+    if runtime_bundle is None:
+        raise ValueError("macOS 运行壳里没有找到 nwjs.app。")
+
+    app_bundle_name = build_macos_app_bundle_name(bundle["project"])
+    launcher_path = build_dir / app_bundle_name
+    copytree_with_symlinks(runtime_bundle, launcher_path)
+    executable_name = customize_macos_nwjs_app_bundle(launcher_path, bundle["project"], release_version)
+    resources_dir = launcher_path / "Contents" / "Resources"
+    resources_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(package_path, resources_dir / "app.nw")
+    package_path.unlink(missing_ok=True)
+    start_helper_path = write_macos_start_helper(build_dir, app_bundle_name)
+
+    manifest = build_export_manifest(
+        bundle,
+        target=EXPORT_TARGET_MACOS_NWJS,
+        target_label="macOS 桌面包",
+        build_id=build_dir.name,
+        copied_assets=copied_assets,
+        missing_assets=missing_assets,
+        extra_files={
+            "launcher": app_bundle_name,
+            "archive": f"{build_dir.name}.zip",
+            "appEntry": "app/index.html",
+            "appPackage": "app/package.json",
+            "iconPng": root_icon_files["pngFileName"],
+            "iconIco": root_icon_files["icoFileName"],
+            "launchSplash": root_splash_file["fileName"],
+            "runtimeGuide": str(runtime_guide_path),
+            "startHelper": start_helper_path.name,
+        },
+        runtime_info={
+            "mode": "nwjs",
+            "modeLabel": "NW.js 原生 .app 应用包",
+            "packageMode": "macos_app",
+            "packageModeLabel": "原生 .app 应用包",
+            "version": NWJS_RUNTIME_VERSION,
+            "warning": "",
+            "sourceLabel": runtime_source_label,
+            "sourcePath": runtime_source_path,
+            "archLabel": get_nwjs_runtime_config(NWJS_GAME_PLATFORM_MACOS).get("archLabel") or "",
+        },
+    )
+    manifest_path = write_export_manifest(build_dir, manifest)
+    readme_path = write_macos_package_readme(
+        build_dir,
+        app_bundle_name,
+        start_helper_path.name,
+        runtime_downloaded,
+        runtime_source_label,
+        manifest_path.name,
+        release_version,
+    )
+    archive_path = Path(shutil.make_archive(str(build_dir), "zip", root_dir=build_dir.parent, base_dir=build_dir.name))
+
+    return {
+        "target": EXPORT_TARGET_MACOS_NWJS,
+        "targetLabel": "macOS 桌面包",
+        "buildId": build_dir.name,
+        "buildPath": str(build_dir),
+        "launcherPath": str(launcher_path),
+        "launcherFileName": app_bundle_name,
+        "appBundlePath": str(launcher_path),
+        "appBundleName": app_bundle_name,
+        "appExecutableName": executable_name,
+        "startHelperPath": str(start_helper_path),
+        "startHelperFileName": start_helper_path.name,
+        "archivePath": str(archive_path),
+        "archivePublicUrl": f"/exports/{archive_path.name}",
+        "runtimeMode": "nwjs",
+        "runtimeModeLabel": "NW.js 原生 .app 应用包",
+        "packageMode": "macos_app",
+        "packageModeLabel": "原生 .app 应用包",
+        "runtimeVersion": NWJS_RUNTIME_VERSION,
+        "runtimeDownloaded": runtime_downloaded,
+        "runtimeWarning": "",
+        "runtimeSourceLabel": runtime_source_label,
+        "runtimeSourcePath": runtime_source_path,
+        "runtimeGuidePath": str(runtime_guide_path),
+        "releaseVersion": release_version,
+        "manifestPath": str(manifest_path),
+        "manifestPublicUrl": f"/exports/{build_dir.name}/{manifest_path.name}",
+        "iconPngPath": str(root_icon_files["pngPath"]),
+        "iconIcoPath": str(root_icon_files["icoPath"]),
+        "iconPngPublicUrl": f"/exports/{build_dir.name}/{root_icon_files['pngFileName']}",
+        "iconIcoPublicUrl": f"/exports/{build_dir.name}/{root_icon_files['icoFileName']}",
+        "splashPath": str(root_splash_file["path"]),
+        "splashPublicUrl": f"/exports/{build_dir.name}/{root_splash_file['fileName']}",
+        "readmePath": str(readme_path),
+        "copiedAssets": copied_assets,
+        "missingAssets": len(missing_assets),
+        "missingAssetNames": [asset.get("name") or asset.get("id") or "未命名素材" for asset in missing_assets[:5]],
+        "runtimeArchLabel": get_nwjs_runtime_config(NWJS_GAME_PLATFORM_MACOS).get("archLabel") or "",
+    }
+
+
+def export_linux_nwjs_build() -> dict:
+    build_dir = create_export_build_dir("linux_build")
+    bundle = load_project_bundle()
+    runtime_guide_path = ensure_local_nwjs_runtime_dropin_guide()
+    app_dir = build_dir / "app"
+    app_dir.mkdir(parents=True, exist_ok=True)
+    export_assets_doc, copied_assets, missing_assets = copy_assets_for_export(bundle["assets"], app_dir)
+    export_payload = build_export_payload(bundle, export_assets_doc, copied_assets, missing_assets)
+    release_version = get_export_release_version(bundle["project"])
+    splash_file = write_export_splash_asset(app_dir, bundle["project"], release_version, "Tony Na Engine Linux 桌面发布包")
+    root_splash_file = write_export_splash_asset(build_dir, bundle["project"], release_version, "Tony Na Engine Linux 桌面发布包")
+    export_payload["buildInfo"]["releaseVersion"] = release_version
+    export_payload["buildInfo"]["exportTargetLabel"] = "Linux 桌面包"
+    export_payload["buildInfo"]["splashImageUrl"] = splash_file["relativePath"]
+    write_export_app_files(app_dir, export_payload)
+    icon_png_bytes = build_export_icon_png(bundle["project"])
+    icon_ico_bytes = build_export_icon_ico(icon_png_bytes)
+    app_icon_files = write_export_icon_files(app_dir, icon_png_bytes, icon_ico_bytes)
+    root_icon_files = write_export_icon_files(build_dir, icon_png_bytes, icon_ico_bytes)
+    (app_dir / "package.json").write_text(
+        json.dumps(
+            build_nwjs_package_json(bundle["project"], "Linux 桌面发布包", icon_path=app_icon_files["pngRelativePath"]),
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    package_path = build_dir / "package.nw"
+    create_package_nw_archive(app_dir, package_path)
+    runtime_dir, runtime_downloaded, runtime_source_label, runtime_source_path = ensure_nwjs_runtime(NWJS_GAME_PLATFORM_LINUX)
+    for runtime_path in runtime_dir.iterdir():
+        target_path = build_dir / runtime_path.name
+        if runtime_path.is_dir():
+            copytree_with_symlinks(runtime_path, target_path)
+        else:
+            shutil.copy2(runtime_path, target_path)
+
+    executable_name = sanitize_export_filename(bundle["project"].get("title") or "") or ""
+    if executable_name in {"", "asset"}:
+        executable_name = sanitize_export_filename(bundle["project"].get("projectId") or "") or "TonyNaGame"
+
+    default_executable = build_dir / "nw"
+    launcher_path = build_dir / executable_name
+    if not default_executable.is_file():
+        raise ValueError("Linux 运行壳复制完成了，但没有找到 nw。")
+    shutil.copy2(default_executable, launcher_path)
+    launcher_path.chmod(0o755)
+
+    start_helper_path = write_linux_start_helper(build_dir, executable_name)
+    manifest = build_export_manifest(
+        bundle,
+        target=EXPORT_TARGET_LINUX_NWJS,
+        target_label="Linux 桌面包",
+        build_id=build_dir.name,
+        copied_assets=copied_assets,
+        missing_assets=missing_assets,
+        extra_files={
+            "launcher": executable_name,
+            "archive": f"{build_dir.name}.tar.gz",
+            "appEntry": "app/index.html",
+            "appPackage": "app/package.json",
+            "iconPng": root_icon_files["pngFileName"],
+            "iconIco": root_icon_files["icoFileName"],
+            "launchSplash": root_splash_file["fileName"],
+            "runtimeGuide": str(runtime_guide_path),
+            "startHelper": start_helper_path.name,
+        },
+        runtime_info={
+            "mode": "nwjs",
+            "modeLabel": "NW.js 原生 Linux 可执行目录",
+            "packageMode": "linux_folder",
+            "packageModeLabel": "原生 Linux 可执行目录",
+            "version": NWJS_RUNTIME_VERSION,
+            "warning": "",
+            "sourceLabel": runtime_source_label,
+            "sourcePath": runtime_source_path,
+        },
+    )
+    manifest_path = write_export_manifest(build_dir, manifest)
+    readme_path = write_linux_package_readme(
+        build_dir,
+        executable_name,
+        start_helper_path.name,
+        runtime_downloaded,
+        runtime_source_label,
+        manifest_path.name,
+        release_version,
+    )
+    archive_path = Path(shutil.make_archive(str(build_dir), "gztar", root_dir=build_dir.parent, base_dir=build_dir.name))
+
+    return {
+        "target": EXPORT_TARGET_LINUX_NWJS,
+        "targetLabel": "Linux 桌面包",
+        "buildId": build_dir.name,
+        "buildPath": str(build_dir),
+        "launcherPath": str(launcher_path),
+        "launcherFileName": executable_name,
+        "startHelperPath": str(start_helper_path),
+        "startHelperFileName": start_helper_path.name,
+        "archivePath": str(archive_path),
+        "archivePublicUrl": f"/exports/{archive_path.name}",
+        "runtimeMode": "nwjs",
+        "runtimeModeLabel": "NW.js 原生 Linux 可执行目录",
+        "packageMode": "linux_folder",
+        "packageModeLabel": "原生 Linux 可执行目录",
+        "runtimeVersion": NWJS_RUNTIME_VERSION,
+        "runtimeDownloaded": runtime_downloaded,
+        "runtimeWarning": "",
         "runtimeSourceLabel": runtime_source_label,
         "runtimeSourcePath": runtime_source_path,
         "runtimeGuidePath": str(runtime_guide_path),
@@ -5760,7 +6507,7 @@ def export_editor_desktop_build() -> dict:
         "timestampUrl": "",
     }
     signing_result = {
-        "statusLabel": "当前平台未执行商业签名",
+        "statusLabel": "当前平台未执行签名",
         "appSigned": False,
         "installerSigned": False,
         "notarized": False,
@@ -5966,6 +6713,10 @@ def export_project_build(target: str = EXPORT_TARGET_WEB) -> dict:
     target_name = str(target or EXPORT_TARGET_WEB).strip() or EXPORT_TARGET_WEB
     if target_name == EXPORT_TARGET_WINDOWS_NWJS:
         return export_windows_nwjs_build()
+    if target_name == EXPORT_TARGET_MACOS_NWJS:
+        return export_macos_nwjs_build()
+    if target_name == EXPORT_TARGET_LINUX_NWJS:
+        return export_linux_nwjs_build()
     if target_name == EXPORT_TARGET_EDITOR_DESKTOP:
         return export_editor_desktop_build()
     if target_name == EXPORT_TARGET_EDITOR_DESKTOP_SUITE:
