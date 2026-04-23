@@ -476,7 +476,7 @@ class BrowserPlaywrightSmokeTests(unittest.TestCase):
         self.open_preview_screen()
 
         self.page.get_by_role("button", name="导出 macOS 桌面包").click()
-        self.page.get_by_text("原生 .app 应用包").wait_for(timeout=20000)
+        self.page.locator(".detail-meta").filter(has_text="原生 .app 应用包").first.wait_for(timeout=20000)
         mac_download_link = self.page.get_by_role("link", name="下载桌面包压缩档")
         mac_download_link.wait_for(timeout=40000)
 
@@ -489,7 +489,7 @@ class BrowserPlaywrightSmokeTests(unittest.TestCase):
         self.assertGreater(mac_download_path.stat().st_size, 0)
 
         self.page.get_by_role("button", name="导出 Linux 桌面包").click()
-        self.page.get_by_text("原生 Linux 可执行目录").wait_for(timeout=20000)
+        self.page.locator(".detail-meta").filter(has_text="原生 Linux 可执行目录").first.wait_for(timeout=20000)
         linux_download_link = self.page.get_by_role("link", name="下载桌面包压缩档")
         linux_download_link.wait_for(timeout=40000)
 

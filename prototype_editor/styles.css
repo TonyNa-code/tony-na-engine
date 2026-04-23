@@ -7088,8 +7088,11 @@ html[data-ui-theme="light"] .start-brand-mark {
 
 .topbar {
   align-items: start;
-  gap: 16px;
-  grid-template-columns: minmax(260px, auto) minmax(0, 1fr) minmax(320px, auto);
+  gap: 16px 18px;
+  grid-template-columns: minmax(260px, 1fr) minmax(320px, auto);
+  grid-template-areas:
+    "brand meta"
+    "nav nav";
 }
 
 .nav,
@@ -7101,13 +7104,23 @@ html[data-ui-theme="light"] .start-brand-mark {
 }
 
 .nav {
+  grid-area: nav;
+  min-width: 0;
   justify-content: flex-start;
   padding-bottom: 2px;
 }
 
 .topbar-meta {
+  grid-area: meta;
+  min-width: 0;
   max-width: 100%;
   padding-bottom: 2px;
+  justify-content: flex-end;
+}
+
+.brand {
+  grid-area: brand;
+  min-width: 0;
 }
 
 .nav::-webkit-scrollbar,
@@ -7223,6 +7236,10 @@ html[data-ui-theme="light"] .ui-theme-mode-button {
 @media (max-width: 1180px) {
   .topbar {
     grid-template-columns: 1fr;
+    grid-template-areas:
+      "brand"
+      "meta"
+      "nav";
   }
 
   .topbar-meta,
