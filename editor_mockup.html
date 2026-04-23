@@ -1,0 +1,1044 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tony Na Engine V1 原型</title>
+    <style>
+      :root {
+        --bg: #f7efe6;
+        --bg-soft: #fffaf5;
+        --panel: rgba(255, 250, 245, 0.86);
+        --panel-strong: #fff8f0;
+        --ink: #3f312b;
+        --muted: #8a756a;
+        --line: rgba(109, 82, 65, 0.16);
+        --brand: #d96f43;
+        --brand-deep: #b45129;
+        --accent: #f2c48d;
+        --accent-soft: #fde7cf;
+        --good: #4f8b58;
+        --warn: #c46b3c;
+        --shadow: 0 18px 40px rgba(107, 72, 49, 0.12);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: "Avenir Next", "PingFang SC", "Hiragino Sans GB",
+          "Microsoft YaHei", sans-serif;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at top left, rgba(255, 255, 255, 0.7), transparent 32%),
+          radial-gradient(circle at bottom right, rgba(242, 196, 141, 0.32), transparent 30%),
+          linear-gradient(135deg, #f9f0e6 0%, #f4e7d9 45%, #efe5dc 100%);
+      }
+
+      .shell {
+        width: min(1440px, calc(100vw - 32px));
+        margin: 20px auto;
+        border: 1px solid rgba(115, 87, 68, 0.12);
+        border-radius: 28px;
+        background: rgba(255, 251, 246, 0.76);
+        backdrop-filter: blur(20px);
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+        padding: 18px 22px;
+        background: linear-gradient(180deg, rgba(255, 248, 240, 0.95), rgba(255, 247, 239, 0.72));
+        border-bottom: 1px solid var(--line);
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+
+      .brand-mark {
+        width: 42px;
+        height: 42px;
+        border-radius: 14px;
+        display: grid;
+        place-items: center;
+        background: linear-gradient(135deg, #d96f43, #efb06e);
+        color: white;
+        font-size: 20px;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.36);
+      }
+
+      .brand h1 {
+        margin: 0;
+        font-family: "Georgia", "Times New Roman", serif;
+        font-size: 24px;
+        font-weight: 600;
+      }
+
+      .brand p {
+        margin: 2px 0 0;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .nav button,
+      .button,
+      .chip {
+        border: 0;
+        border-radius: 999px;
+        background: transparent;
+        color: var(--ink);
+        cursor: pointer;
+        font: inherit;
+      }
+
+      .nav button {
+        padding: 10px 16px;
+        color: var(--muted);
+        transition: 160ms ease;
+      }
+
+      .nav button.active {
+        color: white;
+        background: linear-gradient(135deg, var(--brand), var(--brand-deep));
+        box-shadow: 0 8px 18px rgba(190, 93, 50, 0.22);
+      }
+
+      .quick-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .button {
+        padding: 11px 16px;
+        background: white;
+        border: 1px solid rgba(111, 83, 63, 0.12);
+        box-shadow: 0 10px 18px rgba(120, 87, 66, 0.08);
+      }
+
+      .button.primary {
+        color: white;
+        background: linear-gradient(135deg, var(--brand), var(--brand-deep));
+      }
+
+      .screen {
+        display: none;
+        padding: 24px;
+      }
+
+      .screen.active {
+        display: block;
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: 2fr 1.1fr;
+        gap: 18px;
+        margin-bottom: 18px;
+      }
+
+      .panel {
+        background: var(--panel);
+        border: 1px solid rgba(118, 92, 74, 0.12);
+        border-radius: 24px;
+        padding: 18px;
+        box-shadow: 0 12px 28px rgba(120, 87, 66, 0.06);
+      }
+
+      .panel h2,
+      .panel h3 {
+        margin: 0;
+      }
+
+      .muted {
+        color: var(--muted);
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.64);
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .cover-card {
+        display: grid;
+        grid-template-columns: 240px 1fr;
+        gap: 18px;
+      }
+
+      .cover {
+        min-height: 250px;
+        border-radius: 20px;
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.55)),
+          linear-gradient(135deg, #f3c39f 0%, #edb487 36%, #d46d4c 100%);
+        position: relative;
+        overflow: hidden;
+      }
+
+      .cover::before,
+      .cover::after {
+        content: "";
+        position: absolute;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.28);
+      }
+
+      .cover::before {
+        width: 140px;
+        height: 140px;
+        left: -10px;
+        top: 18px;
+      }
+
+      .cover::after {
+        width: 180px;
+        height: 180px;
+        right: -40px;
+        bottom: -36px;
+      }
+
+      .cover-label {
+        position: absolute;
+        left: 20px;
+        bottom: 18px;
+        color: white;
+        text-shadow: 0 2px 12px rgba(77, 35, 17, 0.26);
+      }
+
+      .cover-label strong {
+        display: block;
+        font-family: "Georgia", "Times New Roman", serif;
+        font-size: 28px;
+      }
+
+      .stack {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+
+      .action-row,
+      .chip-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .chip {
+        padding: 8px 12px;
+        background: var(--accent-soft);
+        color: #8d542e;
+      }
+
+      .summary-grid,
+      .library-grid,
+      .characters-grid,
+      .preview-grid {
+        display: grid;
+        gap: 18px;
+      }
+
+      .summary-grid {
+        grid-template-columns: repeat(3, 1fr);
+      }
+
+      .stat {
+        padding: 16px;
+        border-radius: 20px;
+        background: white;
+        border: 1px solid rgba(125, 97, 78, 0.1);
+      }
+
+      .stat strong {
+        display: block;
+        margin-top: 6px;
+        font-size: 28px;
+        font-family: "Georgia", "Times New Roman", serif;
+      }
+
+      .project-list,
+      .scene-tree,
+      .block-list,
+      .asset-grid,
+      .character-list,
+      .check-list {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .row-card {
+        padding: 14px 16px;
+        border-radius: 18px;
+        border: 1px solid rgba(115, 86, 67, 0.12);
+        background: white;
+      }
+
+      .row-card strong {
+        display: block;
+      }
+
+      .dashboard-grid {
+        display: grid;
+        grid-template-columns: 1.5fr 1fr;
+        gap: 18px;
+      }
+
+      .editor-grid,
+      .library-grid,
+      .characters-grid,
+      .preview-grid {
+        grid-template-columns: 240px minmax(0, 1fr) 300px;
+      }
+
+      .toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-bottom: 14px;
+      }
+
+      .toolbar .button {
+        padding-inline: 14px;
+        background: var(--panel-strong);
+      }
+
+      .tree-title,
+      .section-title {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 14px;
+      }
+
+      .scene-item,
+      .character-item {
+        padding: 12px 14px;
+        border-radius: 16px;
+        background: white;
+        border: 1px solid rgba(115, 86, 67, 0.1);
+      }
+
+      .scene-item.active,
+      .character-item.active {
+        border-color: rgba(217, 111, 67, 0.36);
+        background: linear-gradient(180deg, rgba(255, 245, 236, 1), rgba(255, 251, 247, 1));
+      }
+
+      .block-card {
+        padding: 16px;
+        border-radius: 20px;
+        border: 1px solid rgba(113, 85, 67, 0.12);
+        background: white;
+      }
+
+      .block-type {
+        display: inline-flex;
+        align-items: center;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: var(--accent-soft);
+        color: #8d542e;
+        font-size: 12px;
+        margin-bottom: 10px;
+      }
+
+      .choice-list {
+        margin-top: 10px;
+        display: grid;
+        gap: 8px;
+      }
+
+      .choice-item {
+        padding: 10px 12px;
+        border-radius: 14px;
+        background: #fff8f2;
+        border: 1px dashed rgba(188, 108, 63, 0.3);
+      }
+
+      .property-list {
+        display: grid;
+        gap: 12px;
+      }
+
+      .property {
+        padding: 12px 14px;
+        border-radius: 16px;
+        background: white;
+        border: 1px solid rgba(114, 84, 67, 0.12);
+      }
+
+      .property label {
+        display: block;
+        margin-bottom: 6px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .property .value {
+        font-weight: 600;
+      }
+
+      .mini-preview {
+        margin-top: 14px;
+        min-height: 160px;
+        border-radius: 18px;
+        overflow: hidden;
+        background:
+          linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.28)),
+          linear-gradient(180deg, #f1ca93 0%, #f0b27c 34%, #b86d55 100%);
+        position: relative;
+      }
+
+      .sprite {
+        position: absolute;
+        bottom: 0;
+        width: 100px;
+        height: 145px;
+        border-radius: 24px 24px 0 0;
+        background: rgba(255, 251, 248, 0.72);
+        border: 1px solid rgba(255, 255, 255, 0.44);
+      }
+
+      .sprite.left {
+        left: 24px;
+      }
+
+      .sprite.center {
+        left: calc(50% - 50px);
+      }
+
+      .dialog-box {
+        position: absolute;
+        left: 14px;
+        right: 14px;
+        bottom: 12px;
+        padding: 12px 14px;
+        border-radius: 16px;
+        background: rgba(255, 251, 247, 0.9);
+        backdrop-filter: blur(10px);
+      }
+
+      .asset-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .asset-card {
+        padding: 12px;
+        border-radius: 16px;
+        background: white;
+        border: 1px solid rgba(111, 83, 65, 0.12);
+      }
+
+      .asset-thumb {
+        height: 96px;
+        border-radius: 14px;
+        margin-bottom: 10px;
+        background: linear-gradient(135deg, #f5d2b0, #f0b98a, #e28b63);
+      }
+
+      .asset-card.audio .asset-thumb {
+        background: linear-gradient(135deg, #ffe7c5, #f7cf90, #e0a66a);
+      }
+
+      .asset-card.voice .asset-thumb {
+        background: linear-gradient(135deg, #f7e8df, #ebb79f, #d98961);
+      }
+
+      .tag {
+        display: inline-flex;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: rgba(79, 139, 88, 0.1);
+        color: var(--good);
+        font-size: 12px;
+      }
+
+      .preview-window {
+        min-height: 420px;
+        border-radius: 26px;
+        overflow: hidden;
+        background:
+          linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.2)),
+          linear-gradient(180deg, #f6d9ac 0%, #eaa572 45%, #905742 100%);
+        position: relative;
+      }
+
+      .preview-window .sprite {
+        width: 150px;
+        height: 260px;
+      }
+
+      .preview-window .sprite.left {
+        left: 80px;
+      }
+
+      .preview-window .sprite.center {
+        left: calc(50% - 75px);
+      }
+
+      .preview-window .dialog-box {
+        left: 24px;
+        right: 24px;
+        bottom: 22px;
+        padding: 18px;
+      }
+
+      .warning {
+        display: inline-flex;
+        padding: 7px 10px;
+        border-radius: 999px;
+        background: rgba(196, 107, 60, 0.12);
+        color: var(--warn);
+        font-size: 12px;
+      }
+
+      @media (max-width: 1180px) {
+        .hero,
+        .dashboard-grid,
+        .editor-grid,
+        .library-grid,
+        .characters-grid,
+        .preview-grid,
+        .cover-card,
+        .summary-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .quick-actions {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-mark">TN</div>
+          <div>
+            <h1>Tony Na Engine V1 原型</h1>
+            <p>给完全不会编程的 galgame 创作者准备的编辑器</p>
+          </div>
+        </div>
+        <nav class="nav">
+          <button class="active" data-screen="dashboard">首页</button>
+          <button data-screen="story">写剧情</button>
+          <button data-screen="assets">管素材</button>
+          <button data-screen="characters">管角色</button>
+          <button data-screen="preview">预览导出</button>
+        </nav>
+        <div class="quick-actions">
+          <button class="button">一键试玩</button>
+          <button class="button primary">导出游戏</button>
+        </div>
+      </header>
+
+      <main>
+        <section class="screen active" id="dashboard">
+          <div class="hero">
+            <div class="panel cover-card">
+              <div class="cover">
+                <div class="cover-label">
+                  <strong>心跳时差</strong>
+                  <span>校园恋爱 / 双路线 / 中文</span>
+                </div>
+              </div>
+              <div class="stack">
+                <span class="eyebrow">新手模式已开启</span>
+                <div>
+                  <h2>项目总览</h2>
+                  <p class="muted">
+                    你现在只需要关心剧情、角色和素材。复杂设置都藏在后面。
+                  </p>
+                </div>
+                <div class="chip-row">
+                  <span class="chip">上次编辑：今天 18:20</span>
+                  <span class="chip">模板：校园恋爱</span>
+                  <span class="chip">分辨率：1280 × 720</span>
+                </div>
+                <div class="action-row">
+                  <button class="button primary">继续上次编辑</button>
+                  <button class="button">新建游戏</button>
+                  <button class="button">使用模板开始</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="panel">
+              <div class="section-title">
+                <h3>项目检查</h3>
+                <span class="tag">可以试玩</span>
+              </div>
+              <div class="check-list">
+                <div class="row-card">
+                  <strong>素材状态正常</strong>
+                  <span class="muted">背景 18 张，立绘 9 张，BGM 6 首</span>
+                </div>
+                <div class="row-card">
+                  <strong>分支检查通过</strong>
+                  <span class="muted">没有发现跳转丢失的问题</span>
+                </div>
+                <div class="row-card">
+                  <strong>建议补充 2 句语音</strong>
+                  <span class="muted">场景「走廊告白」里有台词还没绑定语音</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="dashboard-grid">
+            <div class="panel">
+              <div class="section-title">
+                <h3>快速开始</h3>
+                <span class="muted">第一次做也能按顺序走</span>
+              </div>
+              <div class="project-list">
+                <div class="row-card">
+                  <strong>1. 先建角色</strong>
+                  <span class="muted">先把主角和女主角名字、颜色、立绘准备好</span>
+                </div>
+                <div class="row-card">
+                  <strong>2. 再导素材</strong>
+                  <span class="muted">把背景、音乐、音效、语音拖进资源库</span>
+                </div>
+                <div class="row-card">
+                  <strong>3. 去写剧情</strong>
+                  <span class="muted">用卡片方式写台词、选项和场景跳转</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="panel">
+              <div class="section-title">
+                <h3>最近项目</h3>
+                <span class="muted">可以直接接着做</span>
+              </div>
+              <div class="project-list">
+                <div class="row-card">
+                  <strong>心跳时差</strong>
+                  <span class="muted">今天 18:20 编辑过</span>
+                </div>
+                <div class="row-card">
+                  <strong>星光之夜</strong>
+                  <span class="muted">昨天 22:14 编辑过</span>
+                </div>
+                <div class="row-card">
+                  <strong>空白练习项目</strong>
+                  <span class="muted">三天前创建</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="summary-grid" style="margin-top: 18px">
+            <div class="stat">
+              <span class="muted">章节数</span>
+              <strong>4</strong>
+            </div>
+            <div class="stat">
+              <span class="muted">场景数</span>
+              <strong>23</strong>
+            </div>
+            <div class="stat">
+              <span class="muted">剧情卡片数</span>
+              <strong>186</strong>
+            </div>
+          </div>
+        </section>
+
+        <section class="screen" id="story">
+          <div class="toolbar">
+            <button class="button primary">加台词</button>
+            <button class="button">加旁白</button>
+            <button class="button">加选项</button>
+            <button class="button">切背景</button>
+            <button class="button">显角色</button>
+            <button class="button">播音乐</button>
+            <button class="button">更多</button>
+          </div>
+
+          <div class="editor-grid">
+            <div class="panel">
+              <div class="tree-title">
+                <h3>章节和场景</h3>
+                <span class="chip">新建场景</span>
+              </div>
+              <div class="scene-tree">
+                <div class="scene-item">
+                  <strong>第 1 章 开学第一天</strong>
+                  <span class="muted">3 个场景</span>
+                </div>
+                <div class="scene-item active">
+                  <strong>场景 01 教室黄昏</strong>
+                  <span class="muted">当前正在编辑</span>
+                </div>
+                <div class="scene-item">
+                  <strong>场景 02 放学走廊</strong>
+                  <span class="muted">双选项分支</span>
+                </div>
+                <div class="scene-item">
+                  <strong>场景 03 屋顶晚风</strong>
+                  <span class="muted">告白前过渡</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="panel">
+              <div class="section-title">
+                <h3>剧情卡片</h3>
+                <span class="muted">像写小说一样往下排</span>
+              </div>
+              <div class="block-list">
+                <div class="block-card">
+                  <span class="block-type">切换背景</span>
+                  <strong>教室_黄昏.png</strong>
+                  <p class="muted">当前场景进入时显示这张背景。</p>
+                </div>
+                <div class="block-card">
+                  <span class="block-type">显示角色</span>
+                  <strong>林若曦 / 微笑 / 左侧</strong>
+                  <p class="muted">角色出场，默认淡入 0.4 秒。</p>
+                </div>
+                <div class="block-card">
+                  <span class="block-type">台词</span>
+                  <strong>林若曦：今天的风，好像有点甜。</strong>
+                  <p class="muted">语音：line_001.ogg</p>
+                </div>
+                <div class="block-card">
+                  <span class="block-type">台词</span>
+                  <strong>你：是吗？我怎么觉得是因为你心情很好。</strong>
+                  <p class="muted">语音：line_002.ogg</p>
+                </div>
+                <div class="block-card">
+                  <span class="block-type">选项</span>
+                  <strong>这里出现一次双选项分支</strong>
+                  <div class="choice-list">
+                    <div class="choice-item">A. 一起回家吧 -> 场景 02 放学走廊</div>
+                    <div class="choice-item">B. 我还有事 -> 场景 03 屋顶晚风</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="panel">
+              <div class="section-title">
+                <h3>当前卡片设置</h3>
+                <span class="warning">新手模式：已简化</span>
+              </div>
+              <div class="property-list">
+                <div class="property">
+                  <label>说话角色</label>
+                  <div class="value">林若曦</div>
+                </div>
+                <div class="property">
+                  <label>角色表情</label>
+                  <div class="value">微笑</div>
+                </div>
+                <div class="property">
+                  <label>绑定语音</label>
+                  <div class="value">line_001.ogg</div>
+                </div>
+                <div class="property">
+                  <label>台词内容</label>
+                  <div class="value">今天的风，好像有点甜。</div>
+                </div>
+              </div>
+
+              <div class="mini-preview">
+                <div class="sprite left"></div>
+                <div class="dialog-box">
+                  <strong>林若曦</strong>
+                  <div>今天的风，好像有点甜。</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="screen" id="assets">
+          <div class="library-grid">
+            <div class="panel">
+              <div class="tree-title">
+                <h3>素材分类</h3>
+                <span class="chip">批量导入</span>
+              </div>
+              <div class="scene-tree">
+                <div class="scene-item active">
+                  <strong>背景</strong>
+                  <span class="muted">18 个文件</span>
+                </div>
+                <div class="scene-item">
+                  <strong>立绘</strong>
+                  <span class="muted">9 个文件</span>
+                </div>
+                <div class="scene-item">
+                  <strong>CG</strong>
+                  <span class="muted">6 个文件</span>
+                </div>
+                <div class="scene-item">
+                  <strong>音乐</strong>
+                  <span class="muted">6 个文件</span>
+                </div>
+                <div class="scene-item">
+                  <strong>音效</strong>
+                  <span class="muted">12 个文件</span>
+                </div>
+                <div class="scene-item">
+                  <strong>语音</strong>
+                  <span class="muted">34 个文件</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="panel">
+              <div class="section-title">
+                <h3>背景素材</h3>
+                <span class="muted">拖进去就能用，不需要写路径</span>
+              </div>
+              <div class="asset-grid">
+                <div class="asset-card">
+                  <div class="asset-thumb"></div>
+                  <strong>教室_黄昏.png</strong>
+                  <div class="muted">已用于 3 个场景</div>
+                </div>
+                <div class="asset-card">
+                  <div class="asset-thumb"></div>
+                  <strong>校园门口_晴天.png</strong>
+                  <div class="muted">已用于 2 个场景</div>
+                </div>
+                <div class="asset-card audio">
+                  <div class="asset-thumb"></div>
+                  <strong>放学路上.mp3</strong>
+                  <div class="muted">可一键试听</div>
+                </div>
+                <div class="asset-card voice">
+                  <div class="asset-thumb"></div>
+                  <strong>line_001.ogg</strong>
+                  <div class="muted">已绑定到 1 句台词</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="panel">
+              <div class="section-title">
+                <h3>素材信息</h3>
+                <span class="tag">状态正常</span>
+              </div>
+              <div class="property-list">
+                <div class="property">
+                  <label>当前素材</label>
+                  <div class="value">教室_黄昏.png</div>
+                </div>
+                <div class="property">
+                  <label>类型</label>
+                  <div class="value">背景图片</div>
+                </div>
+                <div class="property">
+                  <label>被使用位置</label>
+                  <div class="value">场景 01 教室黄昏 / 场景 08 傍晚自习</div>
+                </div>
+                <div class="property">
+                  <label>可执行操作</label>
+                  <div class="value">预览 / 重命名 / 替换素材</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="screen" id="characters">
+          <div class="characters-grid">
+            <div class="panel">
+              <div class="tree-title">
+                <h3>角色列表</h3>
+                <span class="chip">新建角色</span>
+              </div>
+              <div class="character-list">
+                <div class="character-item active">
+                  <strong>林若曦</strong>
+                  <span class="muted">主女主 / 粉橙色名字</span>
+                </div>
+                <div class="character-item">
+                  <strong>顾言</strong>
+                  <span class="muted">玩家主角 / 深棕色名字</span>
+                </div>
+                <div class="character-item">
+                  <strong>苏晚晴</strong>
+                  <span class="muted">好友角色 / 浅金色名字</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="panel">
+              <div class="section-title">
+                <h3>角色信息</h3>
+                <span class="muted">先设好，写剧情时就能直接选</span>
+              </div>
+              <div class="property-list">
+                <div class="property">
+                  <label>角色名称</label>
+                  <div class="value">林若曦</div>
+                </div>
+                <div class="property">
+                  <label>显示颜色</label>
+                  <div class="value">珊瑚粉橙</div>
+                </div>
+                <div class="property">
+                  <label>默认站位</label>
+                  <div class="value">左侧</div>
+                </div>
+                <div class="property">
+                  <label>角色简介</label>
+                  <div class="value">看起来温柔，实际有点小恶作剧。</div>
+                </div>
+                <div class="property">
+                  <label>默认立绘</label>
+                  <div class="value">linruoxi_default.png</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="panel">
+              <div class="section-title">
+                <h3>表情和立绘</h3>
+                <span class="chip">添加表情</span>
+              </div>
+              <div class="asset-grid">
+                <div class="asset-card">
+                  <div class="asset-thumb"></div>
+                  <strong>默认</strong>
+                </div>
+                <div class="asset-card">
+                  <div class="asset-thumb"></div>
+                  <strong>微笑</strong>
+                </div>
+                <div class="asset-card">
+                  <div class="asset-thumb"></div>
+                  <strong>害羞</strong>
+                </div>
+                <div class="asset-card">
+                  <div class="asset-thumb"></div>
+                  <strong>生气</strong>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="screen" id="preview">
+          <div class="preview-grid">
+            <div class="panel">
+              <div class="tree-title">
+                <h3>试玩入口</h3>
+                <span class="chip">清空临时存档</span>
+              </div>
+              <div class="scene-tree">
+                <div class="scene-item">
+                  <strong>从开头试玩</strong>
+                  <span class="muted">适合完整检查流程</span>
+                </div>
+                <div class="scene-item active">
+                  <strong>从当前场景试玩</strong>
+                  <span class="muted">最快，适合边改边看</span>
+                </div>
+                <div class="scene-item">
+                  <strong>从当前卡片试玩</strong>
+                  <span class="muted">适合精修单句台词</span>
+                </div>
+                <div class="scene-item">
+                  <strong>模拟选择分支</strong>
+                  <span class="muted">提前看不同路线会去哪</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="panel">
+              <div class="section-title">
+                <h3>试玩窗口</h3>
+                <span class="muted">这里会看到接近正式游戏的效果</span>
+              </div>
+              <div class="preview-window">
+                <div class="sprite left"></div>
+                <div class="sprite center"></div>
+                <div class="dialog-box">
+                  <strong>林若曦</strong>
+                  <div>
+                    要是你今天愿意陪我一起走回去，我就告诉你一个秘密。
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="panel">
+              <div class="section-title">
+                <h3>导出和检查</h3>
+                <span class="warning">有 1 项建议处理</span>
+              </div>
+              <div class="check-list">
+                <div class="row-card">
+                  <strong>项目可以导出</strong>
+                  <span class="muted">核心素材和跳转都完整</span>
+                </div>
+                <div class="row-card">
+                  <strong>建议补语音</strong>
+                  <span class="muted">场景「屋顶晚风」有 2 句台词未绑定语音</span>
+                </div>
+                <div class="row-card">
+                  <strong>导出目标</strong>
+                  <span class="muted">Windows 版 / 网页试玩版</span>
+                </div>
+              </div>
+              <div class="action-row" style="margin-top: 14px">
+                <button class="button">检查项目问题</button>
+                <button class="button">导出网页试玩版</button>
+                <button class="button primary">导出 Windows 版</button>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script>
+      const buttons = document.querySelectorAll(".nav button");
+      const screens = document.querySelectorAll(".screen");
+
+      buttons.forEach((button) => {
+        button.addEventListener("click", () => {
+          const target = button.dataset.screen;
+
+          buttons.forEach((item) => item.classList.remove("active"));
+          screens.forEach((screen) => screen.classList.remove("active"));
+
+          button.classList.add("active");
+          document.getElementById(target).classList.add("active");
+        });
+      });
+    </script>
+  </body>
+</html>

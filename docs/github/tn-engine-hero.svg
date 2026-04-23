@@ -1,0 +1,107 @@
+<svg width="1280" height="520" viewBox="0 0 1280 520" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="140" y1="40" x2="1140" y2="480" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0B1322"/>
+      <stop offset="0.55" stop-color="#0E1628"/>
+      <stop offset="1" stop-color="#0A111D"/>
+    </linearGradient>
+    <radialGradient id="glowA" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(975 92) rotate(135) scale(350 260)">
+      <stop stop-color="#59D0FF" stop-opacity="0.38"/>
+      <stop offset="1" stop-color="#59D0FF" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowB" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(233 394) rotate(7.6) scale(410 250)">
+      <stop stop-color="#7A6CFF" stop-opacity="0.2"/>
+      <stop offset="1" stop-color="#7A6CFF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="line" x1="195" y1="94" x2="1065" y2="438" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#74D9FF" stop-opacity="0.9"/>
+      <stop offset="1" stop-color="#5C77FF" stop-opacity="0.22"/>
+    </linearGradient>
+    <linearGradient id="chip" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#0E1F36"/>
+      <stop offset="1" stop-color="#112742"/>
+    </linearGradient>
+    <filter id="soft" x="-40" y="-40" width="1360" height="600" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="18"/>
+    </filter>
+  </defs>
+
+  <rect width="1280" height="520" rx="30" fill="url(#bg)"/>
+  <rect x="26" y="26" width="1228" height="468" rx="24" stroke="rgba(131,214,255,0.18)" stroke-width="1"/>
+
+  <g opacity="0.34">
+    <path d="M120 392H1160" stroke="rgba(125,213,255,0.08)" stroke-width="1"/>
+    <path d="M120 324H1160" stroke="rgba(125,213,255,0.08)" stroke-width="1"/>
+    <path d="M120 256H1160" stroke="rgba(125,213,255,0.08)" stroke-width="1"/>
+    <path d="M120 188H1160" stroke="rgba(125,213,255,0.08)" stroke-width="1"/>
+    <path d="M120 120H1160" stroke="rgba(125,213,255,0.08)" stroke-width="1"/>
+    <path d="M228 88V438" stroke="rgba(125,213,255,0.08)" stroke-width="1"/>
+    <path d="M392 88V438" stroke="rgba(125,213,255,0.08)" stroke-width="1"/>
+    <path d="M556 88V438" stroke="rgba(125,213,255,0.08)" stroke-width="1"/>
+    <path d="M720 88V438" stroke="rgba(125,213,255,0.08)" stroke-width="1"/>
+    <path d="M884 88V438" stroke="rgba(125,213,255,0.08)" stroke-width="1"/>
+    <path d="M1048 88V438" stroke="rgba(125,213,255,0.08)" stroke-width="1"/>
+  </g>
+
+  <rect width="1280" height="520" rx="30" fill="url(#glowA)"/>
+  <rect width="1280" height="520" rx="30" fill="url(#glowB)"/>
+
+  <g filter="url(#soft)" opacity="0.6">
+    <ellipse cx="972" cy="110" rx="140" ry="80" fill="#4ED2FF"/>
+    <ellipse cx="240" cy="398" rx="160" ry="70" fill="#736BFF"/>
+  </g>
+
+  <g transform="translate(120 96)">
+    <rect x="0.5" y="0.5" width="152" height="152" rx="34" fill="rgba(9,17,29,0.76)" stroke="rgba(120,219,255,0.3)"/>
+    <circle cx="76.5" cy="76.5" r="56" stroke="url(#line)" stroke-width="2.2"/>
+    <circle cx="76.5" cy="76.5" r="43.5" stroke="rgba(116,217,255,0.22)" stroke-width="1.2"/>
+    <path d="M43 112V40H57L76 71L95 40H109V112H95V64L78.5 92H73L57 64V112H43Z" fill="#F1F8FF"/>
+  </g>
+
+  <g transform="translate(308 117)">
+    <text x="0" y="22" fill="#79DAFF" font-family="SFMono-Regular, Menlo, monospace" font-size="18" letter-spacing="4">TN-ENGINE // OPEN SOURCE PREVIEW</text>
+    <text x="0" y="98" fill="#F7FBFF" font-family="'Segoe UI', 'PingFang SC', sans-serif" font-size="58" font-weight="700" letter-spacing="1.2">Tony Na Engine</text>
+    <text x="0" y="145" fill="#B7C9DD" font-family="'Segoe UI', 'PingFang SC', sans-serif" font-size="25" letter-spacing="0.5">
+      为视觉小说与 Galgame 创作者准备的可视化引擎原型
+    </text>
+    <text x="0" y="182" fill="#90A8C4" font-family="'Segoe UI', 'PingFang SC', sans-serif" font-size="20">
+      用素材上传、台词输入、分支按钮、预览与导出，替代复杂代码工作流。
+    </text>
+  </g>
+
+  <g transform="translate(308 260)">
+    <rect x="0.5" y="0.5" width="232" height="44" rx="14" fill="url(#chip)" stroke="rgba(122,216,255,0.2)"/>
+    <text x="18" y="28" fill="#E5F4FF" font-family="'Segoe UI', 'PingFang SC', sans-serif" font-size="18">Visual Novel Editor</text>
+
+    <rect x="246.5" y="0.5" width="228" height="44" rx="14" fill="url(#chip)" stroke="rgba(122,216,255,0.2)"/>
+    <text x="264" y="28" fill="#E5F4FF" font-family="'Segoe UI', 'PingFang SC', sans-serif" font-size="18">Smoke + Playwright Tests</text>
+
+    <rect x="488.5" y="0.5" width="176" height="44" rx="14" fill="url(#chip)" stroke="rgba(122,216,255,0.2)"/>
+    <text x="507" y="28" fill="#E5F4FF" font-family="'Segoe UI', 'PingFang SC', sans-serif" font-size="18">mac / Win / Linux</text>
+
+    <rect x="678.5" y="0.5" width="202" height="44" rx="14" fill="url(#chip)" stroke="rgba(122,216,255,0.2)"/>
+    <text x="697" y="28" fill="#E5F4FF" font-family="'Segoe UI', 'PingFang SC', sans-serif" font-size="18">Open Source Creator Preview</text>
+  </g>
+
+  <g opacity="0.68">
+    <path d="M974 142C1035 164 1076 203 1098 259" stroke="url(#line)" stroke-width="2.2" stroke-linecap="round"/>
+    <path d="M948 130C1017 141 1074 175 1120 232" stroke="rgba(116,217,255,0.2)" stroke-width="1.2" stroke-linecap="round"/>
+    <path d="M954 314C1005 294 1048 258 1083 208" stroke="rgba(116,217,255,0.25)" stroke-width="1.4" stroke-linecap="round"/>
+  </g>
+
+  <g transform="translate(938 112)">
+    <rect x="0.5" y="0.5" width="210" height="246" rx="22" fill="rgba(8,15,25,0.72)" stroke="rgba(116,217,255,0.18)"/>
+    <text x="20" y="32" fill="#75D6FF" font-family="SFMono-Regular, Menlo, monospace" font-size="14" letter-spacing="2.8">RUNTIME STATUS</text>
+    <path d="M20 49H190" stroke="rgba(116,217,255,0.18)" />
+    <text x="20" y="84" fill="#F7FBFF" font-family="'Segoe UI', 'PingFang SC', sans-serif" font-size="18" font-weight="600">Scenario Editor</text>
+    <text x="20" y="112" fill="#9CB4D1" font-family="'Segoe UI', 'PingFang SC', sans-serif" font-size="15">项目中心 · 台词台本 · 巡检 · 导出</text>
+    <text x="20" y="154" fill="#F7FBFF" font-family="'Segoe UI', 'PingFang SC', sans-serif" font-size="18" font-weight="600">Asset + Voice Pipeline</text>
+    <text x="20" y="182" fill="#9CB4D1" font-family="'Segoe UI', 'PingFang SC', sans-serif" font-size="15">素材库 · 配音批次 · 命名清单 · 交付说明</text>
+    <text x="20" y="224" fill="#F7FBFF" font-family="'Segoe UI', 'PingFang SC', sans-serif" font-size="18" font-weight="600">Runtime + Archives</text>
+    <text x="20" y="252" fill="#9CB4D1" font-family="'Segoe UI', 'PingFang SC', sans-serif" font-size="15">存档 / 图鉴 / 回想馆 / 成就 / 结局回收</text>
+  </g>
+
+  <text x="120" y="462" fill="rgba(163,184,209,0.88)" font-family="SFMono-Regular, Menlo, monospace" font-size="14" letter-spacing="2.2">
+    DESIGNED FOR CREATOR-FRIENDLY VISUAL NOVEL WORKFLOWS
+  </text>
+</svg>

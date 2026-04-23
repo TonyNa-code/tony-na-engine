@@ -1,0 +1,19 @@
+{
+  "formatVersion": 1,
+  "projectId": "project_heart_delay",
+  "title": "心跳时差",
+  "language": "zh-CN",
+  "releaseVersion": "1.0.2-rc1",
+  "resolution": {
+    "width": 1920,
+    "height": 1080
+  },
+  "template": "campus_romance",
+  "editorMode": "beginner",
+  "chapterOrder": [
+    "chapter_opening"
+  ],
+  "entrySceneId": "scene_classroom_sunset",
+  "createdAt": "2026-04-13T18:15:00+08:00",
+  "updatedAt": "2026-04-21T00:49:55+08:00"
+}

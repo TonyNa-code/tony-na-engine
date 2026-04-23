@@ -1,0 +1,475 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tony Na Engine 网页试玩包</title>
+    <link rel="stylesheet" href="./player.css" />
+  </head>
+  <body>
+    <div class="player-shell">
+      <header class="player-topbar">
+        <div class="player-brand-copy">
+          <div class="eyebrow">Tony Na Engine · 网页试玩包</div>
+          <div class="player-brand-title-row">
+            <h1 id="gameTitle">Tony Na Engine 网页试玩包</h1>
+            <span class="player-brand-sigil">Runtime Node</span>
+          </div>
+          <p id="gameMeta">等待载入项目数据…</p>
+          <div class="player-brand-meta">
+            <span>Realtime Story Runtime</span>
+            <span>Archives · Galleries · Endings</span>
+          </div>
+        </div>
+        <div class="top-actions">
+          <button id="systemMenuButton" class="pill-button" type="button">
+            <span class="player-action-icon" aria-hidden="true">▣</span>
+            <span>系统菜单</span>
+          </button>
+          <button id="restartButton" class="pill-button" type="button">
+            <span class="player-action-icon" aria-hidden="true">↺</span>
+            <span>重新开始</span>
+          </button>
+        </div>
+      </header>
+
+      <main class="player-layout">
+        <section id="stageFrame" class="stage-frame">
+          <div id="backgroundLayer" class="background-layer"></div>
+          <div id="particleLayer" class="particle-layer" aria-hidden="true"></div>
+          <div id="filterLayer" class="filter-layer" aria-hidden="true"></div>
+          <div id="fadeLayer" class="fade-layer" aria-hidden="true"></div>
+          <div id="flashLayer" class="flash-layer" aria-hidden="true"></div>
+          <div class="stage-shade"></div>
+          <div class="stage-hud">
+            <span id="sceneChip" class="hud-chip">等待开始</span>
+            <span id="musicChip" class="hud-chip">BGM：未播放</span>
+          </div>
+          <div id="spriteLayer" class="sprite-layer"></div>
+          <div id="backgroundLabel" class="background-caption"></div>
+          <div id="dialogHiddenHint" class="dialog-hidden-hint" hidden>对话框已隐藏，点画面、按 H 或右键恢复。</div>
+
+          <section class="dialog-panel">
+            <div class="speaker-row">
+              <span id="speakerName" class="speaker-name">Tony Na Engine</span>
+              <span id="lineTypeTag" class="line-type-tag">准备</span>
+            </div>
+            <div id="messageText" class="message-text"></div>
+            <div id="choiceList" class="choice-list"></div>
+            <div class="dialog-footer">
+              <span id="hintText" class="hint-text"></span>
+              <button id="continueButton" class="continue-button" type="button">开始试玩</button>
+            </div>
+          </section>
+
+          <div id="startOverlay" class="start-overlay">
+            <div class="start-atmosphere" aria-hidden="true">
+              <span class="start-atmosphere-beam start-atmosphere-beam-a"></span>
+              <span class="start-atmosphere-beam start-atmosphere-beam-b"></span>
+              <span class="start-atmosphere-ring start-atmosphere-ring-a"></span>
+              <span class="start-atmosphere-ring start-atmosphere-ring-b"></span>
+              <span class="start-atmosphere-grid"></span>
+            </div>
+            <div class="start-card">
+              <div class="start-brand-banner" aria-hidden="true">
+                <div class="start-brand-mark">
+                  <span class="start-brand-core">TN</span>
+                  <span class="start-brand-grid"></span>
+                  <span class="start-brand-orbit"></span>
+                </div>
+                <div class="start-brand-copy">
+                  <strong>Tony Na Engine</strong>
+                  <span>Realtime Visual Novel Runtime</span>
+                </div>
+              </div>
+              <div id="startArtworkWrap" class="start-artwork" hidden>
+                <img id="startArtwork" alt="启动画面" />
+              </div>
+              <div class="eyebrow">Tony Na Engine 导出试玩包</div>
+              <h2>开始试玩</h2>
+              <p>这个导出包会按当前项目的剧情卡片、变量和分支逻辑运行。</p>
+              <div id="startSummary" class="start-summary"></div>
+              <div id="startResumeSummary" class="start-resume-summary" hidden></div>
+              <div class="start-action-group">
+                <button id="startContinueButton" class="pill-button" type="button" hidden><span class="player-action-icon" aria-hidden="true">↻</span><span>继续上次试玩</span></button>
+                <button id="startLoadButton" class="pill-button is-secondary" type="button" hidden><span class="player-action-icon" aria-hidden="true">⇪</span><span>打开读档</span></button>
+                <button id="startProfileButton" class="pill-button is-secondary" type="button" hidden><span class="player-action-icon" aria-hidden="true">◎</span><span>玩家档案</span></button>
+                <button id="startVoiceReplayButton" class="pill-button is-secondary" type="button" hidden><span class="player-action-icon" aria-hidden="true">◔</span><span>语音回听</span></button>
+                <button id="startAchievementButton" class="pill-button is-secondary" type="button" hidden><span class="player-action-icon" aria-hidden="true">✦</span><span>成就馆</span></button>
+                <button id="startChapterButton" class="pill-button is-secondary" type="button" hidden><span class="player-action-icon" aria-hidden="true">▤</span><span>章节选集</span></button>
+                <button id="startLocationButton" class="pill-button is-secondary" type="button" hidden><span class="player-action-icon" aria-hidden="true">◫</span><span>地点图鉴</span></button>
+                <button id="startNarrationButton" class="pill-button is-secondary" type="button" hidden><span class="player-action-icon" aria-hidden="true">❝</span><span>旁白摘录</span></button>
+                <button id="startRelationButton" class="pill-button is-secondary" type="button" hidden><span class="player-action-icon" aria-hidden="true">∞</span><span>关系图鉴</span></button>
+                <button id="startCharacterButton" class="pill-button is-secondary" type="button" hidden><span class="player-action-icon" aria-hidden="true">◉</span><span>角色图鉴</span></button>
+                <button id="startEndingButton" class="pill-button is-secondary" type="button" hidden><span class="player-action-icon" aria-hidden="true">◇</span><span>结局回收</span></button>
+                <button id="startGalleryButton" class="pill-button is-secondary" type="button" hidden><span class="player-action-icon" aria-hidden="true">▧</span><span>CG 回想</span></button>
+                <button id="startMusicRoomButton" class="pill-button is-secondary" type="button" hidden><span class="player-action-icon" aria-hidden="true">♬</span><span>音乐鉴赏</span></button>
+                <button id="startButton" class="continue-button" type="button"><span class="player-action-icon" aria-hidden="true">▶</span><span>开始试玩</span></button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <aside class="side-panel">
+          <article class="side-card">
+            <h2>体验设置</h2>
+            <div class="playback-settings">
+              <div class="playback-setting-grid">
+                <label class="playback-setting">
+                  <span>文字速度</span>
+                  <select id="textSpeedSelect">
+                    <option value="slow">慢一点</option>
+                    <option value="normal" selected>正常</option>
+                    <option value="fast">快一点</option>
+                    <option value="instant">立刻显示</option>
+                  </select>
+                </label>
+                <label class="playback-setting">
+                  <span>对话框主题</span>
+                  <select id="dialogThemeSelect">
+                    <option value="warm" selected>暖光标准</option>
+                    <option value="moonlight">夜色月光</option>
+                    <option value="paper">纸页回忆</option>
+                  </select>
+                </label>
+              </div>
+              <div class="playback-volume-grid">
+                <label class="playback-setting">
+                  <span>BGM 音量</span>
+                  <input id="bgmVolumeRange" type="range" min="0" max="100" step="1" value="72" />
+                  <strong id="bgmVolumeValue" class="playback-volume-value">72%</strong>
+                </label>
+                <label class="playback-setting">
+                  <span>音效音量</span>
+                  <input id="sfxVolumeRange" type="range" min="0" max="100" step="1" value="85" />
+                  <strong id="sfxVolumeValue" class="playback-volume-value">85%</strong>
+                </label>
+                <label class="playback-setting">
+                  <span>语音音量</span>
+                  <input id="voiceVolumeRange" type="range" min="0" max="100" step="1" value="92" />
+                  <strong id="voiceVolumeValue" class="playback-volume-value">92%</strong>
+                </label>
+              </div>
+              <div class="playback-toggle-group">
+                <button id="autoPlayToggleButton" class="pill-button" type="button">自动播放：关</button>
+                <button id="voiceToggleButton" class="pill-button" type="button">语音：开</button>
+                <button id="skipReadToggleButton" class="pill-button" type="button">跳过已读：关</button>
+                <button id="dialogToggleButton" class="pill-button" type="button">隐藏对话框</button>
+                <button id="replayVoiceButton" class="pill-button" type="button">重播语音</button>
+                <button id="resetPlaybackButton" class="pill-button" type="button">恢复默认设置</button>
+              </div>
+            </div>
+          </article>
+
+          <article class="side-card">
+            <h2>本地存档</h2>
+            <p class="side-note">会记在当前浏览器里，适合卡在关键分支点的时候随时回来。</p>
+            <div id="saveSlotPanel" class="save-slot-list"></div>
+          </article>
+
+          <article class="side-card">
+            <h2>导出信息</h2>
+            <div id="buildInfoPanel" class="info-list"></div>
+          </article>
+
+          <article class="side-card">
+            <h2>当前变量</h2>
+            <div id="variablesPanel" class="info-list"></div>
+          </article>
+
+          <article class="side-card">
+            <h2>缺失素材</h2>
+            <div id="missingAssetsPanel" class="info-list"></div>
+          </article>
+
+          <article class="side-card">
+            <h2>流程回看</h2>
+            <div id="historyPanel" class="history-list"></div>
+          </article>
+        </aside>
+      </main>
+    </div>
+
+    <div id="saveDialog" class="save-dialog-backdrop" hidden>
+      <section class="save-dialog" role="dialog" aria-modal="true" aria-labelledby="saveDialogTitle">
+        <div class="save-dialog-head">
+          <div>
+            <div class="eyebrow">Tony Na Engine · 系统菜单</div>
+            <h2 id="saveDialogTitle">正式存档</h2>
+            <p id="saveDialogSummary" class="save-dialog-summary"></p>
+          </div>
+          <button id="closeSaveDialogButton" class="pill-button" type="button">关闭</button>
+        </div>
+        <div class="save-dialog-tabs">
+          <button id="saveDialogSaveModeButton" class="pill-button" type="button">存档</button>
+          <button id="saveDialogLoadModeButton" class="pill-button" type="button">读档</button>
+        </div>
+        <div id="saveDialogSlotList" class="save-dialog-slot-list"></div>
+      </section>
+    </div>
+
+    <div id="profileDialog" class="save-dialog-backdrop" hidden>
+      <section class="save-dialog save-dialog-extra" role="dialog" aria-modal="true" aria-labelledby="profileDialogTitle">
+        <div class="save-dialog-head">
+          <div>
+            <div class="eyebrow">Tony Na Engine · 玩家档案</div>
+            <h2 id="profileDialogTitle">游玩记录 / 玩家档案馆</h2>
+            <p id="profileDialogSummary" class="save-dialog-summary"></p>
+          </div>
+          <button id="closeProfileDialogButton" class="pill-button" type="button">关闭</button>
+        </div>
+        <div id="profileDialogHero" class="extra-hero-panel"></div>
+        <div id="profileDialogList" class="ending-room-list"></div>
+      </section>
+    </div>
+
+    <div id="voiceReplayDialog" class="save-dialog-backdrop" hidden>
+      <section class="save-dialog save-dialog-extra" role="dialog" aria-modal="true" aria-labelledby="voiceReplayDialogTitle">
+        <div class="save-dialog-head">
+          <div>
+            <div class="eyebrow">Tony Na Engine · 语音回听</div>
+            <h2 id="voiceReplayDialogTitle">语音回听 / 名台词回放馆</h2>
+            <p id="voiceReplayDialogSummary" class="save-dialog-summary"></p>
+          </div>
+          <button id="closeVoiceReplayDialogButton" class="pill-button" type="button">关闭</button>
+        </div>
+        <div id="voiceReplayDialogHero" class="extra-hero-panel"></div>
+        <div id="voiceReplayDialogList" class="ending-room-list"></div>
+      </section>
+    </div>
+
+    <div id="achievementDialog" class="save-dialog-backdrop" hidden>
+      <section class="save-dialog save-dialog-extra" role="dialog" aria-modal="true" aria-labelledby="achievementDialogTitle">
+        <div class="save-dialog-head">
+          <div>
+            <div class="eyebrow">Tony Na Engine · 成就馆</div>
+            <h2 id="achievementDialogTitle">收集成就馆</h2>
+            <p id="achievementDialogSummary" class="save-dialog-summary"></p>
+          </div>
+          <button id="closeAchievementDialogButton" class="pill-button" type="button">关闭</button>
+        </div>
+        <div id="achievementDialogHero" class="extra-hero-panel"></div>
+        <div id="achievementDialogList" class="achievement-room-list"></div>
+      </section>
+    </div>
+
+    <div id="locationDialog" class="save-dialog-backdrop" hidden>
+      <section class="save-dialog save-dialog-extra" role="dialog" aria-modal="true" aria-labelledby="locationDialogTitle">
+        <div class="save-dialog-head">
+          <div>
+            <div class="eyebrow">Tony Na Engine · 地点图鉴</div>
+            <h2 id="locationDialogTitle">地点图鉴 / 场景档案馆</h2>
+            <p id="locationDialogSummary" class="save-dialog-summary"></p>
+          </div>
+          <button id="closeLocationDialogButton" class="pill-button" type="button">关闭</button>
+        </div>
+        <div id="locationDialogHero" class="extra-hero-panel"></div>
+        <div id="locationDialogList" class="extra-gallery-grid"></div>
+      </section>
+    </div>
+
+    <div id="narrationDialog" class="save-dialog-backdrop" hidden>
+      <section class="save-dialog save-dialog-extra" role="dialog" aria-modal="true" aria-labelledby="narrationDialogTitle">
+        <div class="save-dialog-head">
+          <div>
+            <div class="eyebrow">Tony Na Engine · 旁白摘录</div>
+            <h2 id="narrationDialogTitle">旁白摘录 / 文案收藏馆</h2>
+            <p id="narrationDialogSummary" class="save-dialog-summary"></p>
+          </div>
+          <button id="closeNarrationDialogButton" class="pill-button" type="button">关闭</button>
+        </div>
+        <div id="narrationDialogHero" class="extra-hero-panel"></div>
+        <div id="narrationDialogList" class="ending-room-list"></div>
+      </section>
+    </div>
+
+    <div id="relationDialog" class="save-dialog-backdrop" hidden>
+      <section class="save-dialog save-dialog-extra" role="dialog" aria-modal="true" aria-labelledby="relationDialogTitle">
+        <div class="save-dialog-head">
+          <div>
+            <div class="eyebrow">Tony Na Engine · 关系图鉴</div>
+            <h2 id="relationDialogTitle">关系图鉴 / 共演档案馆</h2>
+            <p id="relationDialogSummary" class="save-dialog-summary"></p>
+          </div>
+          <button id="closeRelationDialogButton" class="pill-button" type="button">关闭</button>
+        </div>
+        <div id="relationDialogHero" class="extra-hero-panel"></div>
+        <div id="relationDialogList" class="ending-room-list"></div>
+      </section>
+    </div>
+
+    <div id="chapterDialog" class="save-dialog-backdrop" hidden>
+      <section class="save-dialog save-dialog-extra" role="dialog" aria-modal="true" aria-labelledby="chapterDialogTitle">
+        <div class="save-dialog-head">
+          <div>
+            <div class="eyebrow">Tony Na Engine · 章节选集</div>
+            <h2 id="chapterDialogTitle">章节回放 / 章节选集馆</h2>
+            <p id="chapterDialogSummary" class="save-dialog-summary"></p>
+          </div>
+          <button id="closeChapterDialogButton" class="pill-button" type="button">关闭</button>
+        </div>
+        <div id="chapterDialogHero" class="extra-hero-panel"></div>
+        <div id="chapterDialogList" class="ending-room-list"></div>
+      </section>
+    </div>
+
+    <div id="characterDialog" class="save-dialog-backdrop" hidden>
+      <section class="save-dialog save-dialog-extra" role="dialog" aria-modal="true" aria-labelledby="characterDialogTitle">
+        <div class="save-dialog-head">
+          <div>
+            <div class="eyebrow">Tony Na Engine · 角色图鉴</div>
+            <h2 id="characterDialogTitle">人物档案馆</h2>
+            <p id="characterDialogSummary" class="save-dialog-summary"></p>
+          </div>
+          <button id="closeCharacterDialogButton" class="pill-button" type="button">关闭</button>
+        </div>
+        <div id="characterDialogHero" class="extra-hero-panel"></div>
+        <div id="characterDialogList" class="character-room-list"></div>
+      </section>
+    </div>
+
+    <div id="endingDialog" class="save-dialog-backdrop" hidden>
+      <section class="save-dialog save-dialog-extra" role="dialog" aria-modal="true" aria-labelledby="endingDialogTitle">
+        <div class="save-dialog-head">
+          <div>
+            <div class="eyebrow">Tony Na Engine · 结局回收</div>
+            <h2 id="endingDialogTitle">结局回收馆 / 通关记录</h2>
+            <p id="endingDialogSummary" class="save-dialog-summary"></p>
+          </div>
+          <button id="closeEndingDialogButton" class="pill-button" type="button">关闭</button>
+        </div>
+        <div id="endingDialogHero" class="extra-hero-panel"></div>
+        <div id="endingDialogList" class="ending-room-list"></div>
+      </section>
+    </div>
+
+    <div id="systemMenu" class="save-dialog-backdrop" hidden>
+      <section class="save-dialog save-dialog-system" role="dialog" aria-modal="true" aria-labelledby="systemMenuTitle">
+        <div class="save-dialog-head">
+          <div>
+            <div class="eyebrow">Tony Na Engine · 系统菜单</div>
+            <h2 id="systemMenuTitle">系统菜单</h2>
+            <p id="systemMenuSummary" class="save-dialog-summary"></p>
+          </div>
+          <button id="closeSystemMenuButton" class="pill-button" type="button">继续游戏</button>
+        </div>
+        <div class="save-dialog-system-layout">
+          <div class="save-dialog-system-actions">
+            <button id="systemMenuOpenSaveButton" class="pill-button" type="button">正式存档</button>
+            <button id="systemMenuOpenLoadButton" class="pill-button" type="button">正式读档</button>
+            <button id="systemMenuQuickSaveButton" class="pill-button" type="button">快速存档</button>
+            <button id="systemMenuQuickLoadButton" class="pill-button" type="button">快速读档</button>
+            <button id="systemMenuReturnTitleButton" class="pill-button" type="button">返回标题页</button>
+          </div>
+          <div class="save-dialog-system-settings">
+            <div class="playback-setting-grid">
+              <label class="playback-setting">
+                <span>文字速度</span>
+                <select id="menuTextSpeedSelect">
+                  <option value="slow">慢一点</option>
+                  <option value="normal">正常</option>
+                  <option value="fast">快一点</option>
+                  <option value="instant">立刻显示</option>
+                </select>
+              </label>
+              <label class="playback-setting">
+                <span>对话框主题</span>
+                <select id="menuDialogThemeSelect">
+                  <option value="warm">暖光标准</option>
+                  <option value="moonlight">夜色月光</option>
+                  <option value="paper">纸页回忆</option>
+                </select>
+              </label>
+            </div>
+            <div class="playback-volume-grid">
+              <label class="playback-setting">
+                <span>BGM 音量</span>
+                <input id="menuBgmVolumeRange" type="range" min="0" max="100" step="1" value="72" />
+                <strong id="menuBgmVolumeValue" class="playback-volume-value">72%</strong>
+              </label>
+              <label class="playback-setting">
+                <span>音效音量</span>
+                <input id="menuSfxVolumeRange" type="range" min="0" max="100" step="1" value="85" />
+                <strong id="menuSfxVolumeValue" class="playback-volume-value">85%</strong>
+              </label>
+              <label class="playback-setting">
+                <span>语音音量</span>
+                <input id="menuVoiceVolumeRange" type="range" min="0" max="100" step="1" value="92" />
+                <strong id="menuVoiceVolumeValue" class="playback-volume-value">92%</strong>
+              </label>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div id="galleryDialog" class="save-dialog-backdrop" hidden>
+      <section class="save-dialog save-dialog-extra" role="dialog" aria-modal="true" aria-labelledby="galleryDialogTitle">
+        <div class="save-dialog-head">
+          <div>
+            <div class="eyebrow">Tony Na Engine · EXTRA</div>
+            <h2 id="galleryDialogTitle">CG 回想馆</h2>
+            <p id="galleryDialogSummary" class="save-dialog-summary"></p>
+          </div>
+          <button id="closeGalleryDialogButton" class="pill-button" type="button">返回标题页</button>
+        </div>
+        <div id="galleryDialogHero" class="extra-hero-panel"></div>
+        <div id="galleryDialogList" class="extra-gallery-grid"></div>
+      </section>
+    </div>
+
+    <div id="musicRoomDialog" class="save-dialog-backdrop" hidden>
+      <section class="save-dialog save-dialog-extra" role="dialog" aria-modal="true" aria-labelledby="musicRoomDialogTitle">
+        <div class="save-dialog-head">
+          <div>
+            <div class="eyebrow">Tony Na Engine · EXTRA</div>
+            <h2 id="musicRoomDialogTitle">音乐鉴赏</h2>
+            <p id="musicRoomDialogSummary" class="save-dialog-summary"></p>
+          </div>
+          <button id="closeMusicRoomDialogButton" class="pill-button" type="button">返回标题页</button>
+        </div>
+        <div id="musicRoomNowPlaying" class="extra-hero-panel"></div>
+        <div id="musicRoomList" class="music-room-list"></div>
+      </section>
+    </div>
+
+    <div id="returnTitleDialog" class="save-dialog-backdrop" hidden>
+      <section class="save-dialog save-dialog-confirm" role="dialog" aria-modal="true" aria-labelledby="returnTitleDialogTitle">
+        <div class="save-dialog-head">
+          <div>
+            <div class="eyebrow">Tony Na Engine · 系统菜单</div>
+            <h2 id="returnTitleDialogTitle">确认返回标题页</h2>
+            <p class="save-dialog-summary">
+              这会回到试玩开始页，但你的正式存档、快速存档和自动续玩记录都会继续保留。
+            </p>
+          </div>
+        </div>
+        <div class="save-dialog-confirm-actions">
+          <button id="cancelReturnTitleButton" class="pill-button is-secondary" type="button">继续留在这里</button>
+          <button id="confirmReturnTitleButton" class="pill-button" type="button">确认返回标题页</button>
+        </div>
+      </section>
+    </div>
+
+    <div id="saveConfirmDialog" class="save-dialog-backdrop" hidden>
+      <section class="save-dialog save-dialog-confirm" role="dialog" aria-modal="true" aria-labelledby="saveConfirmDialogTitle">
+        <div class="save-dialog-head">
+          <div>
+            <div class="eyebrow">Tony Na Engine · 正式存档</div>
+            <h2 id="saveConfirmDialogTitle">确认执行这个操作</h2>
+            <p id="saveConfirmDialogSummary" class="save-dialog-summary"></p>
+          </div>
+        </div>
+        <div class="save-dialog-confirm-actions">
+          <button id="cancelSaveConfirmButton" class="pill-button is-secondary" type="button">先不动它</button>
+          <button id="confirmSaveConfirmButton" class="pill-button" type="button">确认继续</button>
+        </div>
+      </section>
+    </div>
+
+    <script>
+      window.LIGHTWHISPER_GAME_DATA = __LIGHTWHISPER_GAME_DATA__;
+    </script>
+    <script type="module" src="./player.js"></script>
+  </body>
+</html>

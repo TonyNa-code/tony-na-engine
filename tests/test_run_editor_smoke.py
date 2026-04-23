@@ -1,0 +1,586 @@
+from __future__ import annotations
+
+import base64
+import copy
+import json
+import os
+import shutil
+import tempfile
+import tarfile
+import unittest
+from pathlib import Path
+
+import run_editor
+
+
+def build_upload_payload(name: str, raw: bytes) -> dict:
+    return {
+        "name": name,
+        "dataBase64": base64.b64encode(raw).decode("utf-8"),
+    }
+
+
+def build_fake_wav_bytes() -> bytes:
+    return (
+        b"RIFF"
+        b"\x24\x00\x00\x00"
+        b"WAVE"
+        b"fmt "
+        b"\x10\x00\x00\x00"
+        b"\x01\x00"
+        b"\x01\x00"
+        b"\x44\xac\x00\x00"
+        b"\x88\x58\x01\x00"
+        b"\x02\x00"
+        b"\x10\x00"
+        b"data"
+        b"\x00\x00\x00\x00"
+    )
+
+
+def create_fake_runtime_archive(archive_path: Path, platform_key: str) -> Path:
+    with tempfile.TemporaryDirectory() as temp_dir:
+        root = Path(temp_dir) / "python"
+        if platform_key == run_editor.EDITOR_PLATFORM_WINDOWS:
+            executable = root / "python.exe"
+        else:
+            executable = root / "bin" / "python3"
+        executable.parent.mkdir(parents=True, exist_ok=True)
+        executable.write_text("fake-python", encoding="utf-8")
+        if platform_key != run_editor.EDITOR_PLATFORM_WINDOWS:
+            executable.chmod(0o755)
+
+        with tarfile.open(archive_path, "w:gz") as archive:
+            archive.add(root, arcname="python")
+    return archive_path
+
+
+def create_fake_iscc_script(script_path: Path) -> Path:
+    script_path.write_text(
+        """#!/bin/sh
+set -eu
+output_dir=""
+output_base="TonyNaEngineEditorSetup"
+for arg in "$@"; do
+  case "$arg" in
+    /O*) output_dir="${arg#/O}" ;;
+    /F*) output_base="${arg#/F}" ;;
+  esac
+done
+if [ -z "$output_dir" ]; then
+  output_dir="$(pwd)"
+fi
+mkdir -p "$output_dir"
+printf 'fake-windows-installer' > "$output_dir/$output_base.exe"
+""",
+        encoding="utf-8",
+    )
+    script_path.chmod(0o755)
+    return script_path
+
+
+def create_fake_signtool_script(script_path: Path) -> Path:
+    script_path.write_text(
+        """#!/bin/sh
+set -eu
+exit 0
+""",
+        encoding="utf-8",
+    )
+    script_path.chmod(0o755)
+    return script_path
+
+
+class RunEditorSmokeTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.test_root = Path(self.temp_dir.name)
+        self.sample_dir = self.test_root / "template_project"
+        shutil.copytree(run_editor.ROOT_DIR / "template_project", self.sample_dir)
+        self.projects_dir = self.test_root / "projects"
+        self.exports_dir = self.test_root / "exports"
+        self.runtime_cache_dir = self.test_root / ".export_runtime_cache"
+        self.local_runtime_dirs = [
+            self.test_root / "desktop_runtime",
+            self.test_root / "desktop_runtime" / "windows",
+        ]
+        self.portable_runtime_archives = {
+            run_editor.EDITOR_PLATFORM_MACOS: create_fake_runtime_archive(
+                self.test_root / "fake_macos_runtime.tar.gz",
+                run_editor.EDITOR_PLATFORM_MACOS,
+            ),
+            run_editor.EDITOR_PLATFORM_WINDOWS: create_fake_runtime_archive(
+                self.test_root / "fake_windows_runtime.tar.gz",
+                run_editor.EDITOR_PLATFORM_WINDOWS,
+            ),
+            run_editor.EDITOR_PLATFORM_LINUX: create_fake_runtime_archive(
+                self.test_root / "fake_linux_runtime.tar.gz",
+                run_editor.EDITOR_PLATFORM_LINUX,
+            ),
+        }
+        self.fake_iscc = create_fake_iscc_script(self.test_root / "fake_iscc.sh")
+        self.fake_signtool = create_fake_signtool_script(self.test_root / "fake_signtool.sh")
+
+        self.original_globals = {
+            "PROJECTS_DIR": run_editor.PROJECTS_DIR,
+            "SAMPLE_PROJECT_DIR": run_editor.SAMPLE_PROJECT_DIR,
+            "EXPORTS_DIR": run_editor.EXPORTS_DIR,
+            "EXPORT_RUNTIME_CACHE_DIR": run_editor.EXPORT_RUNTIME_CACHE_DIR,
+            "LOCAL_NWJS_RUNTIME_DIRS": run_editor.LOCAL_NWJS_RUNTIME_DIRS,
+            "TEMPLATE_DIR": run_editor.TEMPLATE_DIR,
+            "DATA_DIR": run_editor.DATA_DIR,
+            "CHAPTERS_DIR": run_editor.CHAPTERS_DIR,
+            "PROJECT_PATH": run_editor.PROJECT_PATH,
+            "CURRENT_PROJECT_INFO": dict(run_editor.CURRENT_PROJECT_INFO),
+            "HAS_SELECTED_PROJECT": run_editor.HAS_SELECTED_PROJECT,
+        }
+        self.original_env = {
+            run_editor.get_portable_runtime_override_env_var(platform_key): os.environ.get(
+                run_editor.get_portable_runtime_override_env_var(platform_key)
+            )
+            for platform_key in self.portable_runtime_archives
+        }
+        self.original_env[run_editor.EDITOR_WINDOWS_ISCC_ENV] = os.environ.get(run_editor.EDITOR_WINDOWS_ISCC_ENV)
+        self.original_env[run_editor.EDITOR_WINDOWS_SIGNTOOL_ENV] = os.environ.get(run_editor.EDITOR_WINDOWS_SIGNTOOL_ENV)
+        self.original_env[run_editor.EDITOR_WINDOWS_CERT_SUBJECT_ENV] = os.environ.get(
+            run_editor.EDITOR_WINDOWS_CERT_SUBJECT_ENV
+        )
+
+        run_editor.PROJECTS_DIR = self.projects_dir
+        run_editor.SAMPLE_PROJECT_DIR = self.sample_dir
+        run_editor.EXPORTS_DIR = self.exports_dir
+        run_editor.EXPORT_RUNTIME_CACHE_DIR = self.runtime_cache_dir
+        run_editor.LOCAL_NWJS_RUNTIME_DIRS = self.local_runtime_dirs
+        run_editor.TEMPLATE_DIR = self.sample_dir
+        run_editor.DATA_DIR = self.sample_dir / "data"
+        run_editor.CHAPTERS_DIR = run_editor.DATA_DIR / "chapters"
+        run_editor.PROJECT_PATH = self.sample_dir / "project.json"
+        run_editor.CURRENT_PROJECT_INFO = {
+            "projectId": run_editor.SAMPLE_PROJECT_ID,
+            "kind": "sample",
+            "projectDir": str(self.sample_dir),
+        }
+        run_editor.HAS_SELECTED_PROJECT = False
+        for platform_key, archive_path in self.portable_runtime_archives.items():
+            os.environ[run_editor.get_portable_runtime_override_env_var(platform_key)] = str(archive_path)
+        os.environ[run_editor.EDITOR_WINDOWS_ISCC_ENV] = str(self.fake_iscc)
+        os.environ[run_editor.EDITOR_WINDOWS_SIGNTOOL_ENV] = str(self.fake_signtool)
+        os.environ[run_editor.EDITOR_WINDOWS_CERT_SUBJECT_ENV] = "Tony Na Studio"
+
+    def tearDown(self) -> None:
+        run_editor.PROJECTS_DIR = self.original_globals["PROJECTS_DIR"]
+        run_editor.SAMPLE_PROJECT_DIR = self.original_globals["SAMPLE_PROJECT_DIR"]
+        run_editor.EXPORTS_DIR = self.original_globals["EXPORTS_DIR"]
+        run_editor.EXPORT_RUNTIME_CACHE_DIR = self.original_globals["EXPORT_RUNTIME_CACHE_DIR"]
+        run_editor.LOCAL_NWJS_RUNTIME_DIRS = self.original_globals["LOCAL_NWJS_RUNTIME_DIRS"]
+        run_editor.TEMPLATE_DIR = self.original_globals["TEMPLATE_DIR"]
+        run_editor.DATA_DIR = self.original_globals["DATA_DIR"]
+        run_editor.CHAPTERS_DIR = self.original_globals["CHAPTERS_DIR"]
+        run_editor.PROJECT_PATH = self.original_globals["PROJECT_PATH"]
+        run_editor.CURRENT_PROJECT_INFO = self.original_globals["CURRENT_PROJECT_INFO"]
+        run_editor.HAS_SELECTED_PROJECT = self.original_globals["HAS_SELECTED_PROJECT"]
+        for env_key, env_value in self.original_env.items():
+            if env_value is None:
+                os.environ.pop(env_key, None)
+            else:
+                os.environ[env_key] = env_value
+        self.temp_dir.cleanup()
+
+    def create_blank_project_with_chapter(self) -> tuple[dict, dict]:
+        run_editor.create_blank_project("自动化测试项目")
+        chapter_result = run_editor.create_chapter("第一章", "开场")
+        return run_editor.get_current_project_summary(), chapter_result
+
+    def save_scene_with_blocks(self, chapter_id: str, scene: dict, blocks: list[dict]) -> dict:
+        updated_scene = copy.deepcopy(scene)
+        updated_scene["blocks"] = blocks
+        run_editor.save_scene(chapter_id, updated_scene["id"], updated_scene)
+        return updated_scene
+
+    def test_project_creation_scene_save_and_settings(self) -> None:
+        project_summary, chapter_result = self.create_blank_project_with_chapter()
+
+        self.assertEqual(project_summary["title"], "自动化测试项目")
+        self.assertEqual(project_summary["editorMode"], "beginner")
+
+        updated_scene = self.save_scene_with_blocks(
+            chapter_result["chapterId"],
+            chapter_result["scene"],
+            [
+                {
+                    "id": "block_001",
+                    "type": "dialogue",
+                    "speakerId": "heroine",
+                    "expressionId": "",
+                    "text": "你好，欢迎来到自动化测试。",
+                }
+            ],
+        )
+
+        result = run_editor.save_project_settings(
+            resolution={"width": 1920, "height": 1080},
+            release_version="1.2.3-beta",
+            editor_mode="advanced",
+            particle_custom_presets=[
+                {
+                    "name": "暴雪测试",
+                    "config": {
+                        "action": "start",
+                        "preset": "snow",
+                        "density": 48,
+                    },
+                }
+            ],
+        )
+
+        bundle = run_editor.load_project_bundle()
+        saved_scene = bundle["chapters"][0]["scenes"][0]
+        saved_project = bundle["project"]
+
+        self.assertEqual(saved_scene["id"], updated_scene["id"])
+        self.assertEqual(saved_scene["blocks"][0]["text"], "你好，欢迎来到自动化测试。")
+        self.assertEqual(result["project"]["releaseVersion"], "1.2.3-beta")
+        self.assertEqual(saved_project["editorMode"], "advanced")
+        self.assertEqual(saved_project["resolution"]["width"], 1920)
+        self.assertEqual(saved_project["particleCustomPresets"][0]["name"], "暴雪测试")
+
+    def test_asset_import_replace_and_delete_with_usage_protection(self) -> None:
+        _, chapter_result = self.create_blank_project_with_chapter()
+
+        import_result = run_editor.import_assets(
+            "background",
+            [build_upload_payload("bg_classroom.png", b"fake-image-1")],
+        )
+        asset = import_result["assets"][0]
+
+        self.assertEqual(asset["type"], "background")
+        self.assertTrue((run_editor.TEMPLATE_DIR / asset["path"]).is_file())
+
+        self.save_scene_with_blocks(
+            chapter_result["chapterId"],
+            chapter_result["scene"],
+            [
+                {
+                    "id": "block_001",
+                    "type": "background",
+                    "assetId": asset["id"],
+                    "transition": "fade",
+                }
+            ],
+        )
+
+        with self.assertRaisesRegex(ValueError, "还在被使用|先解除引用"):
+            run_editor.delete_asset(asset["id"])
+
+        self.save_scene_with_blocks(
+            chapter_result["chapterId"],
+            chapter_result["scene"],
+            [
+                {
+                    "id": "block_001",
+                    "type": "narration",
+                    "text": "背景引用已经解除。",
+                }
+            ],
+        )
+
+        replace_result = run_editor.replace_asset_file(
+            asset["id"],
+            build_upload_payload("bg_evening.png", b"fake-image-2"),
+        )
+        self.assertTrue((run_editor.TEMPLATE_DIR / replace_result["asset"]["path"]).is_file())
+
+        delete_result = run_editor.delete_asset(asset["id"])
+        self.assertEqual(delete_result["deletedAssetId"], asset["id"])
+        self.assertFalse((run_editor.TEMPLATE_DIR / replace_result["asset"]["path"]).exists())
+
+    def test_voice_placeholder_and_match_workflow(self) -> None:
+        _, chapter_result = self.create_blank_project_with_chapter()
+
+        self.save_scene_with_blocks(
+            chapter_result["chapterId"],
+            chapter_result["scene"],
+            [
+                {
+                    "id": "block_001",
+                    "type": "dialogue",
+                    "speakerId": "heroine",
+                    "expressionId": "",
+                    "text": "这句台词会生成语音占位。",
+                }
+            ],
+        )
+
+        placeholder_result = run_editor.create_voice_placeholder(
+            chapter_result["sceneId"],
+            "block_001",
+        )
+
+        self.assertFalse(placeholder_result["alreadyBound"])
+        self.assertEqual(placeholder_result["asset"]["type"], "voice")
+
+        asset_name = placeholder_result["asset"]["name"]
+        match_result = run_editor.match_voice_files_to_placeholders(
+            [build_upload_payload(f"{asset_name}.wav", build_fake_wav_bytes())],
+            [placeholder_result["assetId"]],
+        )
+
+        self.assertEqual(match_result["matchedCount"], 1)
+        matched_asset = match_result["assets"][0]
+        self.assertTrue((run_editor.TEMPLATE_DIR / matched_asset["path"]).is_file())
+
+        bundle = run_editor.load_project_bundle()
+        saved_block = bundle["chapters"][0]["scenes"][0]["blocks"][0]
+        self.assertEqual(saved_block["voiceAssetId"], placeholder_result["assetId"])
+
+    def test_legacy_project_auto_migrates_when_opened(self) -> None:
+        legacy_dir = self.projects_dir / "legacy_story"
+        chapters_dir = legacy_dir / "data" / "chapters"
+        chapters_dir.mkdir(parents=True, exist_ok=True)
+
+        run_editor.write_json(
+            legacy_dir / "project.json",
+            {
+                "title": "旧项目",
+                "template": "legacy_template",
+                "resolution": {"width": 1280, "height": 720},
+                "chapterOrder": ["missing_chapter", "chapter_opening"],
+                "createdAt": "2026-04-01T10:00:00+08:00",
+            },
+        )
+        run_editor.write_json(
+            legacy_dir / "data" / "assets.json",
+            [
+                {
+                    "type": "background",
+                    "name": "旧背景",
+                    "path": "assets/backgrounds/legacy_bg.png",
+                }
+            ],
+        )
+        run_editor.write_json(
+            legacy_dir / "data" / "characters.json",
+            [
+                {
+                    "displayName": "旧角色",
+                    "defaultPosition": "unknown",
+                    "expressions": [
+                        {
+                            "name": "默认",
+                            "spriteAssetId": "sprite_legacy_default",
+                        }
+                    ],
+                }
+            ],
+        )
+        run_editor.write_json(
+            chapters_dir / "chapter_01.json",
+            {
+                "chapterId": "chapter_opening",
+                "name": "旧章节",
+                "scenes": [
+                    {
+                        "name": "旧开场",
+                        "blocks": [
+                            {
+                                "type": "dialogue",
+                                "text": "这是旧格式里的第一句。",
+                            }
+                        ],
+                    },
+                    {
+                        "id": "scene_ready",
+                        "blocks": "not-a-list",
+                    },
+                ],
+            },
+        )
+
+        summary = run_editor.activate_project("legacy_story")
+        bundle = run_editor.load_project_bundle()
+
+        self.assertEqual(summary["projectId"], "legacy_story")
+        self.assertEqual(bundle["project"]["formatVersion"], run_editor.PROJECT_FORMAT_VERSION)
+        self.assertEqual(bundle["project"]["projectId"], "legacy_story")
+        self.assertEqual(bundle["project"]["releaseVersion"], run_editor.DEFAULT_EXPORT_RELEASE_VERSION)
+        self.assertEqual(bundle["project"]["editorMode"], run_editor.DEFAULT_EDITOR_MODE)
+        self.assertEqual(bundle["project"]["chapterOrder"], ["chapter_opening"])
+        self.assertTrue(bundle["project"]["entrySceneId"])
+
+        assets_doc = run_editor.read_json(legacy_dir / "data" / "assets.json")
+        self.assertEqual(assets_doc["formatVersion"], run_editor.PROJECT_FORMAT_VERSION)
+        self.assertEqual(len(assets_doc["assets"]), 1)
+        self.assertTrue(assets_doc["assets"][0]["id"].startswith("bg_"))
+        self.assertEqual(assets_doc["assets"][0]["tags"], [])
+
+        characters_doc = run_editor.read_json(legacy_dir / "data" / "characters.json")
+        self.assertEqual(characters_doc["formatVersion"], run_editor.PROJECT_FORMAT_VERSION)
+        self.assertEqual(len(characters_doc["characters"]), 1)
+        self.assertTrue(characters_doc["characters"][0]["id"].startswith("char_"))
+        self.assertEqual(characters_doc["characters"][0]["defaultPosition"], "center")
+        self.assertTrue(characters_doc["characters"][0]["expressions"][0]["id"].startswith("expr_"))
+
+        variables_doc = run_editor.read_json(legacy_dir / "data" / "variables.json")
+        self.assertEqual(variables_doc["formatVersion"], run_editor.PROJECT_FORMAT_VERSION)
+        self.assertEqual(variables_doc["variables"], [])
+
+        chapter_doc = run_editor.read_json(chapters_dir / "chapter_01.json")
+        self.assertEqual(chapter_doc["formatVersion"], run_editor.PROJECT_FORMAT_VERSION)
+        self.assertEqual(chapter_doc["sceneOrder"], [scene["id"] for scene in chapter_doc["scenes"]])
+        self.assertEqual(chapter_doc["scenes"][0]["status"], "drafting")
+        self.assertEqual(chapter_doc["scenes"][0]["priority"], "normal")
+        self.assertEqual(chapter_doc["scenes"][0]["blocks"][0]["id"], "block_001")
+        self.assertEqual(chapter_doc["scenes"][1]["blocks"], [])
+
+        history = run_editor.build_history_payload(legacy_dir)
+        self.assertGreaterEqual(history["totalSnapshots"], 2)
+        self.assertEqual(history["currentSnapshot"]["kind"], "migration")
+
+    def test_web_export_build_smoke(self) -> None:
+        _, chapter_result = self.create_blank_project_with_chapter()
+
+        self.save_scene_with_blocks(
+            chapter_result["chapterId"],
+            chapter_result["scene"],
+            [
+                {
+                    "id": "block_001",
+                    "type": "dialogue",
+                    "speakerId": "heroine",
+                    "expressionId": "",
+                    "text": "这是网页导出烟测。",
+                }
+            ],
+        )
+
+        export_result = run_editor.export_web_build()
+
+        build_dir = Path(export_result["buildPath"])
+        manifest_path = Path(export_result["manifestPath"])
+        self.assertEqual(export_result["target"], run_editor.EXPORT_TARGET_WEB)
+        self.assertTrue((build_dir / "index.html").is_file())
+        self.assertTrue((build_dir / "player.js").is_file())
+        self.assertTrue((build_dir / "player.css").is_file())
+        self.assertTrue((build_dir / "launch_splash.svg").is_file())
+        self.assertTrue((build_dir / "app_icon.png").is_file())
+        self.assertTrue((build_dir / "app_icon.ico").is_file())
+        self.assertTrue(manifest_path.is_file())
+
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        self.assertEqual(manifest["engine"]["exportTarget"], run_editor.EXPORT_TARGET_WEB)
+        self.assertEqual(
+            manifest["engine"]["releaseVersion"],
+            run_editor.DEFAULT_EXPORT_RELEASE_VERSION,
+        )
+
+    def test_editor_desktop_build_smoke(self) -> None:
+        export_result = run_editor.export_editor_desktop_build()
+
+        build_dir = Path(export_result["buildPath"])
+        bundle_dir = Path(export_result["bundleDirPath"])
+        manifest_path = Path(export_result["manifestPath"])
+        self.assertEqual(export_result["target"], run_editor.EXPORT_TARGET_EDITOR_DESKTOP)
+        self.assertTrue(bundle_dir.is_dir())
+        self.assertTrue((bundle_dir / "run_editor.py").is_file())
+        self.assertTrue((bundle_dir / "prototype_editor" / "index.html").is_file())
+        self.assertTrue((bundle_dir / "export_player_template" / "player.js").is_file())
+        self.assertTrue((bundle_dir / "template_project" / "project.json").is_file())
+        self.assertTrue((bundle_dir / "projects").is_dir())
+        self.assertTrue((bundle_dir / "exports").is_dir())
+        self.assertTrue((build_dir / run_editor.EDITOR_START_COMMAND_NAME).is_file())
+        self.assertTrue((build_dir / run_editor.EDITOR_START_WINDOWS_NAME).is_file())
+        self.assertTrue((build_dir / "launch_splash.svg").is_file())
+        self.assertTrue((build_dir / "app_icon.png").is_file())
+        self.assertTrue((build_dir / "app_icon.ico").is_file())
+        self.assertTrue((build_dir / run_editor.EDITOR_DISTRIBUTION_SNAPSHOT_NAME).is_file())
+        self.assertTrue((build_dir / run_editor.EDITOR_COMMERCIAL_README_NAME).is_file())
+        self.assertTrue((build_dir / run_editor.EDITOR_SIGNING_GUIDE_NAME).is_file())
+        self.assertTrue((build_dir / run_editor.EDITOR_SIGNING_ENV_EXAMPLE_NAME).is_file())
+        self.assertTrue((build_dir / run_editor.EDITOR_SIGNING_CHECK_SCRIPT_NAME).is_file())
+        self.assertTrue((build_dir / run_editor.EDITOR_SIGNING_CHECK_COMMAND_NAME).is_file())
+        self.assertTrue(Path(export_result["archivePath"]).is_file())
+        self.assertTrue(manifest_path.is_file())
+        self.assertTrue(Path(export_result["signingGuidePath"]).is_file())
+        self.assertTrue(Path(export_result["signingEnvExamplePath"]).is_file())
+        self.assertTrue(Path(export_result["signingCheckScriptPath"]).is_file())
+        self.assertTrue(Path(export_result["signingCheckCommandPath"]).is_file())
+
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        self.assertEqual(manifest["engine"]["packageTarget"], run_editor.EXPORT_TARGET_EDITOR_DESKTOP)
+        self.assertEqual(manifest["engine"]["releaseVersion"], run_editor.EDITOR_PACKAGE_VERSION)
+        self.assertEqual(manifest["editorPackage"]["bundleDirName"], run_editor.EDITOR_BUNDLE_DIR_NAME)
+        self.assertIn("embeddedRuntime", manifest["editorPackage"])
+        self.assertIn("commercialRelease", manifest["editorPackage"])
+        self.assertIn(export_result["embeddedRuntimeMode"], {run_editor.EDITOR_RUNTIME_SOURCE_CONDA_PACK, run_editor.EDITOR_RUNTIME_SOURCE_SYSTEM})
+        if export_result["embeddedRuntimeIncluded"]:
+            self.assertTrue((bundle_dir / run_editor.EDITOR_RUNTIME_DIR_NAME / "bin" / "python3").is_file())
+
+        if run_editor.should_build_editor_macos_app():
+            self.assertTrue((build_dir / run_editor.EDITOR_MAC_APP_NAME).is_dir())
+            self.assertTrue((build_dir / run_editor.EDITOR_MAC_APP_NAME / "Contents" / "Resources" / run_editor.EDITOR_BUNDLE_DIR_NAME / "run_editor.py").is_file())
+            self.assertTrue((build_dir / run_editor.EDITOR_MAC_INSTALLER_NAME).is_file())
+
+    def test_editor_desktop_suite_build_smoke(self) -> None:
+        export_result = run_editor.export_editor_desktop_suite_build()
+        build_dir = Path(export_result["buildPath"])
+        manifest_path = Path(export_result["manifestPath"])
+
+        self.assertEqual(export_result["target"], run_editor.EXPORT_TARGET_EDITOR_DESKTOP_SUITE)
+        self.assertTrue(manifest_path.is_file())
+        self.assertTrue((build_dir / "README_三系统编辑器套装先看这里.txt").is_file())
+        self.assertTrue((build_dir / run_editor.EDITOR_DISTRIBUTION_SNAPSHOT_NAME).is_file())
+        self.assertTrue((build_dir / run_editor.EDITOR_SIGNING_GUIDE_NAME).is_file())
+        self.assertTrue((build_dir / run_editor.EDITOR_SIGNING_ENV_EXAMPLE_NAME).is_file())
+        self.assertTrue((build_dir / run_editor.EDITOR_SIGNING_CHECK_SCRIPT_NAME).is_file())
+        self.assertTrue((build_dir / run_editor.EDITOR_SIGNING_CHECK_COMMAND_NAME).is_file())
+        self.assertEqual(len(export_result["packages"]), 3)
+        self.assertTrue(Path(export_result["signingGuidePath"]).is_file())
+        self.assertTrue(Path(export_result["signingEnvExamplePath"]).is_file())
+        self.assertTrue(Path(export_result["signingCheckScriptPath"]).is_file())
+        self.assertTrue(Path(export_result["signingCheckCommandPath"]).is_file())
+
+        platform_map = {package["platform"]: package for package in export_result["packages"]}
+        self.assertIn(run_editor.EDITOR_PLATFORM_MACOS, platform_map)
+        self.assertIn(run_editor.EDITOR_PLATFORM_WINDOWS, platform_map)
+        self.assertIn(run_editor.EDITOR_PLATFORM_LINUX, platform_map)
+
+        self.assertTrue(Path(platform_map[run_editor.EDITOR_PLATFORM_MACOS]["archivePath"]).is_file())
+        self.assertTrue(Path(platform_map[run_editor.EDITOR_PLATFORM_WINDOWS]["archivePath"]).is_file())
+        self.assertTrue(Path(platform_map[run_editor.EDITOR_PLATFORM_LINUX]["archivePath"]).is_file())
+        self.assertTrue(Path(platform_map[run_editor.EDITOR_PLATFORM_WINDOWS]["runtimeInfo"]["runtimeDirPath"]).is_dir())
+        self.assertTrue(Path(platform_map[run_editor.EDITOR_PLATFORM_LINUX]["runtimeInfo"]["runtimeDirPath"]).is_dir())
+        self.assertTrue(Path(platform_map[run_editor.EDITOR_PLATFORM_MACOS]["runtimeInfo"]["runtimeDirPath"]).is_dir())
+        self.assertTrue(Path(platform_map[run_editor.EDITOR_PLATFORM_WINDOWS]["commercialReadmePath"]).is_file())
+        self.assertTrue(Path(platform_map[run_editor.EDITOR_PLATFORM_WINDOWS]["signingGuidePath"]).is_file())
+        self.assertTrue(Path(platform_map[run_editor.EDITOR_PLATFORM_WINDOWS]["signingEnvExamplePath"]).is_file())
+        self.assertTrue(Path(platform_map[run_editor.EDITOR_PLATFORM_WINDOWS]["signingCheckScriptPath"]).is_file())
+        self.assertTrue(Path(platform_map[run_editor.EDITOR_PLATFORM_WINDOWS]["signingCheckCommandPath"]).is_file())
+        self.assertTrue(Path(platform_map[run_editor.EDITOR_PLATFORM_WINDOWS]["windowsInstallerScriptPath"]).is_file())
+        self.assertTrue(Path(platform_map[run_editor.EDITOR_PLATFORM_WINDOWS]["windowsInstallerExePath"]).is_file())
+        self.assertEqual(
+            platform_map[run_editor.EDITOR_PLATFORM_WINDOWS]["windowsInstallerCompileStatusLabel"],
+            "已编译 Windows 安装器",
+        )
+        self.assertEqual(
+            platform_map[run_editor.EDITOR_PLATFORM_WINDOWS]["windowsSigningStatusLabel"],
+            "已签名并加时间戳",
+        )
+        self.assertTrue(platform_map[run_editor.EDITOR_PLATFORM_WINDOWS]["windowsInstallerSigned"])
+        self.assertEqual(
+            platform_map[run_editor.EDITOR_PLATFORM_WINDOWS]["signingInfo"]["statusLabel"],
+            "已签名并加时间戳",
+        )
+        self.assertTrue(Path(platform_map[run_editor.EDITOR_PLATFORM_LINUX]["commercialReadmePath"]).is_file())
+        self.assertTrue(Path(platform_map[run_editor.EDITOR_PLATFORM_LINUX]["signingGuidePath"]).is_file())
+        self.assertTrue(Path(platform_map[run_editor.EDITOR_PLATFORM_LINUX]["signingEnvExamplePath"]).is_file())
+        self.assertTrue(Path(platform_map[run_editor.EDITOR_PLATFORM_LINUX]["signingCheckScriptPath"]).is_file())
+        self.assertTrue(Path(platform_map[run_editor.EDITOR_PLATFORM_LINUX]["signingCheckCommandPath"]).is_file())
+        self.assertTrue(Path(platform_map[run_editor.EDITOR_PLATFORM_LINUX]["linuxInstallScriptPath"]).is_file())
+
+        if run_editor.should_build_editor_macos_app():
+            self.assertTrue(Path(platform_map[run_editor.EDITOR_PLATFORM_MACOS]["appPath"]).is_dir())
+            self.assertTrue(Path(platform_map[run_editor.EDITOR_PLATFORM_MACOS]["installerPath"]).is_file())
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

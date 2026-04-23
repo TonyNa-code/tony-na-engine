@@ -1,0 +1,36 @@
+{
+  "formatVersion": 1,
+  "currentIndex": 4,
+  "entries": [
+    {
+      "id": "snapshot_20260420_184712",
+      "createdAt": "2026-04-20T18:47:12+08:00",
+      "label": "当前版本基线",
+      "kind": "baseline"
+    },
+    {
+      "id": "snapshot_20260421_004300",
+      "createdAt": "2026-04-21T00:43:00+08:00",
+      "label": "修改项目设置",
+      "kind": "auto"
+    },
+    {
+      "id": "snapshot_20260421_004313",
+      "createdAt": "2026-04-21T00:43:13+08:00",
+      "label": "修改项目设置",
+      "kind": "auto"
+    },
+    {
+      "id": "snapshot_20260421_004955",
+      "createdAt": "2026-04-21T00:49:55+08:00",
+      "label": "修改项目设置",
+      "kind": "auto"
+    },
+    {
+      "id": "snapshot_20260423_145123",
+      "createdAt": "2026-04-23T14:51:23+08:00",
+      "label": "自动升级到项目格式 v2",
+      "kind": "migration"
+    }
+  ]
+}

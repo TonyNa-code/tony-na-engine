@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#1a2238"/>
+      <stop offset="45%" stop-color="#4b3a65"/>
+      <stop offset="100%" stop-color="#f08d6f"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="42%" r="42%">
+      <stop offset="0%" stop-color="rgba(255,244,214,0.95)"/>
+      <stop offset="55%" stop-color="rgba(255,195,145,0.45)"/>
+      <stop offset="100%" stop-color="rgba(255,195,145,0)"/>
+    </radialGradient>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#bg)"/>
+  <rect width="1920" height="1080" fill="url(#glow)" opacity="0.72"/>
+  <rect x="0" y="720" width="1920" height="360" fill="#101524" opacity="0.9"/>
+  <path d="M0 760 C 220 690, 360 690, 520 760 S 840 830, 1060 760 S 1460 650, 1920 760 L1920 1080 L0 1080 Z" fill="#182236" opacity="0.95"/>
+  <path d="M0 820 C 260 740, 420 730, 640 820 S 1040 920, 1320 820 S 1640 710, 1920 830 L1920 1080 L0 1080 Z" fill="#0d1526" opacity="0.96"/>
+  <circle cx="1450" cy="250" r="88" fill="#fff1cf" opacity="0.88"/>
+  <g opacity="0.75">
+    <circle cx="320" cy="210" r="3" fill="#d7ebff"/>
+    <circle cx="560" cy="130" r="2" fill="#d7ebff"/>
+    <circle cx="860" cy="190" r="2.5" fill="#d7ebff"/>
+    <circle cx="1210" cy="110" r="3" fill="#d7ebff"/>
+    <circle cx="1660" cy="180" r="2.5" fill="#d7ebff"/>
+  </g>
+  <rect x="180" y="180" width="420" height="220" rx="24" fill="rgba(11,17,31,0.38)" stroke="rgba(177,227,255,0.28)"/>
+  <text x="230" y="260" font-family="Helvetica, Arial, sans-serif" font-size="56" font-weight="700" fill="#f8fbff">黄昏回想</text>
+  <text x="230" y="324" font-family="Helvetica, Arial, sans-serif" font-size="26" fill="#dbe8ff">第一次真正走到这段心意的时候，</text>
+  <text x="230" y="366" font-family="Helvetica, Arial, sans-serif" font-size="26" fill="#dbe8ff">黄昏会把没说出口的话都染成暖色。</text>
+</svg>
