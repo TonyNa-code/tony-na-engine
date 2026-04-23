@@ -40,6 +40,7 @@ const refs = {
   startEndingButton: document.getElementById("startEndingButton"),
   startGalleryButton: document.getElementById("startGalleryButton"),
   startMusicRoomButton: document.getElementById("startMusicRoomButton"),
+  runtimeThemeButtons: Array.from(document.querySelectorAll(".player-theme-button")),
   startSummary: document.getElementById("startSummary"),
   startResumeSummary: document.getElementById("startResumeSummary"),
   textSpeedSelect: document.getElementById("textSpeedSelect"),
@@ -175,6 +176,15 @@ function applyRuntimeUiTheme(mode = state.playback?.uiThemeMode ?? PLAYBACK_DEFA
   const safeMode = getSafeUiThemeMode(mode);
   document.documentElement.dataset.uiThemeMode = safeMode;
   document.documentElement.dataset.uiTheme = resolveUiTheme(safeMode);
+}
+
+function renderRuntimeUiThemeButtons() {
+  const activeMode = getSafeUiThemeMode(state.playback?.uiThemeMode);
+  refs.runtimeThemeButtons?.forEach((button) => {
+    const isActive = button.dataset.uiThemeMode === activeMode;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-pressed", isActive ? "true" : "false");
+  });
 }
 
 function scheduleRuntimeUiThemeAutoRefresh() {
@@ -1209,6 +1219,11 @@ function init() {
   refs.startEndingButton?.addEventListener("click", openEndingDialog);
   refs.startGalleryButton?.addEventListener("click", openGalleryDialog);
   refs.startMusicRoomButton?.addEventListener("click", openMusicRoomDialog);
+  refs.runtimeThemeButtons?.forEach((button) => {
+    button.addEventListener("click", () => {
+      setRuntimeUiThemeMode(button.dataset.uiThemeMode);
+    });
+  });
   refs.textSpeedSelect?.addEventListener("change", handleTextSpeedChange);
   refs.dialogThemeSelect?.addEventListener("change", handleDialogThemeChange);
   refs.uiThemeSelect?.addEventListener("change", handleUiThemeModeChange);
@@ -1731,14 +1746,14 @@ function renderBeforeStart() {
   refs.speakerName.textContent = "Tony Na Engine";
   refs.speakerName.style.color = "";
   refs.lineTypeTag.textContent = "准备";
-  refs.messageText.textContent = "点“开始试玩”以后，这个网页会按当前项目里的分支、变量和跳转继续运行。";
+  refs.messageText.textContent = "点击“开始试玩”后，运行时会按当前项目的分支、变量和跳转继续推进。";
   refs.messageText.classList.remove("is-typing");
   refs.choiceList.innerHTML = "";
-  refs.hintText.textContent = "可以直接打开这个 HTML 文件试玩。";
+  refs.hintText.textContent = "可直接打开当前 HTML 文件进行试玩。";
   refs.continueButton.textContent = "开始试玩";
   refs.continueButton.disabled = false;
   refs.variablesPanel.innerHTML = renderVariables(createInitialVariableState());
-  refs.historyPanel.innerHTML = renderEmpty("开始之后，这里会显示走过的剧情步骤。");
+  refs.historyPanel.innerHTML = renderEmpty("开始后，这里会显示已经走过的剧情步骤。");
   state.saveDialogOpen = false;
   renderStartResumeSummary();
   renderPlaybackControls();
@@ -2754,7 +2769,7 @@ function renderLocationDialog() {
         <div class="extra-hero-locked">这个地点还没有收录。</div>
         <div class="extra-hero-copy">
           <strong>？？？</strong>
-          <span>${escapeHtml("继续推进剧情，真正走到这张背景第一次出现的位置后，这里就会自动亮起。")}</span>
+          <span>${escapeHtml("推进到这张背景第一次出现的位置后即可解锁。")}</span>
           <span>${escapeHtml(`${selectedEntry.chapterName} · ${selectedEntry.sceneName}`)}</span>
         </div>
       `;
@@ -2782,7 +2797,7 @@ function renderLocationDialog() {
                     ? entry.tags.length > 0
                       ? `标签：${entry.tags.join(" / ")}`
                       : "这张背景已经在剧情里被玩家真正见过。"
-                    : "继续推进剧情后，这个地点会在标题页自动解锁。"
+                    : "推进到对应剧情后，这个地点会在标题页自动解锁。"
                 )}</p>
               </button>
             </article>
@@ -2807,7 +2822,7 @@ function renderNarrationDialog() {
   refs.narrationDialog.classList.toggle("is-visible", state.narrationDialogOpen);
   refs.narrationDialogSummary.textContent =
     entries.length > 0
-      ? `当前已收录 ${unlockedCount} / ${entries.length} 段旁白。第一次真正推进到这段旁白后，它就会在标题页摘录馆里亮起。`
+      ? `当前已收录 ${unlockedCount} / ${entries.length} 段旁白。推进到对应段落后，会在标题页摘录馆解锁。`
       : "这个项目当前还没有可收录的旁白摘录条目。";
 
   if (!selectedEntry) {
@@ -2835,7 +2850,7 @@ function renderNarrationDialog() {
         <div class="extra-hero-locked">这段旁白还没有收录。</div>
         <div class="extra-hero-copy">
           <strong>？？？ · 未收录旁白</strong>
-          <span>${escapeHtml("继续推进剧情，真正走到这段旁白后，它就会自动亮起。")}</span>
+          <span>${escapeHtml("推进到这段旁白后即可解锁。")}</span>
           <span>${escapeHtml(`${selectedEntry.chapterName} · ${selectedEntry.sceneName}`)}</span>
         </div>
       `;
@@ -2858,7 +2873,7 @@ function renderNarrationDialog() {
                       : `${entry.chapterName} · ${entry.sceneName} · 未收录`
                   )}
                 </div>
-                <p>${escapeHtml(entry.unlocked ? truncateText(entry.text, 96) : "继续推进剧情后，这段旁白会自动收录进标题页摘录馆。")}</p>
+                <p>${escapeHtml(entry.unlocked ? truncateText(entry.text, 96) : "推进到对应剧情后，这段旁白会收录到标题页摘录馆。")}</p>
               </button>
             </article>
           `
@@ -2882,7 +2897,7 @@ function renderRelationDialog() {
   refs.relationDialog.classList.toggle("is-visible", state.relationDialogOpen);
   refs.relationDialogSummary.textContent =
     entries.length > 0
-      ? `当前已收录 ${unlockedCount} / ${entries.length} 组关系。第一次真正让这两位角色在剧情里同场后，这组共演关系就会在标题页自动亮起。`
+      ? `当前已收录 ${unlockedCount} / ${entries.length} 组关系。两位角色首次同场后，这组共演关系会在标题页解锁。`
       : "这个项目当前还没有可收录的双人关系条目。";
 
   if (!selectedEntry) {
@@ -2915,7 +2930,7 @@ function renderRelationDialog() {
         <div class="extra-hero-locked">这组关系还没有收录。</div>
         <div class="extra-hero-copy">
           <strong>？？？ × ？？？</strong>
-          <span>${escapeHtml("继续推进剧情，让这两位角色真正同场出现后，这组关系就会自动亮起。")}</span>
+          <span>${escapeHtml("推进到两位角色首次同场的位置后即可解锁。")}</span>
           <span>${escapeHtml(`${selectedEntry.chapterName} · ${selectedEntry.sceneName}`)}</span>
         </div>
       `;
@@ -2941,7 +2956,7 @@ function renderRelationDialog() {
                 <p>${escapeHtml(
                   entry.unlocked
                     ? truncateText(entry.previewText || "这组角色已经在剧情里真正同场出现过。", 72)
-                    : "继续推进剧情，让这两位角色真正同场后，这组关系会自动收录。"
+                    : "推进到两位角色同场后，这组关系会收录。"
                 )}</p>
               </button>
             </article>
@@ -2988,7 +3003,7 @@ function renderChapterDialog() {
           <strong>${escapeHtml(selectedEntry.name)}</strong>
           <span>${escapeHtml(`这一章共有 ${selectedEntry.sceneCount} 个场景，章节开头是：${selectedEntry.firstSceneName}`)}</span>
           <span>${escapeHtml(
-            `${selectedEntry.previewSpeakerName || "章节导语"} · ${truncateText(selectedEntry.previewText || selectedEntry.notes || "从这里可以直接回放这一章的开头。", 72)}`
+            `${selectedEntry.previewSpeakerName || "章节导语"} · ${truncateText(selectedEntry.previewText || selectedEntry.notes || "这里会显示这一章开头的回放摘要。", 72)}`
           )}</span>
           <span>${escapeHtml(
             `开放时间：${selectedEntry.unlockedAt ? formatDate(selectedEntry.unlockedAt) : "未记录"}`
@@ -3002,7 +3017,7 @@ function renderChapterDialog() {
         <div class="extra-hero-locked">这一章还没有开放。</div>
         <div class="extra-hero-copy">
           <strong>？？？</strong>
-          <span>${escapeHtml(`继续推进剧情，真正走到这一章后，这里就会自动亮起。`)}</span>
+          <span>${escapeHtml(`推进到这一章后即可解锁。`)}</span>
           <span>${escapeHtml(`这一章共有 ${selectedEntry.sceneCount} 个场景。`)}</span>
         </div>
       `;
@@ -3025,7 +3040,7 @@ function renderChapterDialog() {
                       : `${entry.sceneCount} 个场景 · 未开放`
                   )}
                 </div>
-                <p>${escapeHtml(entry.unlocked ? truncateText(entry.notes || `章节开头：${entry.firstSceneName}`, 72) : "继续推进主流程后开放")}</p>
+                <p>${escapeHtml(entry.unlocked ? truncateText(entry.notes || `章节开头：${entry.firstSceneName}`, 72) : "推进主流程后开放")}</p>
               </button>
               <div class="music-room-actions">
                 <button
@@ -3054,16 +3069,16 @@ function renderProfileDialog() {
   const sections = [
     {
       title: "游玩记录",
-      meta: profile.sessionCount > 0 ? `累计 ${profile.sessionCount} 次 · 继续试玩 ${profile.resumedCount} 次` : "还没有正式游玩记录",
+      meta: profile.sessionCount > 0 ? `累计 ${profile.sessionCount} 次 · 继续试玩 ${profile.resumedCount} 次` : "当前还没有正式游玩记录",
       body:
         profile.sessionCount > 0
           ? `累计游玩 ${formatPlayDuration(profile.totalPlayMs)} · 最近开始 ${profile.lastPlayedAt ? formatDate(profile.lastPlayedAt) : "未记录"}`
-          : "点一次“开始试玩”以后，这里就会开始记录属于玩家自己的游玩档案。",
+          : "开始试玩后，这里会开始记录本机游玩档案。",
     },
     {
       title: "存档状态",
       meta: `${stats.formalSaveCount} 个正式存档 · 快速存档 ${stats.hasQuickSave ? "已存在" : "未创建"}`,
-      body: `自动续玩 ${stats.hasAutoResume ? "已记录" : "暂未记录"} · 标题页和系统菜单都会继续沿用这批本机存档。`,
+      body: `自动续玩 ${stats.hasAutoResume ? "已记录" : "暂未记录"} · 标题页和系统菜单都会沿用这批本机存档。`,
     },
     {
       title: "章节选集",
@@ -3073,8 +3088,8 @@ function renderProfileDialog() {
           : "当前没有章节条目",
       body:
         stats.chapterEntries.length > 0
-          ? "真正走到哪章，就会开放哪章；之后可以直接从那一章的第一个场景开头重放。"
-          : "先做出第一章以后，这里才会开始累计章节回放进度。",
+          ? "推进到哪一章，就开放哪一章；之后可直接从该章的第一个场景开头重放。"
+          : "项目具备第一章后，这里才会开始累计章节回放进度。",
     },
     {
       title: "地点图鉴",
@@ -3084,8 +3099,8 @@ function renderProfileDialog() {
           : "当前没有地点条目",
       body:
         stats.locationEntries.length > 0
-          ? "第一次真正走到这张背景出现的位置后，这个地点就会被标题页地点图鉴自动收录。"
-          : "等剧情里真的用到背景切换后，这里才会开始累计地点图鉴进度。",
+          ? "推进到这张背景第一次出现的位置后，这个地点会收录到标题页地点图鉴。"
+          : "剧情中出现背景切换后，这里才会开始累计地点图鉴进度。",
     },
     {
       title: "旁白摘录",
@@ -3095,8 +3110,8 @@ function renderProfileDialog() {
           : "当前没有旁白摘录条目",
       body:
         stats.narrationEntries.length > 0
-          ? "第一次真正推进到这段旁白后，它就会被标题页摘录馆自动收录，之后可以在标题页回看。"
-          : "等剧情里出现真正的旁白段落后，这里才会开始累计摘录收藏进度。",
+          ? "推进到这段旁白后，它会收录到标题页摘录馆，之后可在标题页回看。"
+          : "剧情中出现旁白段落后，这里才会开始累计摘录收藏进度。",
     },
     {
       title: "关系图鉴",
@@ -3106,8 +3121,8 @@ function renderProfileDialog() {
           : "当前没有关系条目",
       body:
         stats.relationEntries.length > 0
-          ? "第一次真正让两位角色在剧情里同场后，这组共演关系就会被标题页关系图鉴自动收录。"
-          : "等剧情里出现真正的双人互动场景后，这里才会开始累计关系图鉴进度。",
+          ? "两位角色首次同场后，这组共演关系会收录到标题页关系图鉴。"
+          : "剧情中出现双人互动场景后，这里才会开始累计关系图鉴进度。",
     },
     {
       title: "语音回听",
@@ -3117,8 +3132,8 @@ function renderProfileDialog() {
           : "当前没有可回听的语音台词",
       body:
         stats.voiceReplayEntries.length > 0
-          ? "第一次推进到这句带真实语音的台词后，这里就会自动收录，之后可以直接在标题页回放。"
-          : "等项目里有真正可播放的语音台词后，这里才会开始累计。",
+          ? "推进到这句带真实语音的台词后，这里会收录，之后可直接在标题页回放。"
+          : "项目中有可播放的语音台词后，这里才会开始累计。",
     },
     {
       title: "成就馆",
@@ -3129,17 +3144,17 @@ function renderProfileDialog() {
       body:
         stats.achievementEntries.length > 0
           ? "会根据开始试玩、首次选项、图鉴收录、结局回收和 EXTRA 全收集自动点亮。"
-          : "等项目内容再丰富一些，标题页成就馆就会自动开始累计。",
+          : "项目内容达到对应条件后，标题页成就馆会开始累计。",
     },
     {
       title: "角色图鉴 / 结局回收",
       meta: `${state.characterArchive.size} / ${stats.characterEntries.length || 0} 角色 · ${state.endingProgress.unlocked.size} / ${stats.endingScenes.length || 0} 结局`,
-      body: `角色图鉴记录你见过和说过话的角色，结局回收记录你真正通关过的路线。`,
+      body: `角色图鉴记录已见过和说过话的角色，结局回收记录已真正通关的路线。`,
     },
     {
       title: "EXTRA 收藏",
       meta: `${state.extraUnlocks.cg.size} / ${stats.galleryAssets.length || 0} CG · ${state.extraUnlocks.bgm.size} / ${stats.musicAssets.length || 0} BGM`,
-      body: `第一次看到某张 CG、第一次听到某首 BGM 以后，这里就会把对应收藏进度一起累积下来。`,
+      body: `首次看到某张 CG、首次听到某首 BGM 后，这里会同步累计对应收藏进度。`,
     },
   ];
 
@@ -3148,7 +3163,7 @@ function renderProfileDialog() {
   refs.profileDialogSummary.textContent =
     profile.sessionCount > 0
       ? `这份玩家档案会把游玩记录、存档、章节、成就、图鉴、结局和 EXTRA 收藏一起记在本机里。当前已游玩 ${profile.sessionCount} 次，累计 ${formatPlayDuration(profile.totalPlayMs)}。`
-      : "这份玩家档案会把游玩记录、存档、章节、成就、图鉴、结局和 EXTRA 收藏一起记在本机里。开始试玩后，这里就会自动累积。";
+      : "这份玩家档案会把游玩记录、存档、章节、成就、图鉴、结局和 EXTRA 收藏一起记录在本机里。开始试玩后会逐步累积。";
 
   refs.profileDialogHero.innerHTML = `
     <div class="extra-hero-copy">
@@ -3164,7 +3179,7 @@ function renderProfileDialog() {
         <span class="achievement-badge">${escapeHtml(`继续次数：${profile.resumedCount} 次`)}</span>
         <span class="achievement-badge">${escapeHtml(`返回标题：${profile.returnToTitleCount} 次`)}</span>
       </div>
-      <span>${escapeHtml("这份档案只会保存在玩家自己的浏览器里，不会写回你的项目文件。")}</span>
+      <span>${escapeHtml("这份档案只会保存在玩家自己的浏览器里，不会写回项目文件。")}</span>
     </div>
   `;
 
@@ -3282,7 +3297,7 @@ function renderVoiceReplayDialog() {
   refs.voiceReplayDialog.classList.toggle("is-visible", state.voiceReplayDialogOpen);
   refs.voiceReplayDialogSummary.textContent =
     entries.length > 0
-      ? `当前已收录 ${unlockedCount} / ${entries.length} 句。第一次推进到带真实语音的台词后，这里就会自动亮起。`
+      ? `当前已收录 ${unlockedCount} / ${entries.length} 句。推进到带真实语音的台词后即可解锁。`
       : "这个项目当前还没有可回听的语音台词。";
 
   if (!selectedEntry) {
@@ -3318,7 +3333,7 @@ function renderVoiceReplayDialog() {
         <div class="extra-hero-locked">这句语音还没有解锁。</div>
         <div class="extra-hero-copy">
           <strong>？？？ · 名台词回放馆</strong>
-          <span>继续推进剧情，真正走到这句带真实语音的台词后，这里就会自动收录。</span>
+          <span>推进到这句带真实语音的台词后会收录到这里。</span>
         </div>
       `;
 
@@ -3336,7 +3351,7 @@ function renderVoiceReplayDialog() {
                       : `${entry.chapterName} · 推进剧情后解锁`
                   )}
                 </div>
-                <p>${escapeHtml(entry.unlocked ? truncateText(entry.text || "这句台词暂时没有正文。", 80) : "继续推进剧情后，这里会自动收录这句带语音的台词。")}</p>
+                <p>${escapeHtml(entry.unlocked ? truncateText(entry.text || "这句台词暂时没有正文。", 80) : "推进到对应剧情后，这句带语音的台词会收录到这里。")}</p>
               </button>
               <div class="music-room-actions">
                 <button
@@ -3614,7 +3629,7 @@ function renderCharacterDialog() {
   refs.characterDialog.classList.toggle("is-visible", state.characterDialogOpen);
   refs.characterDialogSummary.textContent =
     entries.length > 0
-      ? `当前已收录 ${unlockedCount} / ${entries.length} 位角色。第一次在剧情里见到角色、或者看到他开口说话后，这里会自动亮起。`
+      ? `当前已收录 ${unlockedCount} / ${entries.length} 位角色。首次见到角色或角色首次开口后即可解锁。`
       : "这个项目当前还没有可收录的角色。";
 
   if (!selectedEntry) {
@@ -3664,7 +3679,7 @@ function renderCharacterDialog() {
         <div class="extra-hero-locked">这个角色还没有解锁。</div>
         <div class="extra-hero-copy">
           <strong>？？？</strong>
-          <span>继续推进剧情后，这里会自动收录你已经见过的角色。</span>
+          <span>推进剧情后，这里会收录已经见过的角色。</span>
         </div>
       `;
 
@@ -3863,7 +3878,7 @@ function renderEndingDialog() {
         <div class="extra-hero-locked">这个结局还没有解锁。</div>
         <div class="extra-hero-copy">
           <strong>？？？</strong>
-          <span>${escapeHtml(`${selectedEntry.chapterName} · 继续推进不同选项和条件分支后，这里会自动收录。`)}</span>
+          <span>${escapeHtml(`${selectedEntry.chapterName} · 推进不同选项和条件分支后会收录到这里。`)}</span>
           <span>${escapeHtml(selectedEntry.notes || "你打到对应路线收尾以后，这一格就会亮起来。")}</span>
         </div>
       `;
@@ -3884,7 +3899,7 @@ function renderEndingDialog() {
                     entry.unlocked ? (entry.unlockedAt ? `收录于 ${formatDate(entry.unlockedAt)}` : "已回收") : "未解锁"
                   )}
                 </div>
-                <p>${escapeHtml(entry.unlocked ? truncateText(entry.notes || "这条结局已经可以从标题页直接回放。", 72) : "继续推进不同路线后解锁")}</p>
+                <p>${escapeHtml(entry.unlocked ? truncateText(entry.notes || "这条结局已经可以从标题页直接回放。", 72) : "推进不同路线后解锁")}</p>
               </button>
               <div class="music-room-actions">
                 <button
@@ -3948,7 +3963,7 @@ function renderGalleryDialog() {
   refs.galleryDialog.classList.toggle("is-visible", state.galleryDialogOpen);
   refs.galleryDialogSummary.textContent =
     entries.length > 0
-      ? `当前已解锁 ${unlockedCount} / ${entries.length} 张。第一次在剧情里看到某张 CG 后，这里会自动收录。`
+      ? `当前已解锁 ${unlockedCount} / ${entries.length} 张。首次在剧情里看到某张 CG 后会收录到这里。`
       : "这个项目当前还没有可收录的 CG 资源。";
 
   if (!selectedEntry) {
@@ -3977,7 +3992,7 @@ function renderGalleryDialog() {
         <div class="extra-hero-locked">这张 CG 还没有解锁。</div>
         <div class="extra-hero-copy">
           <strong>？？？</strong>
-          <span>继续推进剧情后，这里会自动收录你见过的 CG。</span>
+          <span>推进剧情后，这里会收录已经见过的 CG。</span>
         </div>
       `;
 
@@ -4019,7 +4034,7 @@ function renderMusicRoomDialog() {
   refs.musicRoomDialog.classList.toggle("is-visible", state.musicRoomDialogOpen);
   refs.musicRoomDialogSummary.textContent =
     entries.length > 0
-      ? `当前已解锁 ${unlockedCount} / ${entries.length} 首。第一次在剧情里听到某首 BGM 后，这里会自动收录。`
+      ? `当前已解锁 ${unlockedCount} / ${entries.length} 首。首次在剧情里听到某首 BGM 后会收录到这里。`
       : "这个项目当前还没有可收录的 BGM。";
 
   refs.musicRoomNowPlaying.innerHTML = currentEntry
@@ -4032,7 +4047,7 @@ function renderMusicRoomDialog() {
           <button class="pill-button is-secondary" type="button" data-music-room-stop>停止播放</button>
         </div>
       `
-    : `<div class="extra-hero-copy"><strong>还没有正在试听的曲目</strong><span>点下面任意一首已解锁 BGM，就能在这里直接试听。</span></div>`;
+    : `<div class="extra-hero-copy"><strong>当前没有正在试听的曲目</strong><span>点下面任意一首已解锁 BGM，即可在这里试听。</span></div>`;
 
   refs.musicRoomList.innerHTML = entries.length
     ? entries
@@ -6168,6 +6183,7 @@ function renderPlaybackControls(snapshot = getCurrentSnapshot()) {
   }
 
   applyRuntimeUiTheme(state.playback.uiThemeMode);
+  renderRuntimeUiThemeButtons();
 
   if (refs.systemMenuButton) {
     refs.systemMenuButton.disabled = false;
@@ -6180,6 +6196,13 @@ function renderPlaybackControls(snapshot = getCurrentSnapshot()) {
   renderReturnTitleDialog();
   renderSaveConfirmDialog();
   renderSaveDialog();
+}
+
+function setRuntimeUiThemeMode(mode) {
+  state.playback.uiThemeMode = getSafeUiThemeMode(mode);
+  persistPlaybackSettings();
+  applyRuntimeUiTheme(state.playback.uiThemeMode);
+  renderPlaybackControls();
 }
 
 function handleTextSpeedChange(event) {
@@ -6963,7 +6986,7 @@ function renderSaveVisualSummary(slot) {
     return `
       <div class="save-slot-preview is-empty">
         <strong>还没有保存画面</strong>
-        <span>等你跑到关键节点以后，这里会显示这一格的大致舞台状态。</span>
+        <span>到达关键节点后，这里会显示这一格的大致舞台状态。</span>
       </div>
     `;
   }
@@ -7224,10 +7247,10 @@ function getSystemMenuSummary() {
   }
 
   if (state.autoResume) {
-    return `还没进入试玩，但你上次停在：${getSaveSlotSummary(state.autoResume)}`;
+    return `当前还没进入试玩，上次停留位置：${getSaveSlotSummary(state.autoResume)}`;
   }
 
-  return "从这里可以统一管理正式存档、快速存档、设置，以及回到标题页。";
+  return "这里统一管理正式存档、快速存档、设置，以及返回标题页。";
 }
 
 function openSystemMenu() {
@@ -7431,7 +7454,7 @@ function getSaveDialogSummary() {
 
   if (mode === "save") {
     if (!state.started || !snapshot) {
-      return "现在还没开始试玩，先进入剧情，再把关键节点正式存下来。";
+      return "当前还没有开始试玩，进入剧情后即可保存关键节点。";
     }
 
     return `当前节点：${getSaveSlotSummary({
@@ -7441,13 +7464,13 @@ function getSaveDialogSummary() {
 
   const hasManualSlots = state.saveSlots.some(Boolean);
   if (state.autoResume && hasManualSlots) {
-    return `你可以继续上次试玩，也可以从多页正式存档里挑一个读回去。当前在第 ${
+    return `可继续上次试玩，也可从多页正式存档中选择一个读回。当前在第 ${
       getSafeSaveDialogPage(state.saveDialogPage) + 1
     } 页。`;
   }
 
   if (state.autoResume) {
-    return "目前只有自动续玩记录，你可以先继续上次试玩，或者之后再存正式节点。";
+    return "当前只有自动续玩记录，可先继续上次试玩，或稍后再保存正式节点。";
   }
 
   if (hasManualSlots) {
@@ -7456,7 +7479,7 @@ function getSaveDialogSummary() {
     } 页。`;
   }
 
-  return "现在还没有正式存档，先跑到关键剧情点，再存一格会更好找。";
+  return "当前还没有正式存档，可在关键剧情点保存节点。";
 }
 
 function renderFormalSaveSlotCard(slotNumber, slot, mode, options = {}) {
@@ -7572,7 +7595,7 @@ function renderSaveDialog() {
         <p>${escapeHtml(
           state.quickSave
             ? `变量：${getVariableSummary(getSaveSlotSnapshot(state.quickSave)?.variables)}`
-            : "适合临时打点，回头立刻重试当前分支。"
+            : "适合临时打点，后续可快速重试当前分支。"
         )}</p>
       </div>
       <div class="save-slot-actions">
@@ -7609,7 +7632,7 @@ function renderSaveDialog() {
             <p>${escapeHtml(
               state.autoResume
                 ? `变量：${getVariableSummary(getSaveSlotSnapshot(state.autoResume)?.variables)}`
-                : "关闭页面后，这里会自动记住你上次看到的位置。"
+                : "关闭页面后，这里会记录上次看到的位置。"
             )}</p>
           </div>
           <div class="save-slot-actions">
@@ -7849,7 +7872,7 @@ function createInitialPreviewVisualState() {
     characterEmphasisEvent: null,
     visibleCharacters: [],
     speakerName: "Tony Na Engine",
-    dialogueText: "点“继续”以后，这里会按导出时的剧情顺序推进。",
+    dialogueText: "点击“继续”后，这里会按导出时的剧情顺序推进。",
   };
 }
 
@@ -8684,11 +8707,11 @@ function getPreviewHint(snapshot) {
   }
 
   if (isRuntimeTypewriterActive()) {
-    return "可以点画面、按空格或回车，先把整句台词直接显示出来。";
+    return "可点画面、按空格或回车，先显示整句台词。";
   }
 
   if (state.playback.autoPlay && snapshot.choiceOptions.length === 0 && !snapshot.completed) {
-    return "自动播放已开启，这一段会自己继续往下走。";
+    return "自动播放已开启，当前段落会自动继续推进。";
   }
 
   if (state.playback.skipRead && snapshot.choiceOptions.length === 0 && !snapshot.completed) {
@@ -8696,7 +8719,7 @@ function getPreviewHint(snapshot) {
   }
 
   if (snapshot.choiceOptions.length > 0) {
-    return "需要先点一个选项，剧情才会继续。";
+    return "需要先选择一个选项，剧情才会继续。";
   }
 
   if (snapshot.completed) {
@@ -8711,7 +8734,7 @@ function getPreviewHint(snapshot) {
     return "下一步会进入目标场景。";
   }
 
-  return "可以直接点画面，按空格/回车继续，按 R 重新开始，按 S 开关跳过已读，按 H 隐藏对话框。";
+  return "可点画面或按空格 / 回车继续，按 R 重新开始，按 S 切换跳过已读，按 H 隐藏对话框。";
 }
 
 function getEntrySceneId() {

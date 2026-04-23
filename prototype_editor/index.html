@@ -101,6 +101,38 @@
           >
             新手教程
           </button>
+          <div class="ui-theme-switch-wrap" aria-label="界面外观">
+            <span class="ui-theme-switch-label">外观</span>
+            <div id="globalUiThemeSwitch" class="ui-theme-switch" role="group" aria-label="界面主题切换">
+              <button
+                id="globalUiThemeAutoButton"
+                class="toolbar-button ui-theme-mode-button"
+                type="button"
+                data-action="set-ui-theme-mode"
+                data-ui-theme-mode="auto"
+              >
+                自动
+              </button>
+              <button
+                id="globalUiThemeLightButton"
+                class="toolbar-button ui-theme-mode-button"
+                type="button"
+                data-action="set-ui-theme-mode"
+                data-ui-theme-mode="light"
+              >
+                浅色
+              </button>
+              <button
+                id="globalUiThemeDarkButton"
+                class="toolbar-button ui-theme-mode-button"
+                type="button"
+                data-action="set-ui-theme-mode"
+                data-ui-theme-mode="dark"
+              >
+                深色
+              </button>
+            </div>
+          </div>
           <div id="projectTitleBadge" class="badge">未打开项目</div>
           <div class="topbar-history-actions">
             <button id="historyCheckpointButton" class="toolbar-button" data-action="create-history-checkpoint" disabled>
@@ -124,14 +156,14 @@
 
       <div id="loadingState" class="state-card">
         <h2>正在准备 Tony Na Engine</h2>
-        <p>先把项目入口和编辑器外壳准备好，马上就能开始新建或打开项目。</p>
+        <p>正在载入项目入口与编辑器界面。</p>
       </div>
 
       <div id="errorState" class="state-card is-hidden">
-        <h2>原型载入失败</h2>
-        <p id="errorMessage">暂时还没有拿到错误信息。</p>
+        <h2>载入失败</h2>
+        <p id="errorMessage">当前还没有可显示的错误信息。</p>
         <div id="errorRecoveryState" class="detail-stack is-hidden">
-          <p id="errorRecoveryMessage" class="helper-text">如果之前已经自动保存过项目，这里会出现恢复入口。</p>
+          <p id="errorRecoveryMessage" class="helper-text">如存在可用的自动保存版本，这里会显示恢复入口。</p>
           <div id="errorRecoveryTimeline" class="history-timeline history-timeline-compact"></div>
           <div class="action-row">
             <button id="errorRecoverButton" class="toolbar-button toolbar-button-primary" data-action="restore-previous-version">

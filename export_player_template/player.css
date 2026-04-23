@@ -3591,3 +3591,354 @@ html[data-ui-theme="light"] .save-dialog,
 html[data-ui-theme="light"] .dialog-panel {
   box-shadow: 0 24px 60px rgba(38, 82, 136, 0.14);
 }
+
+/* === Practical Runtime Layout Refresh === */
+
+.top-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.player-theme-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
+  border-radius: 999px;
+  border: 1px solid rgba(121, 220, 255, 0.14);
+  background: rgba(7, 15, 29, 0.5);
+  backdrop-filter: blur(12px);
+}
+
+.player-theme-button {
+  min-width: 54px;
+  min-height: 34px;
+  padding: 8px 12px;
+}
+
+.player-theme-button.is-active {
+  color: #081320;
+  background: linear-gradient(135deg, rgba(121, 220, 255, 0.96), rgba(110, 124, 255, 0.92));
+  border-color: rgba(121, 220, 255, 0.3);
+  box-shadow: 0 10px 20px rgba(48, 123, 255, 0.2);
+}
+
+html[data-ui-theme="light"] .player-theme-switch {
+  background: rgba(255, 255, 255, 0.76);
+  border-color: rgba(108, 145, 196, 0.18);
+}
+
+html[data-ui-theme="light"] .player-theme-button {
+  color: rgba(64, 95, 132, 0.88);
+}
+
+@media (max-width: 960px) {
+  .player-theme-switch {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .player-theme-button {
+    flex: 1 1 0;
+  }
+}
+
+/* === Practical Runtime Surface Cleanup === */
+
+.player-topbar {
+  gap: 14px;
+  padding-bottom: 16px;
+}
+
+.player-topbar h1 {
+  font-size: clamp(26px, 3.2vw, 40px);
+}
+
+.player-brand-copy p,
+.player-brand-meta,
+.start-card p,
+.side-card p,
+.save-dialog-summary,
+.side-note {
+  color: rgba(186, 204, 228, 0.8);
+}
+
+.start-card,
+.side-card,
+.save-dialog,
+.extra-hero-panel,
+.save-slot-card {
+  background: linear-gradient(180deg, rgba(10, 18, 34, 0.84), rgba(8, 15, 28, 0.8));
+  border-color: rgba(121, 220, 255, 0.12);
+  box-shadow: 0 18px 38px rgba(4, 10, 22, 0.22);
+}
+
+.start-card {
+  min-height: 500px;
+  padding: 28px 28px 24px;
+}
+
+.start-card h2 {
+  max-width: 12ch;
+  font-size: clamp(28px, 3.6vw, 44px);
+}
+
+.side-card {
+  padding: 14px;
+  border-radius: 18px;
+}
+
+.side-card h2,
+.save-dialog-head h2 {
+  font-size: 15px;
+  letter-spacing: 0.01em;
+}
+
+.playback-settings,
+.info-list,
+.history-list,
+.save-slot-list {
+  gap: 10px;
+}
+
+.info-row,
+.history-row,
+.summary-row {
+  padding: 11px 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.pill-button,
+.continue-button {
+  min-height: 40px;
+  padding: 10px 14px;
+}
+
+.start-action-group,
+.top-actions,
+.playback-toggle-group,
+.save-slot-actions,
+.save-dialog-confirm-actions,
+.save-dialog-system-actions {
+  gap: 10px;
+}
+
+.start-summary,
+.start-resume-summary {
+  padding: 14px 16px;
+}
+
+.player-layout {
+  gap: 16px;
+}
+
+.player-layout {
+  grid-template-columns: minmax(0, 2.55fr) minmax(280px, 0.88fr);
+}
+
+.side-panel {
+  gap: 12px;
+}
+
+.side-card {
+  padding: 13px 14px;
+  border-radius: 16px;
+}
+
+.side-card h2 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.side-note,
+.side-card p,
+.history-row p,
+.hint-text {
+  line-height: 1.55;
+}
+
+.playback-setting-grid {
+  grid-template-columns: 1fr;
+}
+
+.playback-volume-grid {
+  grid-template-columns: 1fr;
+}
+
+.playback-toggle-group {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.info-row,
+.history-row,
+.summary-row,
+.save-slot-card {
+  padding: 10px 11px;
+  border-radius: 12px;
+}
+
+.info-row label,
+.summary-row label,
+.history-row .meta {
+  letter-spacing: 0.04em;
+}
+
+.save-slot-list {
+  gap: 10px;
+}
+
+.save-slot-card {
+  gap: 10px;
+}
+
+.save-slot-stage {
+  min-height: 144px;
+  padding: 12px;
+  border-radius: 14px;
+}
+
+.start-summary,
+.start-resume-summary {
+  display: grid;
+  gap: 8px;
+}
+
+.start-summary .summary-row,
+.start-resume-summary .summary-row {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.player-brand-copy {
+  max-width: 54ch;
+}
+
+.player-brand-meta {
+  gap: 10px;
+}
+
+@media (max-width: 1120px) {
+  .playback-toggle-group {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* === Practical Runtime Typographic Finish === */
+
+.top-actions {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  justify-content: flex-end;
+  padding-bottom: 2px;
+  scrollbar-width: thin;
+}
+
+.top-actions::-webkit-scrollbar {
+  height: 6px;
+}
+
+.pill-button,
+.continue-button,
+.player-theme-button {
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.015em;
+}
+
+.pill-button,
+.player-theme-button {
+  background: rgba(255, 255, 255, 0.035);
+  border-color: rgba(121, 220, 255, 0.1);
+}
+
+.pill-button:hover,
+.player-theme-button:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(121, 220, 255, 0.16);
+}
+
+.continue-button {
+  box-shadow: 0 14px 28px rgba(44, 113, 236, 0.18);
+}
+
+.start-card h2 {
+  line-height: 1.08;
+  letter-spacing: -0.022em;
+}
+
+.side-card h2,
+.save-dialog-head h2 {
+  font-size: 14px;
+  line-height: 1.2;
+  letter-spacing: 0.012em;
+}
+
+.player-brand-copy p,
+.player-brand-meta,
+.start-card p,
+.side-card p,
+.save-dialog-summary,
+.side-note,
+.hint-text,
+.history-row p,
+.summary-row,
+.info-row {
+  font-size: 13px;
+}
+
+.info-row label,
+.summary-row label,
+.history-row .meta {
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+}
+
+.summary-row strong,
+.info-row strong,
+.history-row strong,
+.save-slot-card strong {
+  letter-spacing: 0.01em;
+}
+
+.side-card,
+.save-slot-card,
+.info-row,
+.history-row,
+.summary-row {
+  box-shadow: none;
+}
+
+.start-action-group,
+.save-slot-actions,
+.save-dialog-confirm-actions,
+.save-dialog-system-actions,
+.playback-toggle-group {
+  row-gap: 8px;
+}
+
+@media (max-width: 960px) {
+  .top-actions {
+    justify-content: flex-start;
+  }
+
+  .player-theme-switch {
+    width: auto;
+  }
+}
+
+@media (max-width: 760px) {
+  .top-actions {
+    flex-wrap: wrap;
+    overflow-x: visible;
+  }
+
+  .player-theme-switch {
+    width: 100%;
+  }
+}

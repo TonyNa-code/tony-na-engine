@@ -1463,7 +1463,7 @@ const CHARACTER_FILTER_LABELS = {
 const PREVIEW_ISSUE_FILTER_LABELS = {
   all: "全部检查",
   errors: "结构错误",
-  warnings: "建议提醒",
+  warnings: "补充提醒",
   export_missing: "导出缺失",
   unused_assets: "未使用素材",
 };
@@ -1517,6 +1517,7 @@ const PREVIEW_REGRESSION_MAX_STEPS = 80;
 const PREVIEW_REGRESSION_MAX_REPEAT = 3;
 const PREVIEW_REGRESSION_BRANCHING_SEED_LIMIT = 4;
 const RECENT_WORKSPACE_LIMIT = 8;
+const EDITOR_UI_THEME_STORAGE_KEY = "tony-na-engine:editor-ui-theme-mode";
 const RECENT_WORKSPACE_TYPE_LABELS = {
   scene: "剧情场景",
   script: "台本入口",
@@ -1635,6 +1636,7 @@ function applyEditorUiTheme(mode = state.previewPlayback?.uiThemeMode ?? PREVIEW
   const safeMode = getSafeUiThemeMode(mode);
   document.documentElement.dataset.uiThemeMode = safeMode;
   document.documentElement.dataset.uiTheme = resolveUiTheme(safeMode);
+  renderGlobalUiThemeSwitch();
 }
 
 function scheduleEditorUiThemeAutoRefresh() {
@@ -1680,6 +1682,7 @@ const refs = {
   editorModeBeginnerButton: document.getElementById("editorModeBeginnerButton"),
   editorModeAdvancedButton: document.getElementById("editorModeAdvancedButton"),
   beginnerTutorialButton: document.getElementById("beginnerTutorialButton"),
+  globalUiThemeButtons: Array.from(document.querySelectorAll(".ui-theme-mode-button")),
   projectTitleBadge: document.getElementById("projectTitleBadge"),
   saveStatusBadge: document.getElementById("saveStatusBadge"),
   validationBadge: document.getElementById("validationBadge"),
@@ -2188,10 +2191,10 @@ function updateErrorRecoveryState(history = state.projectHistory) {
   refs.errorRecoveryState.classList.toggle("is-hidden", safeHistory.totalSnapshots === 0);
   refs.errorRecoveryMessage.textContent =
     safeHistory.totalSnapshots === 0
-      ? "如果之前已经自动保存过项目，这里会出现恢复入口。"
+      ? "如存在可用的自动保存版本，这里会显示恢复入口。"
       : canRestore
-      ? `已经找到 ${safeHistory.totalSnapshots} 份自动快照。当前停在「${currentLabel}」，可以尝试恢复到「${previousLabel}」。`
-      : `已经找到 ${safeHistory.totalSnapshots} 份自动快照，但当前已经是最早版本「${currentLabel}」。`;
+        ? `已经找到 ${safeHistory.totalSnapshots} 份自动快照。当前停在「${currentLabel}」，可以尝试恢复到「${previousLabel}」。`
+        : `已经找到 ${safeHistory.totalSnapshots} 份自动快照，但当前已经是最早版本「${currentLabel}」。`;
 
   if (refs.errorRecoverButton) {
     refs.errorRecoverButton.disabled = !canRestore;
@@ -2208,7 +2211,7 @@ function showFatalProjectLoadError(error) {
   refs.projectCenterState.classList.add("is-hidden");
   refs.appMain.classList.add("is-hidden");
   refs.errorState.classList.remove("is-hidden");
-  refs.errorMessage.textContent = error?.message ?? "暂时还没有拿到错误信息。";
+  refs.errorMessage.textContent = error?.message ?? "当前还没有可显示的错误信息。";
   state.data = null;
   state.validation = null;
   state.lastExportResult = null;
@@ -2249,7 +2252,7 @@ async function maybePromptProjectRecovery(data = state.data) {
 
   state.historyRecoveryPromptKey = promptKey;
   const shouldRestore = await confirmRestoreProjectHistorySnapshot(previousSnapshot, {
-    introText: "检测到上次可能没有正常退出，要不要先回到上次安全点？",
+    introText: "检测到上次可能没有正常退出。是否恢复到上次安全点？",
   });
 
   if (shouldRestore) {
@@ -2261,7 +2264,7 @@ async function maybePromptProjectRecovery(data = state.data) {
     return;
   }
 
-  showToast("你可以稍后在首页的项目安全网里再恢复到上次安全点");
+  showToast("稍后仍可在首页的项目安全网中恢复到上次安全点");
 }
 
 function resetProjectScopedUiState() {
@@ -2432,22 +2435,22 @@ function renderStarterKitPanel(context = "dashboard") {
 
   const defaults = getStarterKitDefaults();
   const contextCopy = {
-    dashboard: "第一章已经有了，下一步最建议先给项目补上一个角色、一张背景和一首 BGM。这样你回到试玩页时，就不会再只看到干巴巴的空壳。",
-    story: "剧情已经能开始写了，但如果先补上角色、背景和 BGM，后面插台词和演出时会更像真正的游戏制作流程。",
-    assets: "这里可以先一键生成“背景 / 立绘 / BGM”的起步条目，后面再慢慢替换成你的真实素材文件。",
-    characters: "如果先长出第一个角色骨架，后面的台词归属、立绘表情和配音整理都会顺很多。",
+    dashboard: "当前项目已经有章节骨架，下一步适合补齐角色、背景和 BGM 的基础条目。",
+    story: "当前剧情已经可以继续写入，补齐角色、背景和 BGM 后，预览和演出会更完整。",
+    assets: "这里可以生成“背景 / 立绘 / BGM”的起步条目，后续再替换成正式素材文件。",
+    characters: "先补齐第一个角色骨架后，台词归属、立绘表情和语音整理会更完整。",
   };
 
   return `
     <section class="detail-card starter-kit-panel">
       <div class="panel-heading">
         <h3>第二步起步骨架</h3>
-        <span class="badge badge-soft">建好以后会更像真正的项目</span>
+        <span class="badge badge-soft">补齐基础条目</span>
       </div>
       <div class="starter-kit-grid">
         <article class="starter-kit-card is-primary">
-          <span class="eyebrow">推荐下一步</span>
-          <strong>先补上角色和基础素材</strong>
+          <span class="eyebrow">当前进度</span>
+          <strong>补齐角色与基础素材</strong>
           <p>${escapeHtml(contextCopy[context] ?? contextCopy.dashboard)}</p>
           <div class="scene-card-tags">
             ${overview.missingLabels
@@ -2469,13 +2472,13 @@ function renderStarterKitPanel(context = "dashboard") {
           </div>
         </article>
         <article class="starter-kit-card">
-          <span class="eyebrow">这一步会做什么</span>
+          <span class="eyebrow">生成内容</span>
           <ul class="blank-project-step-list">
             ${overview.missingCharacter ? "<li>生成一个角色骨架，并自动带一张默认立绘条目。</li>" : ""}
             ${overview.missingBackground ? "<li>生成第一张背景条目，方便你后面直接替换成真实图片。</li>" : ""}
             ${overview.missingBgm ? "<li>生成第一首 BGM 条目，后面导入音乐时不用再从零建分类。</li>" : ""}
           </ul>
-          <div class="detail-meta">这里只会补“条目骨架”，不会偷偷改你的第一场剧情内容。</div>
+          <div class="detail-meta">此操作只会补齐条目骨架，不会改动现有剧情内容。</div>
         </article>
       </div>
     </section>
@@ -2486,19 +2489,19 @@ function renderBlankProjectStarterPanel(context = "dashboard") {
   const defaults = getBlankProjectStarterDefaults();
   const contextCopy =
     context === "story"
-      ? "你现在已经在剧情页了，最顺手的下一步就是先一键造出第一章和第一场景。建好以后，这一页会立刻切成真正可编辑的剧情工作台。"
-      : "这是一个真正的空白项目，所以现在看起来会很干净。最建议的下一步，是先帮它长出第一章和第一场景，然后我们再继续往里填台词、角色和素材。";
+      ? "当前位于剧情页，先创建第一章和第一场景后，这里就会切换成可编辑的剧情工作台。"
+      : "当前项目还是空白状态，创建第一章和第一场景后即可继续填充台词、角色和素材。";
 
   return `
     <section class="panel blank-project-panel">
       <div class="panel-heading">
         <h2>空白项目首次引导</h2>
-        <span class="badge badge-soft">从这里开始最省心</span>
+        <span class="badge badge-soft">初始步骤</span>
       </div>
       <div class="blank-project-grid">
         <article class="blank-project-card is-primary">
-          <span class="eyebrow">推荐第一步</span>
-          <h3>先长出第一章和第一场景</h3>
+          <span class="eyebrow">当前进度</span>
+          <h3>创建第一章和第一场景</h3>
           <p>${escapeHtml(contextCopy)}</p>
           <div class="pill-row">
             <span class="pill">默认章节：${escapeHtml(defaults.chapterName)}</span>
@@ -2512,11 +2515,11 @@ function renderBlankProjectStarterPanel(context = "dashboard") {
               自定义名字再创建
             </button>
           </div>
-          <div class="detail-meta">建好以后你随时都可以再改章节名和场景名，所以不用怕先起个临时名字。</div>
+          <div class="detail-meta">章节名和场景名后续仍可修改。</div>
         </article>
         <article class="blank-project-card">
-          <span class="eyebrow">接下来的顺序</span>
-          <h3>最顺手的开工节奏</h3>
+          <span class="eyebrow">后续顺序</span>
+          <h3>开工顺序</h3>
           <ol class="blank-project-step-list">
             <li>先写出第一段旁白和第一句台词。</li>
             <li>再去素材页导入第一张背景和一首 BGM。</li>
@@ -2524,10 +2527,10 @@ function renderBlankProjectStarterPanel(context = "dashboard") {
           </ol>
           <div class="action-row">
             <button class="toolbar-button" type="button" data-action="switch-screen" data-screen="assets">
-              先看素材页
+              打开素材页
             </button>
             <button class="toolbar-button" type="button" data-action="switch-screen" data-screen="characters">
-              先看角色页
+              打开角色页
             </button>
           </div>
         </article>
@@ -2541,7 +2544,7 @@ function renderBlankStoryWorkspacePanel() {
     <div class="blank-story-workspace">
       <div class="blank-story-workspace-copy">
         <strong>剧情工作台还没有章节和场景</strong>
-        <p>先用下面这两个按钮把第一章搭起来，剧情页就会立刻从空白状态切成可编辑状态。</p>
+        <p>创建第一章和第一场景后，这里会切换成可编辑状态。</p>
       </div>
       <div class="action-row">
         <button class="toolbar-button toolbar-button-primary" type="button" data-action="create-first-chapter">
@@ -2566,11 +2569,11 @@ function buildBeginnerDashboardWorkflow(routeOverview) {
   const steps = [
     {
       step: "第一步",
-      title: "先把项目骨架长出来",
+      title: "创建项目骨架",
       done: hasStructure,
       description: hasStructure
         ? `现在已经有 ${state.data.chapters.length} 个章节、${state.data.scenes.length} 个场景，可以直接继续往里写。`
-        : "先建出第一章和第一场景，后面的剧情、素材和试玩才有地方可挂。",
+        : "先建立第一章和第一场景，后续剧情、素材和试玩流程才能继续展开。",
       actions: hasStructure
         ? [
             { label: "进入剧情编辑", action: "switch-screen", dataset: { screen: "story" } },
@@ -2583,11 +2586,11 @@ function buildBeginnerDashboardWorkflow(routeOverview) {
     },
     {
       step: "第二步",
-      title: "先把这一版正文写出来",
+      title: "写入第一版正文",
       done: hasStoryContent,
       description: hasStoryContent
         ? `已经有 ${productionOverview.scenesWithContent} 个场景写了正文，现在可以继续补氛围和去向。`
-        : "先写出台词、旁白和选项，让试玩页能真正往前走，不用一开始就追复杂演出。",
+        : "先写出台词、旁白和选项，让试玩流程具备基础推进内容。",
       actions: [
         { label: hasStoryContent ? "继续写剧情" : "去写第一段剧情", action: "switch-screen", dataset: { screen: "story" } },
         { label: "打开剧情页", action: "switch-screen", dataset: { screen: "story" } },
@@ -2599,7 +2602,7 @@ function buildBeginnerDashboardWorkflow(routeOverview) {
       done: hasStarterKit,
       description: hasStarterKit
         ? "角色和基础素材骨架已经有了，后面直接替换成真实立绘、背景和 BGM 就行。"
-        : "先把第一个角色、第一张背景和第一首 BGM 补出来，整体会立刻更像真正的 galgame。",
+        : "补齐第一个角色、第一张背景和第一首 BGM 后，预览会更完整。",
       actions: hasStarterKit
         ? [
             { label: "去角色页继续补", action: "switch-screen", dataset: { screen: "characters" } },
@@ -2612,11 +2615,11 @@ function buildBeginnerDashboardWorkflow(routeOverview) {
     },
     {
       step: "第四步",
-      title: "最后再试玩和导出",
+      title: "试玩与导出",
       done: previewReady,
       description: previewReady
-        ? "当前没有结构错误了，可以直接去试玩、调手感，满意后再导出。"
-        : "现在先不用急着导出，等结构错误清掉、剧情能顺着跑以后，再去预览导出页收尾会更省心。",
+        ? "当前没有结构错误，可以进入试玩与导出阶段。"
+        : "清理结构错误后即可进入预览导出页。",
       actions: [
         { label: "去试玩这版", action: "switch-screen", dataset: { screen: "preview" } },
         { label: "查看导出页", action: "switch-screen", dataset: { screen: "preview" } },
@@ -2638,9 +2641,9 @@ function renderBeginnerDashboardWorkflow(routeOverview) {
       <div class="panel-heading">
         <div>
           <h2>新手开工顺序</h2>
-          <span class="panel-note">首页先只告诉你最该做的 4 步，不让工具把你压住</span>
+          <span class="panel-note">按当前项目进度显示 4 个主要步骤</span>
         </div>
-        <span class="badge badge-soft">推荐现在先做：${escapeHtml(workflow.nextStep.step)}</span>
+        <span class="badge badge-soft">当前进行项：${escapeHtml(workflow.nextStep.step)}</span>
       </div>
       <div class="beginner-dashboard-grid">
         <article class="beginner-dashboard-card beginner-dashboard-focus-card">
@@ -2660,8 +2663,8 @@ function renderBeginnerDashboardWorkflow(routeOverview) {
                   <strong>${escapeHtml(step.title)}</strong>
                   <p>${escapeHtml(step.description)}</p>
                   <div class="story-filter-chip-row">
-                    <span class="issue-tag ${step.done ? "good-text" : "warn-text"}">
-                      ${step.done ? "这一轮已经补到" : "下一步推荐做这个"}
+          <span class="issue-tag ${step.done ? "good-text" : "warn-text"}">
+                      ${step.done ? "当前已完成" : "进行中"}
                     </span>
                   </div>
                 </article>
@@ -2679,10 +2682,10 @@ function renderBeginnerAdvancedToolsPanel() {
     <section class="panel beginner-advanced-tools-panel">
       <div class="panel-heading">
         <div>
-          <h2>更多高级工具先收在这里</h2>
-          <span class="panel-note">等你开始做分支、校对和发布收尾时，再切高级模式就好</span>
+          <h2>更多高级工具</h2>
+          <span class="panel-note">需要分支、校对和发布收尾时可切换到高级模式</span>
         </div>
-        <span class="badge badge-soft">新手模式已收起</span>
+        <span class="badge badge-soft">新手模式默认收起</span>
       </div>
       <div class="story-filter-chip-row">
         <span class="issue-tag">台词台本页</span>
@@ -2692,8 +2695,8 @@ function renderBeginnerAdvancedToolsPanel() {
         <span class="issue-tag">场景状态看板</span>
       </div>
       <article class="detail-card beginner-dashboard-card">
-        <strong>什么时候再打开这些工具最合适？</strong>
-        <p>当你已经能顺着写完一段剧情，准备补变量分支、系统校对、恢复历史版本，或者正式导出时，再切高级模式会更顺手。</p>
+        <strong>适用阶段</strong>
+        <p>完成基础剧情后，可切换到高级模式处理变量分支、系统校对、历史恢复和正式导出。</p>
         <div class="detail-actions">
           ${renderQuickActionButton(
             { label: "切到高级模式", action: "set-editor-mode", dataset: { "editor-mode": "advanced" } },
@@ -2713,44 +2716,44 @@ function renderBeginnerAssetsGuide(selectedAsset, duplicateOverview = buildAsset
   const selectedAssetName = selectedAsset?.name ?? `当前${selectedTypeLabel}`;
   const voiceMatchTargets = getVoicePlaceholderTargetAssets();
 
-  let title = "先把第一批素材导进来";
-  let description = "素材页在新手模式下，先只盯住三件事：导入、补齐、替换。标签整理、批量清理和重复分析先往后放。";
+  let title = "导入第一批素材";
+  let description = "新手模式下，素材页优先处理导入、补齐和替换；标签整理、批量清理和重复分析可后续再处理。";
   let actions = [
     { label: "上传素材", action: "pick-assets" },
     { label: "去剧情页继续写", action: "switch-screen", dataset: { screen: "story" } },
   ];
 
   if (state.selectedAssetType === "voice" && voiceMatchTargets.length > 0) {
-    title = "把这批待录音条目直接匹配成真实语音";
-    description = `你现在已经选中了 ${voiceMatchTargets.length} 个待导入语音条目。直接点“批量匹配语音文件”，系统会尽量按文件名把它们自动绑回去。`;
+    title = "匹配待导入语音条目";
+    description = `当前已选中 ${voiceMatchTargets.length} 个待导入语音条目，可直接执行批量文件匹配。`;
     actions = [
       { label: "批量匹配语音文件", action: "pick-voice-placeholder-files" },
       { label: "只看待导入", action: "focus-asset-gap", dataset: { "asset-filter-mode": "missing_file", "asset-type": "voice" } },
     ];
   } else if (selectedAsset && !selectedAsset.fileExists) {
-    title = `先把“${selectedAssetName}”补成真实文件`;
-    description = `你当前选中的这个${selectedTypeLabel}条目还没有真实文件。先用“替换当前文件”把它补上，后面预览和导出才会真的显示出来。`;
+    title = `补齐“${selectedAssetName}”的真实文件`;
+    description = `当前选中的${selectedTypeLabel}条目还没有真实文件，补齐后预览和导出才会生效。`;
     actions = [
       { label: "替换当前文件", action: "replace-asset-file" },
       { label: "只看这类待导入", action: "focus-asset-gap", dataset: { "asset-filter-mode": "missing_file", "asset-type": state.selectedAssetType } },
     ];
   } else if (overview.urgentMissingCount > 0) {
-    title = "先补已被剧情引用的缺口素材";
-    description = `现在有 ${overview.urgentMissingCount} 个素材已经被剧情或角色引用，但还没有真实文件。先把这批补齐，会比整理闲置素材更值。`;
+    title = "补齐已被引用的缺口素材";
+    description = `当前有 ${overview.urgentMissingCount} 个素材已被剧情或角色引用，但尚未提供真实文件。`;
     actions = [
       { label: "只看已引用缺口", action: "focus-asset-gap", dataset: { "asset-filter-mode": "urgent_missing" } },
       { label: "上传素材", action: "pick-assets" },
     ];
   } else if (overview.missingCount > 0) {
-    title = "继续把待导入素材补齐";
-    description = `当前还有 ${overview.missingCount} 个素材条目没有真实文件。你不用一次全补完，先把当前剧情会用到的那几类补上就够了。`;
+    title = "继续补齐待导入素材";
+    description = `当前还有 ${overview.missingCount} 个素材条目缺少真实文件，可优先补当前剧情会使用到的分类。`;
     actions = [
       { label: "只看待导入", action: "focus-asset-gap", dataset: { "asset-filter-mode": "missing_file" } },
       { label: "上传素材", action: "pick-assets" },
     ];
   } else if (overview.readyCount > 0) {
-    title = "素材已经有基础了，可以回去继续搭剧情";
-    description = `现在已经有 ${overview.readyCount} 个素材具备真实文件，至少够你先把第一段剧情和试玩手感跑起来。`;
+    title = "素材基础已具备";
+    description = `当前已有 ${overview.readyCount} 个素材具备真实文件，可返回剧情页继续搭建内容。`;
     actions = [
       { label: "去剧情页继续写", action: "switch-screen", dataset: { screen: "story" } },
       { label: "去试玩页看看", action: "switch-screen", dataset: { screen: "preview" } },
@@ -2762,7 +2765,7 @@ function renderBeginnerAssetsGuide(selectedAsset, duplicateOverview = buildAsset
       <div class="panel-heading">
         <div>
           <h3>新手素材顺序</h3>
-          <span class="panel-note">先补会用到的，再考虑整理和批量操作</span>
+          <span class="panel-note">优先处理当前内容已经使用到的素材</span>
         </div>
         <span class="badge badge-soft">${escapeHtml(selectedTypeLabel)}</span>
       </div>
@@ -2776,7 +2779,7 @@ function renderBeginnerAssetsGuide(selectedAsset, duplicateOverview = buildAsset
       <div class="route-summary-strip beginner-guide-metrics">
         ${renderRouteMetricCard("已就绪", overview.readyCount, "已经能直接预览和导出的素材")}
         ${renderRouteMetricCard("待导入", overview.missingCount, "还没有真实文件的素材条目")}
-        ${renderRouteMetricCard("已引用缺口", overview.urgentMissingCount, "建议优先补的缺口")}
+        ${renderRouteMetricCard("已引用缺口", overview.urgentMissingCount, "当前优先处理的缺口")}
         ${renderRouteMetricCard("当前分类", selectedTypeLabel, currentTypeSummary ? getAssetTypeGapSummaryText(state.selectedAssetType, null, state.data, duplicateOverview) : "这一类暂时还没有素材")}
       </div>
     </section>
@@ -2807,8 +2810,8 @@ function renderBeginnerCharacterGuide(character, stats) {
   if (!character || !stats) {
     return `
       <section class="detail-card beginner-guide-panel">
-        <strong>先补第一个角色骨架</strong>
-        <p>角色页最适合先确认“项目里有没有角色”。如果现在还是空的，先生成一个角色骨架，后面剧情归属和立绘表情才会顺起来。</p>
+      <strong>补齐第一个角色骨架</strong>
+      <p>角色页会先检查当前项目是否已有角色条目；如当前为空，可直接生成一个角色骨架。</p>
         <div class="detail-actions">
           ${renderQuickActionButton({ label: "一键生成起步骨架", action: "create-starter-kit" }, true)}
           ${renderQuickActionButton({ label: "自定义名字再生成", action: "create-starter-kit-custom" })}
@@ -2817,8 +2820,8 @@ function renderBeginnerCharacterGuide(character, stats) {
     `;
   }
 
-  let title = `先让 ${character.displayName} 在剧情里站住`;
-  let description = `${character.displayName} 现在最适合先去剧情页里开口、出场，再慢慢回头补语音和细节。`;
+  let title = `让 ${character.displayName} 进入剧情流程`;
+  let description = `${character.displayName} 适合先在剧情页完成出场和台词，再补充语音与细节。`;
   let actions = [
     { label: "去剧情页继续写", action: "switch-screen", dataset: { screen: "story" } },
     { label: "去试玩页看看", action: "switch-screen", dataset: { screen: "preview" } },
@@ -2827,22 +2830,22 @@ function renderBeginnerCharacterGuide(character, stats) {
   const firstMissingVoice = stats.missingVoiceLines?.[0] ?? null;
 
   if (stats.totalLines === 0) {
-    title = `先让 ${character.displayName} 开口说第一句`;
-    description = "现在这个角色已经有资料了，但还没有真正参与台词。先去剧情页给 TA 一句台词，后面人物感会立刻出来。";
+    title = `为 ${character.displayName} 添加第一句台词`;
+    description = "当前角色已有资料，但尚未参与台词，可在剧情页补入一句台词。";
     actions = [
       { label: "去剧情页加台词", action: "switch-screen", dataset: { screen: "story" } },
       { label: "去素材页补立绘", action: "switch-screen", dataset: { screen: "assets" } },
     ];
   } else if (firstMissingVoice) {
-    title = `先补 ${character.displayName} 最靠前的一句语音`;
-    description = `这个角色现在还有 ${stats.missingVoiceCount} 句待绑语音。新手模式下不用一次补完，先从最前面的那句开始最轻松。`;
+    title = `补齐 ${character.displayName} 的首个待绑语音`;
+    description = `当前角色还有 ${stats.missingVoiceCount} 句待绑语音，可先处理列表中靠前的一句。`;
     actions = [
       { label: "定位到这句台词", action: "open-character-line", sceneId: firstMissingVoice.sceneId, blockId: firstMissingVoice.blockId },
       { label: "去试玩里听节奏", action: "switch-screen", dataset: { screen: "preview" } },
     ];
   } else if ((stats.scenesCount ?? 0) > 0) {
-    title = `${character.displayName} 的基础已经站住了`;
-    description = `这个角色已经在 ${stats.scenesCount} 个场景里出现，而且语音覆盖也不错。现在更适合去试玩页听手感，或者回剧情页继续补互动。`;
+    title = `${character.displayName} 的基础内容已具备`;
+    description = `当前角色已在 ${stats.scenesCount} 个场景里出现，适合继续试玩或补充互动内容。`;
     actions = [
       { label: "去试玩页看看", action: "switch-screen", dataset: { screen: "preview" } },
       { label: "回剧情页继续补互动", action: "switch-screen", dataset: { screen: "story" } },
@@ -2854,7 +2857,7 @@ function renderBeginnerCharacterGuide(character, stats) {
       <div class="panel-heading">
         <div>
           <h3>新手角色顺序</h3>
-          <span class="panel-note">先看有没有台词，再看有没有待绑语音，最后才是细化演出</span>
+          <span class="panel-note">优先查看台词、待绑语音和出场情况</span>
         </div>
         <span class="badge badge-soft">${escapeHtml(character.displayName)}</span>
       </div>
@@ -2912,11 +2915,11 @@ function getBeginnerTutorialSteps() {
       title: hasProject ? "先确认当前项目入口" : "先创建或打开项目",
       done: hasProject,
       summary: hasProject
-        ? `当前已经打开《${state.data.project.title}》，后面的步骤会按这个项目的真实进度继续排。`
-        : "第一次开工先别急着点一堆按钮。先从项目中心创建空白项目，或者打开你已经做过的作品。",
+        ? `当前已经打开《${state.data.project.title}》，后续步骤会按项目进度排列。`
+        : "从项目中心创建空白项目，或打开已有项目后再继续。",
       notes: [
-        hasProject ? "现在已经拿到项目上下文了，切页面和保存都会跟着这个项目走。" : "空白项目不会自动塞样板剧情，你会先得到一张真正的白纸。",
-        "示例项目会单独放在项目中心下方，不会再一进编辑器就打扰你。",
+        hasProject ? "页面切换和保存操作都会基于当前项目进行。" : "空白项目不会自动填入样板剧情。",
+        "示例项目会单独显示在项目中心下方。",
       ],
       actions: hasProject
         ? [
@@ -2934,16 +2937,16 @@ function getBeginnerTutorialSteps() {
       title: hasScenes ? "第一章和第一场已经有了" : "先建第一章和第一场",
       done: hasScenes,
       summary: hasScenes
-        ? "剧情骨架已经长出来了，下面就可以直接往里写正文。"
-        : "空白项目先长出第一章和第一场，后面的台词、角色、素材和试玩才有落点。",
+        ? "剧情骨架已经建立，可直接继续写入正文。"
+        : "空白项目需要先创建第一章和第一场，后续内容才能挂载。",
       notes: [
-        "这一条是所有后续操作的地基：没有场景，就没有可写的剧情块，也没有可试玩入口。",
-        "如果你不想用默认名字，也可以用“自定义名字再创建”。",
+        "没有场景时，剧情块和试玩入口都不会出现。",
+        "如需自定义命名，可使用“自定义名字再创建”。",
       ],
       actions: hasScenes
         ? [
             { label: "去剧情页继续写", action: "switch-screen", dataset: { screen: "story" } },
-            { label: "先看首页路线", action: "switch-screen", dataset: { screen: "dashboard" } },
+            { label: "查看首页路线", action: "switch-screen", dataset: { screen: "dashboard" } },
           ]
         : [
             { label: "一键创建第一章", action: "create-first-chapter" },
@@ -2956,11 +2959,11 @@ function getBeginnerTutorialSteps() {
       title: hasStoryContent ? "正文已经开始成形" : "先写第一段正文",
       done: hasStoryContent,
       summary: hasStoryContent
-        ? "当前项目里已经有正文卡片了，接下来就能把角色、背景、音乐和分支一点点补齐。"
-        : "先写一句台词或旁白，把项目从“只有空场景”推进到真正开始讲故事。",
+        ? "当前项目里已经有正文卡片，后续可以继续补齐角色、背景、音乐和分支。"
+        : "先写一句台词或旁白，让项目从空场景进入可阅读状态。",
       notes: [
-        "新手模式下，剧情页已经按“正文优先”的顺序收过一轮，先把台词、旁白、选项写顺就够了。",
-        "复杂变量、条件和镜头演出可以等剧情顺了以后再切高级模式继续补。",
+        "新手模式下，剧情页优先显示正文相关入口。",
+        "变量、条件和镜头演出可在后续切换到高级模式时再补充。",
       ],
       actions: [
         { label: hasStoryContent ? "继续写剧情" : "打开剧情页", action: "switch-screen", dataset: { screen: "story" } },
@@ -2973,13 +2976,13 @@ function getBeginnerTutorialSteps() {
       title: starterKitReady ? "角色和基础素材已经补上" : "再补角色、背景和 BGM",
       done: starterKitReady,
       summary: starterKitReady
-        ? "项目已经不是纯文字骨架了，试玩时会更像真正的 galgame。"
-        : "补上第一个角色、一张背景和一首 BGM，项目马上就会从草稿变得更像游戏。",
+        ? "项目已经具备角色和基础素材骨架。"
+        : "补上第一个角色、一张背景和一首 BGM 后，预览会更完整。",
       notes: [
         starterKitOverview?.needsStarterKit
           ? `当前还缺：${starterKitOverview.missingLabels.join("、")}。`
-          : "如果你已经自己导入了素材，这一步就算完成，可以继续往试玩和导出走。",
-        "这里生成的是项目骨架条目，后面仍然可以在素材页替换成你的真实图片和音频文件。",
+          : "如已自行导入素材，可继续进入试玩与导出流程。",
+        "这里生成的是项目骨架条目，后续仍可在素材页替换成正式图片和音频文件。",
       ],
       actions: starterKitOverview?.needsStarterKit
         ? [
@@ -2987,23 +2990,23 @@ function getBeginnerTutorialSteps() {
             { label: "自定义名字再生成", action: "create-starter-kit-custom" },
           ]
         : [
-            { label: "去角色页看看", action: "switch-screen", dataset: { screen: "characters" } },
+            { label: "打开角色页", action: "switch-screen", dataset: { screen: "characters" } },
             { label: "去素材页继续补", action: "switch-screen", dataset: { screen: "assets" } },
           ],
     },
     {
       id: "preview",
       step: "第 5 步",
-      title: previewDone ? "试玩链已经跑过" : "先去试玩一遍",
+      title: previewDone ? "试玩链已经跑过" : "进入试玩流程",
       done: previewDone,
       summary: previewReady
         ? previewDone
-          ? "你已经跑过这版内容了，正式存档、快速存档和系统菜单都能继续拿来做自测。"
-          : "现在已经有场景可以跑了，先去试玩页把节奏和基本链路过一遍，比闷头堆功能更值。"
-        : "还没有可试玩场景时，这一步会自然卡住，所以先把前面几步做完。",
+          ? "当前版本已经完成试玩记录，可继续使用正式存档、快速存档和系统菜单做自测。"
+          : "当前已经有可运行场景，适合先到试玩页检查节奏和基础链路。"
+        : "当前还没有可试玩场景，需要先完成前面步骤。",
       notes: [
-        "试玩页现在已经有正式存档、快速存档、系统菜单、标题页读档和一批馆藏入口，足够拿来做第一轮自测。",
-        "先跑一遍自己的内容，很多节奏问题会比在编辑页里看得更快。",
+        "试玩页已经接通正式存档、快速存档、系统菜单和标题页读档等核心能力。",
+        "当前内容可先完成一轮试玩，再继续补充细节。",
       ],
       actions: previewReady
         ? [
@@ -3011,7 +3014,7 @@ function getBeginnerTutorialSteps() {
             { label: "回剧情页继续补", action: "switch-screen", dataset: { screen: "story" } },
           ]
         : [
-            { label: "先去建第一章", action: "create-first-chapter" },
+            { label: "创建第一章", action: "create-first-chapter" },
             { label: "回首页看看进度", action: "switch-screen", dataset: { screen: "dashboard" } },
           ],
     },
@@ -3022,7 +3025,7 @@ function getBeginnerTutorialSteps() {
       done: exportDone,
       summary: exportDone
         ? "导出链已经实际跑过了，后面就可以继续收尾、修问题、再导下一版。"
-        : "导出前先把支持边界看清楚：现在游戏成品的原生桌面端重点在 Windows，mac 和 Linux 更推荐先导网页试玩包。",
+        : "导出前可先确认平台支持范围：当前游戏成品的原生桌面端以 Windows 为主，mac 和 Linux 可先导网页试玩包。",
       notes: [
         exportSupport.windows,
         exportSupport.macLinux,
@@ -3030,7 +3033,7 @@ function getBeginnerTutorialSteps() {
       ],
       actions: [
         { label: "打开预览导出页", action: "switch-screen", dataset: { screen: "preview" } },
-        { label: "先去项目巡检", action: "switch-screen", dataset: { screen: "inspection" } },
+        { label: "打开项目巡检", action: "switch-screen", dataset: { screen: "inspection" } },
       ],
     },
   ];
@@ -3051,9 +3054,9 @@ function renderBeginnerTutorialDialog() {
 
   if (refs.beginnerTutorialSummary) {
     refs.beginnerTutorialSummary.textContent = state.data?.project
-      ? `当前项目：${activeProjectTitle}。教程会按这个项目的真实进度告诉你下一步更值得先做什么。`
+      ? `当前项目：${activeProjectTitle}。教程会按这个项目的真实进度排列当前流程。`
       : activeProjectTitle
-        ? `上次打开的项目是《${activeProjectTitle}》。如果你准备继续做它，可以先从项目中心打开。`
+        ? `上次打开的项目是《${activeProjectTitle}》。如需继续处理，可先从项目中心打开。`
         : "还没有打开项目也没关系。先从项目中心创建空白项目，再按下面 6 步往下走。";
   }
 
@@ -3068,7 +3071,7 @@ function renderBeginnerTutorialDialog() {
         >
           <span class="beginner-tutorial-step-meta">${escapeHtml(step.step)}</span>
           <strong>${escapeHtml(step.title)}</strong>
-          <span class="beginner-tutorial-step-state">${step.done ? "已到这一步" : "推荐接下来做"}</span>
+          <span class="beginner-tutorial-step-state">${step.done ? "当前已完成" : "进行中"}</span>
         </button>
       `
     )
@@ -3097,7 +3100,7 @@ function renderBeginnerTutorialDialog() {
     </section>
     <article class="detail-card beginner-tutorial-footer-card">
       <strong>最简单的记忆方式</strong>
-      <p>先建项目和第一场，再写正文，补角色和素材，去试玩，最后再看导出目标。先把一段做通，比一开始追求什么都配齐更重要。</p>
+      <p>先建项目和第一场，再写正文，补角色和素材，进入试玩，最后再看导出目标。先完成一段可运行内容，再继续扩展会更清晰。</p>
     </article>
   `;
 
@@ -3158,12 +3161,12 @@ function renderProjectCenter() {
             <span class="eyebrow">像真正的游戏引擎一样开始</span>
             <div>
               <h2>先选项目，再进入编辑器</h2>
-              <p>这里不再强行打开测试样板了。你可以先创建一个真正的空白项目，或者继续你已经做过的作品。</p>
+              <p>这里不再默认打开测试样板。可先创建一个空白项目，或继续已有作品。</p>
             </div>
             <div class="project-center-pill-row">
-              <span class="project-center-pill">推荐从空白项目开始</span>
+              <span class="project-center-pill">默认从空白项目开始</span>
               <span class="project-center-pill">默认分辨率 1920 × 1080</span>
-              <span class="project-center-pill">示例项目会被单独放在下面，不会再自动打扰你</span>
+              <span class="project-center-pill">示例项目会单独列在下方，不会默认打开</span>
             </div>
             <div class="project-center-actions">
               <button type="button" class="toolbar-button toolbar-button-primary" data-action="create-project">
@@ -3180,7 +3183,7 @@ function renderProjectCenter() {
         </article>
         <aside class="project-center-sidecard">
           <h3>当前入口说明</h3>
-          <p>空白项目一开始不会自动塞章节、台词和角色。你会先得到一张干净白纸，再决定什么时候新建章节和场景。</p>
+          <p>空白项目初始不会自动加入章节、台词和角色，可按需要自行新建章节和场景。</p>
           <div class="project-meta-row">
             <span class="project-center-pill">已发现项目 ${localProjects.length} 个</span>
             <span class="project-center-pill">${
@@ -3250,7 +3253,7 @@ function renderProjectCenterCard(project, activeProjectId) {
               ? "这是保留下来的示例项目，只在你需要参考时再打开。"
               : (project.sceneCount ?? 0) === 0
                 ? `这是一个真正的空白项目，还没有章节和场景，当前默认用${getEditorModeLabel(editorMode)}开工。`
-                : `这个项目已经有基础内容，可以直接继续写，当前会先按${getEditorModeLabel(editorMode)}打开。`
+                : `这个项目已经有基础内容，可继续写入；当前会按${getEditorModeLabel(editorMode)}打开。`
           )}
         </p>
         <p class="project-card-meta">最近更新：${escapeHtml(updatedAt)}</p>
@@ -3385,6 +3388,20 @@ async function handleClick(event) {
 
   if (action === "set-beginner-tutorial-step") {
     setBeginnerTutorialStep(actionTarget.dataset.stepIndex);
+    return;
+  }
+
+  if (action === "set-ui-theme-mode") {
+    state.previewPlayback.uiThemeMode = getSafeUiThemeMode(actionTarget.dataset.uiThemeMode);
+    persistPreviewPlaybackSettings();
+    applyEditorUiTheme(state.previewPlayback.uiThemeMode);
+    if (state.data) {
+      renderPreviewPlaybackControls(getCurrentPreviewSnapshot());
+    } else {
+      syncEditorUiThemeControls();
+    }
+    setSaveStatus(`界面主题已切到：${getUiThemeModeLabel(state.previewPlayback.uiThemeMode)}`);
+    showToast(`界面主题：${getUiThemeModeLabel(state.previewPlayback.uiThemeMode)}`);
     return;
   }
 
@@ -3538,7 +3555,7 @@ async function handleClick(event) {
       defaultChapterName: defaults.chapterName,
       defaultSceneName: defaults.firstSceneName,
       afterCreateScreen: "story",
-      successMessage: "第一章和第一场景已经建好，接下来可以直接写",
+      successMessage: "第一章和第一场景已经建好，可继续写入正文",
     });
     return;
   }
@@ -5001,7 +5018,7 @@ function handleChange(event) {
 
   if (target.matches("[data-preview-debug-variable]")) {
     updatePreviewDebugDraftValueFromField(target);
-    setSaveStatus("分支调试值已改，点“写入当前试玩”就能立刻试路线");
+    setSaveStatus("分支调试值已改，写入当前试玩后即可测试路线");
     return;
   }
 
@@ -5888,7 +5905,7 @@ function getPreviewSystemMenuSummary() {
   const snapshot = getCurrentPreviewSnapshot();
 
   if (!snapshot) {
-    return "现在还没有正在试玩的内容。你可以先开始试玩，之后再从这里统一管理存档、设置和回到起点。";
+    return "当前还没有正在试玩的内容。开始试玩后，这里会统一管理存档、设置和返回起点。";
   }
 
   return `当前停在：${getPreviewSaveSlotSummary({
@@ -6334,13 +6351,13 @@ function getPreviewSaveDialogSummary() {
 
   const hasManualSlots = state.previewSaveSlots.some(Boolean);
   if (state.previewAutoResume && hasManualSlots) {
-    return `你可以继续上次试玩，也可以从多页正式存档里挑一个读回去。当前在第 ${
+    return `可继续上次试玩，也可从多页正式存档中选择一个读回。当前在第 ${
       getSafePreviewSaveDialogPage(state.previewSaveDialogPage) + 1
     } 页。`;
   }
 
   if (state.previewAutoResume) {
-    return "目前只有自动续玩记录，你可以先继续上次试玩，或者之后再存正式节点。";
+    return "当前只有自动续玩记录，可先继续上次试玩，或后续再保存正式节点。";
   }
 
   if (hasManualSlots) {
@@ -6349,7 +6366,7 @@ function getPreviewSaveDialogSummary() {
     } 页。`;
   }
 
-  return "现在还没有正式存档，先跑到关键剧情点，再存一格会更好找。";
+  return "当前还没有正式存档，先到关键剧情点再存一格会更容易定位。";
 }
 
 function renderPreviewFormalSaveSlotCard(slotNumber, slot, mode, options = {}) {
@@ -6518,7 +6535,7 @@ function renderPreviewSaveDialog() {
           <p>${escapeHtml(
             state.previewAutoResume
               ? `变量：${getPreviewVariableSummary(getPreviewSaveSlotSnapshot(state.previewAutoResume)?.variables)}`
-              : "关闭页面后，这里会自动记住你上次看到的位置。"
+              : "关闭页面后，这里会记录上次看到的位置。"
           )}</p>
           <div class="formal-save-slot-actions">
             <button
@@ -6567,7 +6584,7 @@ function renderPreviewAutoResumePanel() {
         <strong>自动续玩</strong>
         <span class="preview-save-slot-time">${hasSave ? `上次记录：${escapeHtml(formatDate(slot.savedAt))}` : "还没有自动续玩记录"}</span>
         <p>${escapeHtml(getPreviewSaveSlotSummary(slot))}</p>
-        <p>${escapeHtml(snapshot ? `变量：${getPreviewVariableSummary(snapshot.variables)}` : "关闭页面后，这里会帮你记住上次看到的位置。")}</p>
+        <p>${escapeHtml(snapshot ? `变量：${getPreviewVariableSummary(snapshot.variables)}` : "关闭页面后，这里会记录上次看到的位置。")}</p>
       </div>
       <div class="preview-save-slot-actions">
         <button
@@ -6978,7 +6995,7 @@ function focusScriptVoiceBatch(characterId, chapterId) {
   const safeChapterId = getSafeScriptChapterFilter(chapterId);
 
   if (safeCharacterId === "all" || safeChapterId === "all") {
-    setSaveStatus("这批配音建议对应的角色或章节不存在", true);
+    setSaveStatus("这批配音分组对应的角色或章节不存在", true);
     showToast("找不到这批配音对应的角色或章节", "error");
     return;
   }
@@ -7063,7 +7080,7 @@ function openPreviewAtStoryLocation(sceneId, blockId = null) {
 
   if (previewResult.stoppedAtChoice) {
     setSaveStatus("这句前面有分支选项，试玩已停在分支口");
-    showToast("前面遇到选项了，我先把你带到分支口");
+    showToast("前方遇到选项，当前已停在分支口");
     return;
   }
 
@@ -7402,7 +7419,7 @@ function renderVoiceMatchReviewItem(item, reviewKind, reviewIndex, availableTarg
     <article class="asset-usage-item voice-match-review-item">
       <div class="asset-usage-copy">
         <strong>${escapeHtml(item.fileName)}</strong>
-        <div class="detail-meta">${escapeHtml(item.reason || "这份文件还需要你手动指定一个语音条目。")}</div>
+        <div class="detail-meta">${escapeHtml(item.reason || "这份文件仍需手动指定一个语音条目。")}</div>
         ${
           item.candidates?.length
             ? `<div class="scene-card-tags">${item.candidates
@@ -7468,8 +7485,8 @@ function renderVoiceMatchReviewPanel() {
     <article class="detail-card voice-match-review-panel">
       <div class="panel-heading">
         <div>
-          <h3>这批语音还有 ${unresolvedCount} 个需要你补最后一步</h3>
-          <span class="panel-note">自动匹配已经先帮你处理掉能认出来的部分，下面这些可以直接手动指定到某个语音占位条目。</span>
+          <h3>这批语音还有 ${unresolvedCount} 个待补最后一步</h3>
+          <span class="panel-note">自动匹配已处理可识别部分，下面这些可直接手动指定到对应语音占位条目。</span>
         </div>
         <span class="badge badge-soft">本次自动匹配成功 ${Number(review.matchedCount ?? 0)} 个</span>
       </div>
@@ -7686,8 +7703,8 @@ async function createVoicePlaceholdersForScriptBatch(characterId, chapterId) {
   const safeChapterId = getSafeScriptChapterFilter(chapterId);
 
   if (safeCharacterId === "all" || safeChapterId === "all") {
-    setSaveStatus("这批配音建议对应的角色或章节不存在", true);
-    showToast("找不到这批配音建议对应的内容", "error");
+    setSaveStatus("这批配音分组对应的角色或章节不存在", true);
+    showToast("找不到这批配音分组对应的内容", "error");
     return;
   }
 
@@ -7701,7 +7718,7 @@ async function createVoicePlaceholdersForScriptBatch(characterId, chapterId) {
   );
 
   if (batchEntries.length === 0) {
-    setSaveStatus("这批建议里已经没有待绑语音了");
+    setSaveStatus("这批分组里已经没有待绑语音了");
     showToast("这一批现在已经不缺语音了");
     return;
   }
@@ -7813,7 +7830,7 @@ function buildDirectionIdeaPlanText(idea) {
     `场景：${entry.sceneName}`,
     `位置：第 ${entry.blockIndex + 1} 张`,
     `聚焦句：${entry.title}`,
-    `建议演出：${idea.effect}`,
+    `演出方向：${idea.effect}`,
   ];
 
   if ((idea.reasons ?? []).length > 0) {
@@ -7826,7 +7843,7 @@ function buildDirectionIdeaPlanText(idea) {
 
   const steps = buildDirectionIdeaPlanSteps(idea);
   if (steps.length > 0) {
-    lines.push("", "推荐插卡顺序：");
+    lines.push("", "插卡顺序：");
     steps.forEach((step, index) => {
       lines.push(`${index + 1}. ${step.title}`);
       (step.rows ?? []).forEach((row) => lines.push(`   ${row}`));
@@ -7910,8 +7927,8 @@ function buildDirectionIdeaPlanSteps(idea) {
           rows: [`闪屏颜色：${flashColorLabel}`, "闪屏强度：明显", "持续时间：短一下"],
         },
         {
-          title: "如果你想让冲击再重一点",
-          rows: ["可以在闪屏前或后再补一张「屏幕震动」", "震动强度：轻微", "持续时间：短一下"],
+          title: "如需让冲击更重一点",
+          rows: ["可在闪屏前后再补一张「屏幕震动」", "震动强度：轻微", "持续时间：短一下"],
         },
       ];
     case "屏幕震动":
@@ -7922,7 +7939,7 @@ function buildDirectionIdeaPlanSteps(idea) {
         },
         {
           title: "如果这是受惊、撞击或爆点句",
-          rows: ["可以把前一张或后一张再补一张「闪屏」", "闪屏颜色：白闪", "持续时间：短一下"],
+          rows: ["可在前后再补一张「闪屏」", "闪屏颜色：白闪", "持续时间：短一下"],
         },
       ];
     case "镜头推近拉远":
@@ -7974,7 +7991,7 @@ function buildDirectionIdeaPlanSteps(idea) {
           ],
         },
         {
-          title: "如果想在情绪结束时收一下演出，可以再补一张「隐角色」",
+          title: "如需在情绪结束时收一下演出，可再补一张「隐角色」",
           rows: [`角色：${entry.speakerName || "当前角色"}`, "转场：淡入淡出"],
         },
       ];
@@ -7982,14 +7999,14 @@ function buildDirectionIdeaPlanSteps(idea) {
       return [
         {
           title: "先给这句绑上语音素材",
-          rows: ["建议优先补这句，因为它已经有明确的情绪起伏或重点语气。"],
+          rows: ["这句适合优先补，因为已经有明确的情绪起伏或重点语气。"],
         },
         {
           title: "补完语音后，在这句前再试一张「镜头推近拉远」",
           rows: ["镜头动作：推近镜头", "镜头强度：轻一点", `镜头聚焦：${focusLabel}`],
         },
         {
-          title: "如果你想让爆点更明确",
+          title: "如需让爆点更明确",
           rows: ["再补一张「屏幕震动」", "震动强度：轻微", "持续时间：短一下"],
         },
       ];
@@ -7997,7 +8014,7 @@ function buildDirectionIdeaPlanSteps(idea) {
       return [
         {
           title: `先围绕「${effect || "当前演出"}」补一张演出卡片`,
-          rows: ["建议先插在这句前面，再进试玩页感受一下是不是太重或太轻。"],
+          rows: ["可先插在这句前面，再进试玩页确认力度是否合适。"],
         },
       ];
   }
@@ -8523,27 +8540,27 @@ function getEditorModeDescription(mode, context = "dashboard") {
 
   if (safeMode === "advanced") {
   if (context === "preview") {
-    return "会显示完整的发布检查、导出诊断和更细的修复入口，适合收尾和正式发布前巡检。";
+    return "显示完整的发布检查、导出诊断和修复入口，适合收尾与发布前巡检。";
   }
   if (context === "inspection") {
-    return "会显示完整的项目巡检、问题过滤、发布检查和修复入口，适合集中做 QA 和收尾。";
+    return "显示完整的项目巡检、问题过滤、发布检查和修复入口，适合集中 QA 与收尾。";
   }
   if (context === "story") {
-    return "会显示完整剧情工具栏，包括变量、条件、复杂演出和结构整理按钮，适合做分支和精修。";
+    return "显示完整剧情工具栏，包括变量、条件、复杂演出和结构整理入口。";
   }
-    return "会显示完整编辑能力，适合已经熟悉这套引擎、准备做分支逻辑和复杂演出的阶段。";
+    return "显示完整编辑能力，适合处理分支逻辑和复杂演出。";
   }
 
   if (context === "preview") {
-    return "这里只保留导出最常用的信息和按钮，把复杂诊断先收起来，等你需要时再切高级模式。";
+    return "当前只保留导出阶段最常用的信息和按钮。";
   }
   if (context === "inspection") {
-    return "这里只先显示最关键的错误、缺口和巡检入口，等你要做更细的 QA 和发布前复查时再切高级模式。";
+    return "当前只显示关键错误、缺口和巡检入口。";
   }
   if (context === "story") {
-    return "这里只保留最常用的剧情骨架按钮，先把台词、旁白、选项、背景和音乐写顺，再慢慢加复杂演出。";
+    return "当前只保留常用剧情骨架按钮，优先处理台词、旁白、选项、背景和音乐。";
   }
-  return "会优先保留最常用、最不容易出错的入口，先让你把一段剧情顺利做出来。";
+  return "当前优先保留常用入口，适合处理基础剧情流程。";
 }
 
 function renderEditorModeSwitchButtons(mode = getProjectEditorMode(), options = {}) {
@@ -8578,8 +8595,8 @@ function renderEditorModeGuideCard(context = "dashboard") {
         : "编辑器模式";
   const description = getEditorModeDescription(mode, context);
   const note = isAdvanced
-    ? "如果你现在只想先把内容做出来，随时可以切回新手模式。"
-    : "如果你接下来要补变量、条件分支、镜头和复杂演出，再切到高级模式会更顺。";
+    ? "如需快速返回基础流程，可切回新手模式。"
+    : "需要处理变量、条件分支、镜头和复杂演出时，可切换到高级模式。";
 
   return `
     <article class="detail-card editor-mode-card">
@@ -8616,12 +8633,12 @@ function buildBeginnerStoryWorkflow(scene) {
   const steps = [
     {
       step: "第一步",
-      title: "先把这一场写起来",
+      title: "写入这一场的基础正文",
       done: storyCount > 0,
       description:
         storyCount > 0
           ? `这一场已经有 ${storyCount} 张正文卡片了，可以继续往下补氛围和去向。`
-          : "先写一句台词或旁白，把这一场从空白变成真正的剧情场景。",
+          : "先写一句台词或旁白，让这一场从空白状态进入可阅读状态。",
       actions:
         storyCount > 0
           ? [
@@ -8635,12 +8652,12 @@ function buildBeginnerStoryWorkflow(scene) {
     },
     {
       step: "第二步",
-      title: "补上最基本的演出氛围",
+      title: "补齐基础演出氛围",
       done: hasBackground && (hasCharacterShow || hasMusic),
       description:
         hasBackground && (hasCharacterShow || hasMusic)
           ? "这一场已经有基础空间感了，人物和音乐至少有一项进来了。"
-          : "背景、人物亮相和音乐里至少补两样，这一场就会从“纯文字草稿”变成更像 galgame。",
+          : "背景、人物亮相和音乐至少补两项后，这一场的预览会更完整。",
       actions: [
         { label: hasBackground ? "再显一个角色" : "先切背景", action: hasBackground ? "add-character-show" : "add-background" },
         { label: hasMusic ? "补人物亮相" : "播一首音乐", action: hasMusic ? "add-character-show" : "add-music-play" },
@@ -8648,12 +8665,12 @@ function buildBeginnerStoryWorkflow(scene) {
     },
     {
       step: "第三步",
-      title: "给这一场接上去向",
+      title: "补齐这一场的去向",
       done: hasBranchOrJump,
       description:
         hasBranchOrJump
           ? "这场已经有下一步去向了，后面就可以开始试玩路线。"
-          : "先补一个选项分支，或者至少跳到下一场，不然这一段做完以后会断在这里。",
+          : "补一个选项分支，或者至少连接到下一场，避免流程在这里中断。",
       actions: [
         { label: "加选项分支", action: "add-choice" },
         { label: "直接跳下一场", action: "add-jump" },
@@ -8661,12 +8678,12 @@ function buildBeginnerStoryWorkflow(scene) {
     },
     {
       step: "第四步",
-      title: "最后再做记忆点",
+      title: "补充强化演出",
       done: hasPolish,
       description:
         hasPolish
           ? "这一场已经有至少一种强化演出，记忆点开始出来了。"
-          : "等剧情顺了，再补粒子、镜头、闪屏这些强化演出，效率会更高。",
+          : "剧情顺畅后，可再补粒子、镜头、闪屏等强化演出。",
       actions: [
         { label: "加粒子特效", action: "add-particle-effect" },
         { label: "去试玩这场", action: "preview-scene-from-map", sceneId: scene.id },
@@ -8693,9 +8710,9 @@ function renderBeginnerStoryWorkflow(scene) {
       <div class="panel-heading">
         <div>
           <h2>新手上手顺序</h2>
-          <span class="panel-note">不用自己想先点什么，我先帮你排好了</span>
+          <span class="panel-note">按当前场景状态显示处理顺序</span>
         </div>
-        <span class="issue-tag good-text">推荐现在先做：${escapeHtml(workflow.nextStep.step)}</span>
+          <span class="issue-tag good-text">当前进行项：${escapeHtml(workflow.nextStep.step)}</span>
       </div>
       <article class="beginner-workflow-focus">
         <span class="workflow-step-label">${escapeHtml(workflow.nextStep.step)}</span>
@@ -8714,7 +8731,7 @@ function renderBeginnerStoryWorkflow(scene) {
                 <strong>${escapeHtml(step.title)}</strong>
                 <p>${escapeHtml(step.description)}</p>
                 <div class="story-filter-chip-row">
-                  <span class="issue-tag ${step.done ? "good-text" : "warn-text"}">${step.done ? "这一轮已经补到" : "推荐现在就做"}</span>
+                  <span class="issue-tag ${step.done ? "good-text" : "warn-text"}">${step.done ? "当前已完成" : "进行中"}</span>
                 </div>
               </article>
             `
@@ -8748,8 +8765,8 @@ function renderStoryEditorModeBanner(scene = null) {
       <div class="story-filter-chip-row">
         ${
           mode === "advanced"
-            ? '<span class="issue-tag good-text">当前已经显示完整工具栏</span><span class="issue-tag">适合做变量、条件和复杂演出</span>'
-            : `<span class="issue-tag good-text">当前只保留常用骨架按钮</span><span class="issue-tag">已先收起 ${hiddenCount} 个高级按钮</span>`
+            ? '<span class="issue-tag good-text">完整工具栏已展开</span><span class="issue-tag">适合处理变量、条件和复杂演出</span>'
+            : `<span class="issue-tag good-text">当前显示常用骨架按钮</span><span class="issue-tag">已收起 ${hiddenCount} 个高级按钮</span>`
         }
       </div>
     </article>
@@ -9099,7 +9116,7 @@ function renderDashboardRecentWorkspacePanel() {
       <div class="panel-heading recent-work-heading">
         <div>
           <h2>最近工作区</h2>
-          <span class="panel-note">刚刚碰过的场景、台本、素材和角色，会自动记在这里</span>
+          <span class="panel-note">最近使用过的场景、台本、素材和角色会记录在这里</span>
         </div>
         <button
           class="toolbar-button"
@@ -9119,7 +9136,7 @@ function renderDashboardRecentWorkspacePanel() {
       ${
         items.length > 0
           ? `<div class="recent-work-grid">${items.map((item) => renderDashboardRecentWorkspaceCard(item)).join("")}</div>`
-          : renderEmpty("你开始写剧情、补素材、看角色或定位台本以后，这里会自动帮你记住最近的工作位置。")
+          : renderEmpty("开始写剧情、补素材、查看角色或定位台本后，这里会记录最近的工作位置。")
       }
     </section>
   `;
@@ -9152,7 +9169,7 @@ function renderProjectHistoryPanel() {
       <div class="history-summary-strip">
         ${renderRouteMetricCard("总快照数", history.totalSnapshots, "这个项目目前已经记住了多少份版本")}
         ${renderRouteMetricCard("当前筛到", filteredSnapshots.length, "搜索和筛选后现在能看到多少份版本")}
-        ${renderRouteMetricCard("当前版本", currentLabel, "你现在正停在哪一份快照")}
+        ${renderRouteMetricCard("当前版本", currentLabel, "当前停留在哪一份快照")}
         ${renderRouteMetricCard("可回退到", previousLabel, "点一下就能先回到这里")}
         ${renderRouteMetricCard("较新版本", nextLabel, "如果已经撤销过，这里会提示能重做到哪")}
       </div>
@@ -9278,8 +9295,8 @@ function renderDashboard() {
             <h2>项目总览</h2>
             <p>${
               isBlankProject
-                ? "这是一个真正的空白项目。先去新建章节和场景，再一点点把角色、素材和演出补起来。"
-                : "这个项目已经可以从自己的项目目录里自动读取章节、场景、角色和素材了。"
+                ? "当前是空白项目。创建章节和场景后，可继续补齐角色、素材和演出。"
+                : "当前项目已经可以从项目目录自动读取章节、场景、角色和素材。"
             }</p>
           </div>
           <div class="pill-row">
@@ -9305,7 +9322,7 @@ function renderDashboard() {
           </div>
           <article class="detail-card">
             <strong>项目分辨率</strong>
-            <p>现在已经支持一键切换到 1920 × 1080，预览页和导出试玩包都会跟着一起更新。</p>
+            <p>支持一键切换到 1920 × 1080，预览页和导出试玩包会同步更新。</p>
             <div class="detail-actions">
               ${renderResolutionButtons()}
             </div>
@@ -9313,11 +9330,11 @@ function renderDashboard() {
           ${renderEditorModeGuideCard("dashboard")}
           <article class="detail-card">
             <strong>操作反馈已经补强</strong>
-            <p>你现在点击场景、卡片、角色、素材和页面切换时，顶部状态和右下角提示都会立刻变化。</p>
+            <p>点击场景、卡片、角色、素材和页面切换时，顶部状态与右下角提示会同步更新。</p>
           </article>
           <article class="detail-card">
             <strong>剧情路线图已经接通</strong>
-            <p>现在首页能直接看分支、死路、孤立场景和坏链，点卡片就能继续写，点试玩就能立刻从那一段开始跑。</p>
+            <p>首页可直接查看分支、死路、孤立场景和坏链，并从对应位置进入编辑或试玩。</p>
           </article>
         </div>
       </section>
@@ -9329,7 +9346,7 @@ function renderDashboard() {
             state.validation.errors.length > 0
               ? "需要处理"
               : state.validation.warnings.length > 0
-                ? "建议补充"
+                ? "待补充"
                 : "可以继续"
           }</span>
         </div>
@@ -9337,12 +9354,12 @@ function renderDashboard() {
           <article class="list-card">
             <strong>错误 ${state.validation.errors.length} 项</strong>
             <p>${state.validation.errors[0]?.message ?? "目前没有结构错误。"}</p>
-            ${renderIssueQuickAction(state.validation.errors[0], "先去修这个")}
+            ${renderIssueQuickAction(state.validation.errors[0], "打开第一条")}
           </article>
           <article class="list-card">
             <strong>警告 ${state.validation.warnings.length} 项</strong>
             <p>${state.validation.warnings[0]?.message ?? "目前没有明显警告。"}</p>
-            ${renderIssueQuickAction(state.validation.warnings[0], "先看看这个")}
+            ${renderIssueQuickAction(state.validation.warnings[0], "查看第一条")}
           </article>
           <article class="list-card">
             <strong>当前原型能做什么</strong>
@@ -9422,15 +9439,15 @@ function renderDashboard() {
         </div>
         <div class="list-stack">
           <article class="list-card">
-            <strong>1. 先看角色</strong>
+      <strong>1. 查看角色</strong>
             <p>确认角色名字、颜色、默认站位和表情资源都准备好了。</p>
           </article>
           <article class="list-card">
-            <strong>2. 再看素材</strong>
+      <strong>2. 查看素材</strong>
             <p>确认背景、BGM、语音是否已经登记到素材库里。</p>
           </article>
           <article class="list-card">
-            <strong>3. 最后写剧情</strong>
+      <strong>3. 开始写剧情</strong>
             <p>进入剧情页后，你会看到真正会参与导出的“剧情卡片顺序”。</p>
           </article>
         </div>
@@ -9439,7 +9456,7 @@ function renderDashboard() {
       <section class="panel">
         <div class="panel-heading">
           <h2>路线提醒</h2>
-          <span class="panel-note">优先帮你发现可能做漏的地方</span>
+          <span class="panel-note">优先显示可能遗漏的地方</span>
         </div>
         ${renderRouteAlerts(routeOverview)}
       </section>
@@ -9469,7 +9486,7 @@ function renderDashboardProductionBoard(routeOverview) {
     <section class="panel production-board-panel">
       <div class="panel-heading">
         <h2>制作推进看板</h2>
-        <span class="panel-note">像制作人待办一样，直接告诉你现在先做什么</span>
+        <span class="panel-note">按当前优先级排列下一步制作事项</span>
       </div>
       <div class="route-summary-strip">
         ${renderRouteMetricCard("剧情骨架", `${overview.storyProgress}%`, `${overview.scenesWithContent}/${overview.totalScenes} 个场景已有正文`)}
@@ -9487,7 +9504,7 @@ function renderDashboardProductionBoard(routeOverview) {
                 <span class="eyebrow">当前状态不错</span>
                 <strong>核心骨架已经能继续往前写</strong>
                 <p>${escapeHtml(overview.summary)}</p>
-                <div class="detail-meta">如果你现在想追求完成感，最适合回去补高光演出、语音和试玩手感。</div>
+                <div class="detail-meta">如果当前准备继续提升完成度，可回去补高光演出、语音和试玩手感。</div>
                 <div class="script-entry-actions">
                   <button type="button" class="toolbar-button toolbar-button-primary" data-action="switch-screen" data-screen="script">
                     去台本页找高光
@@ -9509,7 +9526,7 @@ function renderDashboardProductionBoard(routeOverview) {
                     <span class="issue-tag good-text">可继续打磨</span>
                   </div>
                   <strong>目前没有明显堵点</strong>
-                  <p>你现在更适合去补立绘语音、过场演出和试玩节奏，这些会比纯修结构更有成就感。</p>
+                  <p>当前更适合补立绘语音、过场演出和试玩节奏，这些会比继续单独修结构更有效率。</p>
                   <div class="script-entry-actions">
                     <button type="button" class="toolbar-button toolbar-button-primary" data-action="switch-screen" data-screen="story">
                       回去写剧情
@@ -9850,7 +9867,7 @@ function buildDashboardProductionTasks(routeOverview, overview) {
       tone: "warn",
       badge: `空场景 ${overview.emptyScenes.length} 个`,
       title: "补可试玩正文",
-      description: `还有 ${overview.emptyScenes.length} 个场景几乎还没有正文内容，先补出最基本的台词、旁白或选项，试玩就会顺很多。`,
+      description: `还有 ${overview.emptyScenes.length} 个场景几乎还没有正文内容，补出基础台词、旁白或选项后，试玩链会更完整。`,
       meta: `${emptyScene.name} 目前还没有可试玩内容`,
       actions: [
         {
@@ -9868,7 +9885,7 @@ function buildDashboardProductionTasks(routeOverview, overview) {
       tone: "warn",
       badge: `缺背景 ${overview.scenesMissingBackground.length} 场`,
       title: "给场景补舞台感",
-      description: `还有 ${overview.scenesMissingBackground.length} 个有正文的场景没切背景，画面会比较空，先补背景最容易立刻看到完成感。`,
+      description: `还有 ${overview.scenesMissingBackground.length} 个有正文的场景没切背景，补上背景后，画面完成度会明显提升。`,
       meta: `${missingBackgroundScene.name} 现在还没放背景卡片`,
       actions: [
         {
@@ -9945,7 +9962,7 @@ function buildDashboardProductionTasks(routeOverview, overview) {
       tone: "soft",
       badge: `缺音乐 ${overview.scenesMissingMusic.length} 场`,
       title: "给关键场景补 BGM",
-      description: `还有 ${overview.scenesMissingMusic.length} 个有正文的场景没播背景音乐，补上以后氛围会立刻完整很多。`,
+      description: `还有 ${overview.scenesMissingMusic.length} 个有正文的场景没有背景音乐，补上后氛围会更完整。`,
       meta: `${missingMusicScene.name} 现在还没放音乐卡片`,
       actions: [
         {
@@ -10011,14 +10028,14 @@ function renderDashboardScenePlanningBoard(overview) {
       <div class="production-scene-panel">
         <div class="production-scene-panel-head">
           <strong>重点场景队列</strong>
-          <span class="panel-note">你在剧情页标过的重点场景会自动集中到这里</span>
+          <span class="panel-note">剧情页标记过的重点场景会自动集中到这里</span>
         </div>
         <article class="production-task-card is-good">
           <div class="production-task-top">
             <span class="issue-tag good-text">还没有重点场景</span>
           </div>
           <strong>可以开始给关键场景打标了</strong>
-          <p>去“写剧情”页右侧的场景规划里，给某段标成“优先处理”“马上处理”或“可试玩”，首页就会自动把它提到这里。</p>
+          <p>在“写剧情”页右侧的场景规划里，将某段标成“优先处理”“马上处理”或“可试玩”后，首页会自动把它提到这里。</p>
           <div class="script-entry-actions">
             <button type="button" class="toolbar-button toolbar-button-primary" data-action="switch-screen" data-screen="story">
               去写剧情页
@@ -10033,7 +10050,7 @@ function renderDashboardScenePlanningBoard(overview) {
     <div class="production-scene-panel">
       <div class="production-scene-panel-head">
         <strong>重点场景队列</strong>
-        <span class="panel-note">今天最值得推进的段落，会优先排在这里</span>
+          <span class="panel-note">当前优先推进的段落会排在这里</span>
       </div>
       <div class="route-summary-strip">
         ${renderRouteMetricCard("马上处理", overview.rushSceneCount, "你手动标成最高优先级")}
@@ -10468,7 +10485,7 @@ function buildSceneRouteOverview() {
         label: "孤立",
         tone: "warn",
         message: "目前没有任何分支、跳转或条件会走到这个场景。",
-        meta: "如果这不是隐藏路线，建议从别的场景给它补一条入口。",
+        meta: "如果这不是隐藏路线，可从别的场景补一条入口。",
       })),
     ...nodes
       .filter((node) => node.isEnding && !node.isEntry)
@@ -11502,7 +11519,7 @@ function renderStorySceneTreeSummary(overview) {
   return `
     <div class="story-filter-summary-main">
       <strong>命中 ${overview.visibleSceneCount}/${overview.totalSceneCount} 个场景 · ${overview.visibleChapterCount}/${overview.totalChapterCount} 个章节</strong>
-      <span class="panel-note">项目树会优先帮你捞出正在找的那一段</span>
+      <span class="panel-note">项目树会优先显示当前搜索结果</span>
     </div>
     <div class="story-filter-chip-row">
       ${
@@ -11980,7 +11997,7 @@ function renderDashboardSearchSuggestions(suggestions) {
   return `
     <article class="detail-card">
       <strong>可以直接试试这些词</strong>
-      <p class="helper-text">点一下就会自动填进搜索框。后面项目变大时，这会是你找剧情最快的入口之一。</p>
+      <p class="helper-text">点击后会自动填入搜索框。项目内容变多时，可用来快速定位剧情。</p>
       <div class="asset-tag-chip-row">
         ${suggestions
           .map(
@@ -12191,7 +12208,7 @@ function renderStoryScreen() {
     : blocks.length === 0
       ? renderEmpty("这个场景还没有卡片。")
       : visibleBlocks.length === 0
-        ? renderEmpty("这个筛选下没有命中的卡片。你可以换个关键词，或者点上面的“清空筛选”。")
+        ? renderEmpty("这个筛选下没有命中的卡片。可换一个关键词，或点击上面的“清空筛选”。")
         : visibleBlocks
           .map((block) =>
             renderBlockCard(
@@ -12271,8 +12288,8 @@ function renderAssetsScreen() {
       <strong>把文件拖到这里</strong>
       <p>${
         state.selectedAssetType === "voice" && voiceMatchTargets.length > 0
-          ? `你当前已经选中了 ${voiceMatchTargets.length} 个待导入语音条目。更推荐先点上面的“批量匹配语音文件”，系统会按文件名自动试着绑回去。`
-          : `默认会导入到：${escapeHtml(getAssetTypeLabel(state.selectedAssetType))}。如果你一次拖很多不同类型，也可以用上面的“智能导入”。`
+          ? `当前已选中 ${voiceMatchTargets.length} 个待导入语音条目。可优先点击上面的“批量匹配语音文件”，系统会按文件名自动尝试绑定。`
+          : `默认会导入到：${escapeHtml(getAssetTypeLabel(state.selectedAssetType))}。一次拖入多种类型文件时，也可使用上面的“智能导入”。`
       }</p>
     `;
   }
@@ -12546,7 +12563,7 @@ function renderCharactersScreen() {
       ? rosterOverview.characters
           .map((entry) => renderCharacterCard(entry.character, entry.character.id === character?.id, entry.stats))
           .join("")
-      : renderEmpty("这个角色筛选下暂时没有命中的角色。你可以换个关键词，或者点上面的“清空角色筛选”。");
+      : renderEmpty("这个角色筛选下暂时没有命中的角色。可换一个关键词，或点击上面的“清空角色筛选”。");
   refs.characterDetails.innerHTML = character
     ? `${starterKitPanel}${!isAdvancedMode ? renderBeginnerCharacterGuide(character, selectedStats) : ""}${renderCharacterOverview(character, selectedStats)}`
     : `${starterKitPanel}${!isAdvancedMode ? renderBeginnerCharacterGuide(character, selectedStats) : ""}${renderEmpty("还没有角色数据。")}`;
@@ -13083,7 +13100,7 @@ function renderBeginnerScriptGuide(filteredEntries, allEntries) {
   return `
     <article class="detail-card beginner-script-card">
       <strong>台本页是高级工具</strong>
-      <p>这里更适合集中做配音统筹、文本体检和角色口吻统一。新手模式下我先把信息压缩成最重要的几项，不让你一上来就被大量分析面板淹没。</p>
+      <p>这里更适合集中处理配音统筹、文本体检和角色口吻统一。新手模式下仅显示最核心的信息。</p>
       <div class="detail-actions">
         ${renderQuickActionButton({ label: "切到高级模式", action: "set-editor-mode", dataset: { "editor-mode": "advanced" } }, true)}
         ${renderQuickActionButton({ label: "回剧情页继续写", action: "switch-screen", screen: "story" })}
@@ -13095,7 +13112,7 @@ function renderBeginnerScriptGuide(filteredEntries, allEntries) {
         <span class="issue-tag">${issueCount} 条待确认内容</span>
       </div>
       <div class="detail-meta">
-        全项目总共有 ${allEntries.length} 条正文内容。等你真的要做配音排班、CSV 导出、角色口吻分析时，再切到高级模式会更顺。
+        全项目总共有 ${allEntries.length} 条正文内容。需要处理配音排班、CSV 导出或角色口吻分析时，可切换到高级模式。
       </div>
     </article>
   `;
@@ -13125,7 +13142,7 @@ function renderScriptSummary(filteredEntries, allEntries) {
         ? `
           <article class="detail-card">
             <strong>这一轮可以直接开工补语音</strong>
-            <p>如果你现在想先把配音工作流立住，可以直接给当前筛选里的待绑语音台词批量生成占位条目，然后马上跳去语音素材页继续上传真实文件。</p>
+            <p>如需先建立配音工作流，可直接为当前筛选里的待绑语音台词批量生成占位条目，再跳去语音素材页继续上传真实文件。</p>
             <div class="detail-actions">
               <button type="button" class="toolbar-button toolbar-button-primary" data-action="create-script-voice-placeholders">
                 为当前筛选批量生成语音条目
@@ -13175,11 +13192,11 @@ function renderBeginnerScriptSummary(filteredEntries, allEntries) {
       ["选项数量", choiceCount],
       ["最常出现角色", topSpeaker],
       ["全项目正文", `${allEntries.length} 条`],
-      ["建议怎么用", "先用这里找句子和补语音，深度分析等切高级模式再看"],
+      ["使用方式", "可先用这里查句子和补语音，深度分析等切到高级模式后再看"],
     ])}
     <article class="detail-card beginner-script-card">
-      <strong>新手模式下先看这些就够了</strong>
-      <p>如果你现在只是想快速找句子、看看哪几句没语音、顺手导出一份基础台本，这一页已经够用。更细的批次建议、章节节奏和角色口吻画像会在高级模式里完整展开。</p>
+      <strong>新手模式下优先查看这些信息</strong>
+      <p>如需快速查找句子、定位待绑语音或导出基础台本，这一页已经足够。更细的批次分组、章节节奏和角色口吻画像会在高级模式中完整展开。</p>
       <div class="detail-actions">
         ${
           missingVoiceCount > 0
@@ -13408,10 +13425,10 @@ function renderProjectVoiceOverviewPanel(allEntries) {
     <section class="voice-recording-panel">
       <div class="panel-heading">
         <h2>整项目配音总览</h2>
-        <span class="badge badge-soft">先看全局缺口</span>
+        <span class="badge badge-soft">查看全局缺口</span>
       </div>
       <article class="detail-card voice-recording-card">
-        <strong>这轮配音最值得先做什么</strong>
+      <strong>这轮配音当前优先事项</strong>
         <p>${escapeHtml(overview.summary)}</p>
         <div class="summary-grid voice-batch-stat-grid">
           ${renderStatCard("项目对话", `${overview.dialogueCount} 句`)}
@@ -13450,7 +13467,7 @@ function renderProjectVoiceOverviewPanel(allEntries) {
                       <strong>${escapeHtml(chapter.chapterName)}</strong>
                       <p>${escapeHtml(
                         chapter.missingBindingCount > 0
-                          ? `这章还有 ${chapter.missingBindingCount} 句缺语音条目，建议先补占位。`
+                          ? `这章还有 ${chapter.missingBindingCount} 句缺语音条目，可优先补占位。`
                           : `这章还有 ${chapter.placeholderVoiceCount} 句占位待上传，适合先整理真实录音。`
                       )}</p>
                       <div class="voiceprint-tag-row">
@@ -13580,7 +13597,7 @@ function renderScriptRecordingGroupCard(group) {
           <strong>${escapeHtml(group.speakerName)} · ${escapeHtml(group.chapterName)}</strong>
           <p>${escapeHtml(
             group.missingBindingCount > 0
-              ? `这批里还有 ${group.missingBindingCount} 句连语音条目都没建，建议先一键补占位。`
+              ? `这批里还有 ${group.missingBindingCount} 句连语音条目都没建，可优先一键补占位。`
               : `这批语音条目已经建好了，下一步更适合直接上传真实文件。`
           )}</p>
         </div>
@@ -13659,7 +13676,7 @@ function renderScriptActionQueueSection(filteredEntries) {
     <section class="action-queue-panel">
       <div class="panel-heading">
         <h2>创作提醒</h2>
-        <span class="badge badge-soft">先做最值的地方</span>
+        <span class="badge badge-soft">优先处理项</span>
       </div>
       <div class="action-queue-grid">
         ${renderScriptActionQueueCard({
@@ -13680,8 +13697,8 @@ function renderScriptActionQueueSection(filteredEntries) {
           itemType: "highlight",
         })}
         ${renderScriptActionQueueCard({
-          title: "演出灵感建议",
-          description: "直接猜这句更适合哪种镜头、转场或特效，帮你把文字快速变成演出。",
+          title: "演出灵感方案",
+          description: "根据当前句子推测更适合的镜头、转场或特效，用于快速生成演出方向。",
           emptyText: "当前筛选里还没有特别明确的演出灵感点。",
           items: directionIdeas,
           toolbar: "",
@@ -13904,7 +13921,7 @@ function buildScriptDirectionIdeas(entries) {
         entry,
         effect: top.effect,
         score: top.score,
-        rankLabel: `建议加：${top.effect}`,
+        rankLabel: `适合加：${top.effect}`,
         reasons: ranked.slice(0, 3).map((item) => item.reason),
         helperText: top.helper,
       };
@@ -14025,7 +14042,7 @@ function buildScriptVoiceBatchSuggestions(entries) {
       } else if (group.sceneIds.size >= 3) {
         suggestion = "这批分布在多个场景里，先统一录完可以明显减少后面来回返工。";
       } else if (group.longCount >= 2) {
-        suggestion = "这批里长句偏多，建议先留出更完整的一段时间连续录。";
+        suggestion = "这批里长句偏多，适合先留出更完整的一段时间连续录。";
       }
 
       return {
@@ -14056,8 +14073,8 @@ function renderScriptVoiceBatchSection(filteredEntries) {
   if (batches.length === 0) {
     return `
       <article class="detail-card voice-batch-panel">
-        <strong>配音批次建议</strong>
-        <p>当前筛选里还看不出可以直接安排的录音批次。先切到有待绑语音的内容，这里就会自动帮你分组。</p>
+        <strong>配音批次总览</strong>
+        <p>当前筛选里还看不出可以直接安排的录音批次。切到有待绑语音的内容后，这里会自动分组。</p>
       </article>
     `;
   }
@@ -14065,8 +14082,8 @@ function renderScriptVoiceBatchSection(filteredEntries) {
   return `
     <section class="voice-batch-panel">
       <div class="panel-heading">
-        <h2>配音批次建议</h2>
-        <span class="badge badge-soft">先录最顺手的一批</span>
+        <h2>配音批次总览</h2>
+        <span class="badge badge-soft">优先录入顺手批次</span>
       </div>
       <div class="voice-batch-grid">
         ${batches.map((batch, index) => renderScriptVoiceBatchCard(batch, { highlight: index < 2 })).join("")}
@@ -14080,7 +14097,7 @@ function renderScriptVoiceBatchCard(batch, { highlight = false } = {}) {
     <article class="detail-card voice-batch-card ${highlight ? "voice-batch-card-highlight" : ""}">
       <div class="voice-batch-head">
         <div>
-          <span class="issue-tag ${highlight ? "warn-text" : ""}">录音批次 ${highlight ? "推荐优先" : "候选"}</span>
+          <span class="issue-tag ${highlight ? "warn-text" : ""}">录音批次 ${highlight ? "优先批次" : "候选批次"}</span>
           <strong>${escapeHtml(batch.speakerName)} · ${escapeHtml(batch.chapterName)}</strong>
           <p>${escapeHtml(batch.suggestion)}</p>
         </div>
@@ -14206,7 +14223,7 @@ function buildScriptHighlightCandidates(entries) {
       return {
         entry,
         score,
-        rankLabel: `建议重点看`,
+        rankLabel: `重点查看`,
         reasons: reasons.slice(0, 3),
         helperText:
           entry.type === "choice"
@@ -15099,8 +15116,8 @@ function buildScriptVoiceSheetContent(filteredEntries, totalEntryCount, filters 
       "当前状态",
       "当前语音条目",
       "当前语音路径",
-      "建议语音条目名",
-      "建议录音文件名",
+      "目标语音条目名",
+      "目标录音文件名",
       "表情",
       "正文",
       "上一句",
@@ -15259,8 +15276,8 @@ function buildCharacterVoiceBriefContent(character, stats) {
     `真实文件覆盖率：${stats.readyVoiceCoverage}%`,
     `预计录音时长：约 ${stats.estimatedRecordingMinutes} 分钟`,
     "",
-    "建议交付方式：",
-    "1. 先按下面的“建议录音文件名”录制并命名。",
+    "交付方式：",
+    "1. 先按下面的“目标录音文件名”录制并命名。",
     "2. 如果这句已经有语音占位条目，优先往对应条目上传真实文件。",
     "3. 录完后回 Tony Na Engine 的语音素材页批量匹配，就能自动回绑大部分语音。",
     "",
@@ -15271,8 +15288,8 @@ function buildCharacterVoiceBriefContent(character, stats) {
     lines.push(
       `- ${line.chapterName} / ${line.sceneName} / 第 ${line.blockIndex + 1} 张`,
       `  状态：${line.voiceAssetId ? "已建占位，待上传真实文件" : "还没建语音条目"}`,
-      `  建议语音条目名：${buildSuggestedVoiceBaseName(line)}`,
-      `  建议录音文件名：${buildSuggestedVoiceFileName(line)}`,
+      `  目标语音条目名：${buildSuggestedVoiceBaseName(line)}`,
+      `  目标录音文件名：${buildSuggestedVoiceFileName(line)}`,
       `  表情：${line.expressionName || "暂不明显"}`,
       `  台词：${line.text || "这句台词还没填正文。"}`,
       ""
@@ -15299,10 +15316,10 @@ function buildProjectVoiceBriefContent(allEntries) {
     `真实语音覆盖率：${overview.readyCoverage}%`,
     `预计录音时长：约 ${overview.recordingMinutes} 分钟`,
     "",
-    "当前最值得先推进的建议：",
+    "当前优先推进项：",
     overview.summary,
     "",
-    "建议交付方式：",
+    "交付方式：",
     "1. 先看下面的“优先章节”和“优先角色批次”，从最卡进度的部分开始补。",
     "2. 章节或角色范围需要更细台词清单时，回 Tony Na Engine 继续导出对应章节 / 角色的命名清单和交付说明。",
     "3. 录完后优先用语音素材页的“批量匹配语音文件”回绑真实文件。",
@@ -15336,8 +15353,8 @@ function buildProjectVoiceBriefContent(allEntries) {
       lines.push(
         `- ${entry.chapterName} / ${entry.sceneName} / ${entry.speakerName} / 第 ${entry.blockIndex + 1} 张`,
         `  状态：${getScriptVoiceWorkflowLabel(entry)}`,
-        `  建议语音条目名：${buildSuggestedVoiceBaseName(entry)}`,
-        `  建议录音文件名：${buildSuggestedVoiceFileName(entry)}`,
+        `  目标语音条目名：${buildSuggestedVoiceBaseName(entry)}`,
+        `  目标录音文件名：${buildSuggestedVoiceFileName(entry)}`,
         `  台词：${entry.text || "这句台词还没填正文。"}`,
         ""
       );
@@ -15386,8 +15403,8 @@ function buildChapterVoiceBriefContent(chapter, dialogueEntries, pendingEntries)
     `真实文件覆盖率：${readyCoverage}%`,
     `预计录音时长：约 ${recordingMinutes} 分钟`,
     "",
-    "建议交付方式：",
-    "1. 先按下面每句给出的“建议录音文件名”录制和命名。",
+    "交付方式：",
+    "1. 先按下面每句给出的“目标录音文件名”录制和命名。",
     "2. 已有语音占位的句子，录完后优先直接匹配回对应条目。",
     "3. 如果这章还缺语音条目，可以先在台本页一键生成占位，再批量匹配真实文件。",
     "",
@@ -15405,8 +15422,8 @@ function buildChapterVoiceBriefContent(chapter, dialogueEntries, pendingEntries)
       lines.push(
         `- ${entry.speakerName} / 第 ${entry.blockIndex + 1} 张`,
         `  状态：${getScriptVoiceWorkflowLabel(entry)}`,
-        `  建议语音条目名：${buildSuggestedVoiceBaseName(entry)}`,
-        `  建议录音文件名：${buildSuggestedVoiceFileName(entry)}`,
+        `  目标语音条目名：${buildSuggestedVoiceBaseName(entry)}`,
+        `  目标录音文件名：${buildSuggestedVoiceFileName(entry)}`,
         `  表情：${entry.expressionName || "暂不明显"}`,
         `  台词：${entry.text || "这句台词还没填正文。"}`,
         ""
@@ -16129,7 +16146,7 @@ function renderCharacterRelationshipPanel(character, overview) {
     return `
       <article class="detail-card character-relation-panel">
         <strong>共演关系与对手戏</strong>
-        <p class="helper-text">这个角色目前还没有和其他角色形成正式对手戏，后面一旦有同场对白，这里就会自动长出来。</p>
+        <p class="helper-text">这个角色目前还没有和其他角色形成正式对手戏；一旦出现同场对白，这里会自动生成相关记录。</p>
       </article>
     `;
   }
@@ -16139,7 +16156,7 @@ function renderCharacterRelationshipPanel(character, overview) {
       <div class="character-scene-panel-head">
         <div>
           <strong>共演关系与对手戏</strong>
-          <p class="helper-text">这里会帮你找出这个角色最常和谁同场、哪组关系最值得先补互动、以及最该先回去修哪一场对手戏。</p>
+          <p class="helper-text">这里会汇总这个角色最常与谁同场、哪组关系最值得补互动，以及优先回头处理的对手戏场景。</p>
         </div>
         <div class="detail-actions">
           <button
@@ -16322,7 +16339,7 @@ function renderCharacterOverview(character, stats) {
     </article>
     <article class="detail-card">
       <strong>已绑语音示例</strong>
-      <p class="helper-text">这块可以帮你快速确认这个角色目前的配音风格是不是稳定。</p>
+      <p class="helper-text">这里可快速确认这个角色当前的配音风格是否稳定。</p>
       ${renderCharacterVoicedExamples(stats)}
     </article>
   `;
@@ -16656,7 +16673,7 @@ function renderBeginnerPreviewGuide(session, snapshot) {
     ];
   } else if ((session?.timeline?.length ?? 0) > 1) {
     title = "这版已经能继续试玩了";
-    description = "如果你觉得手感顺了，就可以开始导出试玩包；如果还想微调节奏，就继续往下跑几句。";
+    description = "试玩手感稳定后即可开始导出试玩包；如需继续微调节奏，可再往下跑几句。";
     actions = [
       { label: "导出试玩包", action: "export-build", dataset: { "export-target": "web" } },
       { label: "继续试玩这版", action: "preview-next" },
@@ -16735,7 +16752,7 @@ function renderPreviewScreen() {
       routeOverview,
       filteredChapters: previewSceneOverview.chapters,
       showFilteredCounts: true,
-      emptyMessage: "这个试玩筛选下暂时没有命中的场景。你可以换个关键词，或者点上面的“清空试玩筛选”。",
+      emptyMessage: "这个试玩筛选下暂时没有命中的场景。可换一个关键词，或点击上面的“清空试玩筛选”。",
     }
   );
   refs.previewMeta.textContent = isBlankProject
@@ -17211,6 +17228,34 @@ function getBrowserStorage() {
   }
 }
 
+function loadStoredEditorUiThemeMode() {
+  const storage = getBrowserStorage();
+
+  if (!storage) {
+    return PREVIEW_PLAYBACK_DEFAULTS.uiThemeMode;
+  }
+
+  try {
+    return getSafeUiThemeMode(storage.getItem(EDITOR_UI_THEME_STORAGE_KEY));
+  } catch (error) {
+    return PREVIEW_PLAYBACK_DEFAULTS.uiThemeMode;
+  }
+}
+
+function persistStoredEditorUiThemeMode(mode) {
+  const storage = getBrowserStorage();
+
+  if (!storage) {
+    return;
+  }
+
+  try {
+    storage.setItem(EDITOR_UI_THEME_STORAGE_KEY, getSafeUiThemeMode(mode));
+  } catch (error) {
+    // Ignore storage write failures so theme switching still works in-memory.
+  }
+}
+
 function getProjectStorageScope(project = state.data?.project) {
   const rawKey = String(project?.projectId ?? project?.title ?? "tony-na-project")
     .trim()
@@ -17242,26 +17287,28 @@ function sanitizePreviewPlaybackSettings(source = {}) {
 
 function loadStoredPreviewPlaybackSettings(project = state.data?.project) {
   const storage = getBrowserStorage();
+  const globalUiThemeMode = loadStoredEditorUiThemeMode();
 
   if (!storage) {
-    return { ...PREVIEW_PLAYBACK_DEFAULTS };
+    return { ...PREVIEW_PLAYBACK_DEFAULTS, uiThemeMode: globalUiThemeMode };
   }
 
   try {
     const raw = storage.getItem(getPreviewPlaybackStorageKey(project));
 
     if (!raw) {
-      return { ...PREVIEW_PLAYBACK_DEFAULTS };
+      return { ...PREVIEW_PLAYBACK_DEFAULTS, uiThemeMode: globalUiThemeMode };
     }
 
     return sanitizePreviewPlaybackSettings(JSON.parse(raw));
   } catch (error) {
-    return { ...PREVIEW_PLAYBACK_DEFAULTS };
+    return { ...PREVIEW_PLAYBACK_DEFAULTS, uiThemeMode: globalUiThemeMode };
   }
 }
 
 function persistPreviewPlaybackSettings() {
   const storage = getBrowserStorage();
+  persistStoredEditorUiThemeMode(state.previewPlayback?.uiThemeMode);
 
   if (!storage || !state.data?.project) {
     return;
@@ -17275,6 +17322,27 @@ function persistPreviewPlaybackSettings() {
   } catch (error) {
     // Ignore storage write failures so preview controls keep working in stricter environments.
   }
+}
+
+function renderGlobalUiThemeSwitch() {
+  const activeMode = getSafeUiThemeMode(state.previewPlayback?.uiThemeMode);
+  refs.globalUiThemeButtons?.forEach((button) => {
+    const isActive = button.dataset.uiThemeMode === activeMode;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-pressed", isActive ? "true" : "false");
+  });
+}
+
+function syncEditorUiThemeControls() {
+  if (refs.previewUiThemeSelect) {
+    refs.previewUiThemeSelect.value = getSafeUiThemeMode(state.previewPlayback.uiThemeMode);
+  }
+
+  if (refs.previewMenuUiThemeSelect) {
+    refs.previewMenuUiThemeSelect.value = getSafeUiThemeMode(state.previewPlayback.uiThemeMode);
+  }
+
+  renderGlobalUiThemeSwitch();
 }
 
 function getPreviewAutoResumeStorageKey(project = state.data?.project) {
@@ -18234,9 +18302,7 @@ function renderPreviewPlaybackControls(snapshot) {
     refs.previewDialogThemeSelect.value = getSafeDialogTheme(state.previewPlayback.dialogTheme);
   }
 
-  if (refs.previewUiThemeSelect) {
-    refs.previewUiThemeSelect.value = getSafeUiThemeMode(state.previewPlayback.uiThemeMode);
-  }
+  syncEditorUiThemeControls();
 
   if (refs.previewBgmVolumeRange) {
     refs.previewBgmVolumeRange.value = String(getSafeVolumePercent(state.previewPlayback.bgmVolume, 72));
@@ -19027,7 +19093,7 @@ function renderSceneTree(selectedSceneId, actionName, options = {}) {
   const emptyMessage =
     options.emptyMessage ??
     (options.useStoryFilters
-      ? "这个项目树筛选下暂时没有命中的场景。你可以换个关键词，或者点上面的“清空项目树筛选”。"
+      ? "这个项目树筛选下暂时没有命中的场景。可换一个关键词，或点击上面的“清空项目树筛选”。"
       : "当前还没有可显示的场景。");
 
   if (!chapters.length) {
@@ -19164,7 +19230,7 @@ function renderAssetGapBoard(duplicateOverview = buildAssetDuplicateOverview()) 
           "已引用缺口",
           overview.urgentMissingCount,
           overview.urgentMissingCount > 0
-            ? "这些素材已经被剧情或角色引用，建议优先补上。"
+            ? "这些素材已经被剧情或角色引用，可优先补上。"
             : "当前没有“已引用但缺文件”的高优先级缺口。",
           overview.urgentMissingCount > 0 ? "urgent" : "good",
           overview.urgentMissingCount > 0
@@ -19307,7 +19373,7 @@ function renderAssetGapBoard(duplicateOverview = buildAssetDuplicateOverview()) 
                               }
                             </div>
                             <div class="scene-card-tags">
-                              <span class="issue-tag good-text">建议保留</span>
+                              <span class="issue-tag good-text">主版本</span>
                               ${cluster.reasonLabels
                                 .map((label) => `<span class="issue-tag ${label.toneClass}">${escapeHtml(label.text)}</span>`)
                                 .join("")}
@@ -19320,7 +19386,7 @@ function renderAssetGapBoard(duplicateOverview = buildAssetDuplicateOverview()) 
                                 data-action="open-asset-from-issue"
                                 data-asset-id="${cluster.preferredAsset.id}"
                               >
-                                打开建议保留项
+                                打开主版本项
                               </button>
                             </div>
                           </article>
@@ -19329,7 +19395,7 @@ function renderAssetGapBoard(duplicateOverview = buildAssetDuplicateOverview()) 
                       .join("")}
                   </div>
                 `
-              : `<div class="helper-text">当前还没有明显的重复素材信号。后面导入变多以后，这里会自动给你列出最值得先整理的重复组。</div>`
+              : `<div class="helper-text">当前还没有明显的重复素材信号。后面导入变多以后，这里会自动列出值得优先整理的重复组。</div>`
           }
         </article>
       </div>
@@ -19412,7 +19478,7 @@ function renderAssetCard(asset, isSelected, duplicateInfo = null) {
         ${
           duplicateInfo
             ? duplicateInfo.isPreferred
-              ? `<span class="issue-tag good-text">这一组建议留它</span>`
+              ? `<span class="issue-tag good-text">这一组优先留它</span>`
               : `<span class="issue-tag ${duplicateInfo.tone === "danger" ? "danger-text" : "warn-text"}">疑似重复 ${duplicateInfo.relatedCount}</span>`
             : ""
         }
@@ -19529,7 +19595,7 @@ function renderAssetDetails(asset, duplicateOverview = buildAssetDuplicateOvervi
         ${
           usages.length > 0
             ? `先把剧情、角色或其他位置里对这个${assetTypeLabel}的引用解除，再回来删除。${usagePreview ? `当前最前面的引用有：${escapeHtml(usagePreview)}` : ""}`
-            : `这里删掉的是当前这个${assetTypeLabel}条目。这个动作不能撤回；如果你只是想换文件，优先用上面的“替换当前文件”。`
+            : `这里删掉的是当前这个${assetTypeLabel}条目。这个动作不能撤回；如仅需更换文件，优先使用上面的“替换当前文件”。`
         }
       </p>
       <div class="detail-actions">
@@ -19563,9 +19629,9 @@ function renderAssetDuplicateRecommendationCard(asset, duplicateInfo) {
   if (duplicateInfo.isPreferred) {
     return `
       <article class="detail-card">
-        <strong>整理建议</strong>
+        <strong>整理结论</strong>
         <div class="scene-card-tags">
-          <span class="issue-tag good-text">这组里更建议保留这一项</span>
+          <span class="issue-tag good-text">这组里优先保留这一项</span>
         </div>
         <p class="helper-text">${escapeHtml(duplicateInfo.preferredNotes.join(" · "))}</p>
       </article>
@@ -19574,9 +19640,9 @@ function renderAssetDuplicateRecommendationCard(asset, duplicateInfo) {
 
   return `
     <article class="detail-card">
-      <strong>整理建议</strong>
+      <strong>整理结论</strong>
       <div class="scene-card-tags">
-        <span class="issue-tag warn-text">更建议保留：${escapeHtml(duplicateInfo.preferredAsset?.name ?? "")}</span>
+        <span class="issue-tag warn-text">优先保留：${escapeHtml(duplicateInfo.preferredAsset?.name ?? "")}</span>
       </div>
       <p class="helper-text">${escapeHtml(duplicateInfo.preferredNotes.join(" · "))}</p>
       <div class="detail-actions">
@@ -19586,7 +19652,7 @@ function renderAssetDuplicateRecommendationCard(asset, duplicateInfo) {
           data-action="open-asset-from-issue"
           data-asset-id="${duplicateInfo.preferredAssetId}"
         >
-          打开建议保留项
+          打开主版本项
         </button>
       </div>
     </article>
@@ -19621,7 +19687,7 @@ function renderAssetDuplicateList(asset, duplicateOverview = buildAssetDuplicate
                     relatedUsage > 0 ? `已使用 ${relatedUsage} 处` : "暂时未使用"
                   }</div>
                   <div class="scene-card-tags">
-                    ${relatedAsset.id === info.preferredAssetId ? `<span class="issue-tag good-text">建议保留</span>` : ""}
+                    ${relatedAsset.id === info.preferredAssetId ? `<span class="issue-tag good-text">主版本</span>` : ""}
                     ${reasonLabels.map((label) => `<span class="issue-tag ${label.toneClass}">${escapeHtml(label.text)}</span>`).join("")}
                     ${
                       relatedAsset.fileExists
@@ -19704,7 +19770,7 @@ function renderAssetUsageList(usages) {
 
 function renderInlineAssetTags(tags) {
   if (!tags.length) {
-    return `<div class="helper-text">这个素材还没有标签。你可以加上“校园 / 黄昏 / 教室 / 日常”等标签，后面筛选会方便很多。</div>`;
+    return `<div class="helper-text">这个素材还没有标签。可补上“校园 / 黄昏 / 教室 / 日常”等标签，后续筛选会更方便。</div>`;
   }
 
   return `
@@ -19718,7 +19784,7 @@ function renderAssetTagFilterBar(assets) {
   const tagCounts = getAssetTagCounts(assets);
 
   if (!tagCounts.length) {
-    return `<div class="helper-text">当前这一类素材还没有标签。你可以在右侧给素材加标签，后面搜索会更方便。</div>`;
+    return `<div class="helper-text">当前这一类素材还没有标签。可在右侧补充标签，后续搜索会更方便。</div>`;
   }
 
   const activeLabel = state.assetTagFilter
@@ -19834,7 +19900,7 @@ function getAssetEmptyMessage(fallback = "这个分类里暂时没有素材。")
     return `收藏素材里没有标签为“${state.assetTagFilter}”的内容。`;
   }
   if (state.assetFavoriteOnly) {
-    return "当前还没有收藏素材。你可以先点卡片上的星标收藏常用素材。";
+    return "当前还没有收藏素材。可先点击卡片上的星标收藏常用素材。";
   }
   if (state.assetSearchQuery.trim() && state.assetTagFilter) {
     return `没有找到同时匹配“${state.assetSearchQuery.trim()}”和标签“${state.assetTagFilter}”的素材。`;
@@ -21021,8 +21087,8 @@ function renderPreviewDebugPanel(snapshot) {
   const changedCount = countPreviewDebugDraftChanges(snapshot);
   const draftSummary =
     changedCount > 0
-      ? `你已经改了 ${changedCount} 项，点下面的“写入当前试玩”后，后续分支会立刻按这些值继续。`
-      : "现在显示的就是这一刻真正生效的变量。你可以直接改，再写入当前试玩。";
+      ? `当前已改动 ${changedCount} 项，点击“写入当前试玩”后，后续分支会按这些值继续。`
+      : "这里显示的是当前真正生效的变量，可直接修改并写入当前试玩。";
 
   return `
     <article class="detail-card preview-debug-card">
@@ -21097,7 +21163,7 @@ function renderPreviewRouteSummaryPanel(session) {
     return `
       <article class="detail-card preview-route-card">
         <strong>路线摘要</strong>
-        <p class="helper-text">先开始一段试玩，这里就会自动记下你选过哪些选项、命中过哪些条件。</p>
+        <p class="helper-text">开始一段试玩后，这里会记录已选选项和命中过的条件。</p>
       </article>
     `;
   }
@@ -21541,7 +21607,7 @@ function renderPreviewSidebar(session) {
     }
     <article class="detail-card">
       <strong>分辨率切换</strong>
-      <p>如果你想做 Full HD 版本，这里可以直接切到 1920 × 1080。</p>
+      <p>制作 Full HD 版本时，这里可直接切到 1920 × 1080。</p>
       <div class="detail-actions">
         ${renderResolutionButtons()}
       </div>
@@ -21795,8 +21861,8 @@ function buildPreviewSprintTasks() {
   if ((exportResult?.missingAssets ?? 0) > 0) {
     tasks.push({
       tone: "warn",
-      title: "先补导出缺失素材",
-      description: "这些素材在编辑器里有条目，但最近一次导出时没找到真实文件。先补这批，试玩包会立刻完整很多。",
+      title: "补齐导出缺失素材",
+      description: "这些素材在编辑器里已有条目，但最近一次导出时未找到真实文件。补齐后，试玩包会更完整。",
       metrics: [
         ["缺失素材", `${exportResult.missingAssets} 个`],
         ["最近导出", truncateText(exportResult.buildPath ?? "刚刚导出", 24)],
@@ -21860,16 +21926,16 @@ function buildPreviewSprintTasks() {
     const firstWarningAction = getValidationIssueAction(nonVoiceWarnings[0]);
     tasks.push({
       tone: "good",
-      title: "把建议提醒顺手压低",
-      description: "这些不是硬错误，但修完以后试玩手感和导出稳定度通常会更好。",
+    title: "处理补充提醒",
+      description: "这些不是硬错误，但处理后试玩手感和导出稳定度通常会更好。",
       metrics: [
-        ["建议提醒", `${nonVoiceWarnings.length} 项`],
+        ["补充提醒", `${nonVoiceWarnings.length} 项`],
         ["首个位置", truncateText(nonVoiceWarnings[0]?.location ?? "待定位", 24)],
       ],
       tags: ["不急但很值", "适合导出前收尾"],
       actions: [
         {
-          label: "只看建议提醒",
+          label: "只看补充提醒",
           action: "set-preview-issue-filter",
           dataset: { "preview-issue-filter": "warnings" },
         },
@@ -21924,13 +21990,13 @@ function renderPreviewSprintPanel() {
     <article class="detail-card preview-sprint-panel">
       <div class="panel-heading">
         <h2>导出冲刺助手</h2>
-        <span class="badge badge-soft">先做最影响导出的几件事</span>
+        <span class="badge badge-soft">优先处理最影响导出的事项</span>
       </div>
-      <p class="helper-text">这里会先把最值得优先处理的问题排出来，并给你能直接跳过去的按钮，减少来回翻页面的次数。</p>
+      <p class="helper-text">这里会先排出当前优先处理的问题，并提供可直接跳转的按钮，减少来回翻页的次数。</p>
       ${
         tasks.length > 0
           ? `<div class="preview-sprint-grid">${tasks.map((task) => renderPreviewSprintCard(task)).join("")}</div>`
-          : renderEmpty("当前最影响导出的几类问题已经不明显了。你可以直接继续试玩，或者再导出一版确认效果。")
+          : renderEmpty("当前最影响导出的几类问题已经不明显了。可直接继续试玩，或再导出一版确认效果。")
       }
     </article>
   `;
@@ -21952,7 +22018,7 @@ function buildReleaseChecklistItems() {
       severity: hasStoredReleaseVersion ? "good" : "warn",
       title: "发布版本",
       toneClass: hasStoredReleaseVersion ? "good-text" : "warn-text",
-      status: hasStoredReleaseVersion ? "已写入项目" : "建议先保存",
+      status: hasStoredReleaseVersion ? "已写入项目" : "待保存",
       description: hasStoredReleaseVersion
         ? `当前项目文件里的发布版本是 ${releaseVersion}。`
         : `当前导出会临时使用 ${releaseVersion}，但项目文件里还没正式写入。`,
@@ -21962,11 +22028,11 @@ function buildReleaseChecklistItems() {
       severity: resolution.width === 1920 && resolution.height === 1080 ? "good" : "warn",
       title: "项目分辨率",
       toneClass: resolution.width === 1920 && resolution.height === 1080 ? "good-text" : "warn-text",
-      status: resolution.width === 1920 && resolution.height === 1080 ? "适合正式桌面版" : "建议切到 1920×1080",
+      status: resolution.width === 1920 && resolution.height === 1080 ? "适合正式桌面版" : "待切到 1920×1080",
       description:
         resolution.width === 1920 && resolution.height === 1080
           ? "当前已经是 Full HD 桌面分辨率。"
-          : `现在是 ${resolution.width} × ${resolution.height}，如果要做正式桌面版，建议先切到 1920 × 1080。`,
+          : `现在是 ${resolution.width} × ${resolution.height}；如需做正式桌面版，可先切到 1920 × 1080。`,
       action:
         resolution.width === 1920 && resolution.height === 1080
           ? null
@@ -22020,7 +22086,7 @@ function buildReleaseChecklistItems() {
       description:
         missingVoiceWarnings === 0
           ? "至少当前检查里没有新的待绑语音提醒。"
-          : "如果这是正式发布前版本，建议把这些台词先集中补完语音或确认就是无语音设计。",
+          : "如果这是正式发布前版本，可把这些台词集中补完语音，或确认本身就是无语音设计。",
       action: missingVoiceWarnings > 0 ? { label: "只看待绑语音", action: "focus-script-missing-voice" } : null,
     },
     {
@@ -22048,7 +22114,7 @@ function buildReleaseChecklistItems() {
           ? `最近一次桌面包已经走到 ${exportResult.packageModeLabel ?? "桌面壳模式"}。`
           : ["windows_nwjs", "macos_nwjs", "linux_nwjs"].includes(exportResult?.target)
             ? `最近一次桌面包没有拿到完整 NW.js 运行壳。${exportResult.runtimeWarning ? `原因：${exportResult.runtimeWarning}` : ""}`
-            : "建议至少导一次原生桌面包，确认桌面壳、图标和启动画面都已经齐了。",
+            : "可至少导一次原生桌面包，确认桌面壳、图标和启动画面都已齐全。",
       action: {
         label: "去预览导出页",
         action: "switch-screen",
@@ -22070,7 +22136,7 @@ function buildReleaseChecklistSummary(items = buildReleaseChecklistItems()) {
       toneClass: "danger-text",
       badge: "先补阻塞项",
       title: `当前还有 ${blockerCount} 个发布阻塞项`,
-      description: "这几个问题最容易直接影响正式交付，建议先修完再打正式包。",
+      description: "这几个问题最容易直接影响正式交付，处理完成后再打正式包会更稳。",
       metrics: [
         ["阻塞项", `${blockerCount} 个`],
         ["提醒项", `${warnCount} 个`],
@@ -22083,8 +22149,8 @@ function buildReleaseChecklistSummary(items = buildReleaseChecklistItems()) {
     return {
       toneClass: "warn-text",
       badge: "基本可发",
-      title: `当前没有硬阻塞，但还有 ${warnCount} 个建议确认项`,
-      description: "现在已经能继续导出，只是还有几项建议在正式交付前再确认一遍。",
+      title: `当前没有硬阻塞，但还有 ${warnCount} 个待确认项`,
+      description: "现在已经能继续导出，只是还有几项内容适合在正式交付前再确认一遍。",
       metrics: [
         ["阻塞项", "0 个"],
         ["提醒项", `${warnCount} 个`],
@@ -22126,7 +22192,7 @@ function renderReleaseSettingsPanel() {
   return `
     <article class="detail-card">
       <strong>发布版本</strong>
-      <p class="helper-text">这里会写进项目文件、导出发布清单和桌面包说明里。建议一直用同一套版本号习惯，比如 1.0.0-preview、1.0.0-beta、1.0.0。</p>
+      <p class="helper-text">这里会写进项目文件、导出发布清单和桌面包说明里。保持统一的版本号习惯会更便于后续发布，例如 1.0.0-preview、1.0.0-beta、1.0.0。</p>
       <div class="asset-search-row story-tree-filter-row">
         <label class="asset-search-field">
           <span class="sr-only">发布版本</span>
@@ -22322,7 +22388,7 @@ function getPreviewRegressionTerminalMeta(snapshot, previousSnapshot, steps) {
     return {
       status: "warn",
       title: "这条路线结束得太快",
-      detail: "烟测虽然没有直接撞错，但这条路线几乎一开场就结束了，建议确认是不是少了正文、跳转或分支承接。",
+      detail: "烟测虽然没有直接撞错，但这条路线几乎一开场就结束了，可确认是否缺少正文、跳转或分支承接。",
       anchorSnapshot: previousSnapshot ?? snapshot,
     };
   }
@@ -22414,7 +22480,7 @@ function runPreviewRegressionCase(seed) {
         status: "fail",
         statusLabel: "疑似死循环",
         reason: "这条路线反复回到同一个步骤，已经不像正常的剧情推进了。",
-        detail: `烟测在 ${steps} 步内重复命中同一位置超过 ${PREVIEW_REGRESSION_MAX_REPEAT} 次，建议先检查跳转、条件判断或循环分支。`,
+        detail: `烟测在 ${steps} 步内重复命中同一位置超过 ${PREVIEW_REGRESSION_MAX_REPEAT} 次，可先检查跳转、条件判断或循环分支。`,
         steps,
         visitedSceneCount: visitedSceneIds.size,
         choiceCount,
@@ -22465,7 +22531,7 @@ function runPreviewRegressionCase(seed) {
           status: "fail",
           statusLabel: "选项卡无可用选项",
           reason: "这张选项卡没有任何可走分支",
-          detail: "玩家走到这里时没有任何选项可点，试玩会直接断掉，建议先补齐选项去向。",
+          detail: "玩家走到这里时没有任何选项可点，试玩会直接中断，可先补齐选项去向。",
           steps,
           visitedSceneCount: visitedSceneIds.size,
           choiceCount,
@@ -22499,7 +22565,7 @@ function runPreviewRegressionCase(seed) {
         status: "fail",
         statusLabel: "推进中断",
         reason: "这条路线没有正常继续往下推进",
-        detail: "烟测在这里没能继续前进，建议检查这一张卡片是不是缺少目标场景、选项或有效内容。",
+        detail: "烟测在这里没能继续前进，可检查这一张卡片是否缺少目标场景、选项或有效内容。",
         steps,
         visitedSceneCount: visitedSceneIds.size,
         choiceCount,
@@ -22523,7 +22589,7 @@ function runPreviewRegressionCase(seed) {
     status: "fail",
     statusLabel: "超过最大步数",
     reason: "这条路线跑得太久了，像是没能正常收束",
-    detail: `烟测已经推进超过 ${PREVIEW_REGRESSION_MAX_STEPS} 步，仍然没有走到结尾，建议先检查有没有循环跳转或条件卡住。`,
+    detail: `烟测已经推进超过 ${PREVIEW_REGRESSION_MAX_STEPS} 步，仍然没有走到结尾，可先检查是否存在循环跳转或条件阻塞。`,
     steps: PREVIEW_REGRESSION_MAX_STEPS,
     visitedSceneCount: visitedSceneIds.size,
     choiceCount,
@@ -22618,7 +22684,7 @@ function renderPreviewRegressionPanel(routeOverview) {
         <h2>自动回归试玩路线测试</h2>
         <span class="badge badge-soft">关键路线烟测</span>
       </div>
-      <p class="helper-text">这里会自动用试玩运行时把关键入口、章节起点和高分支场景先跑一遍，优先帮你抓坏链、空场景和疑似死循环。</p>
+      <p class="helper-text">这里会自动用试玩运行时把关键入口、章节起点和高分支场景先跑一遍，优先检查坏链、空场景和疑似死循环。</p>
       <div class="detail-actions">
         <button class="toolbar-button toolbar-button-primary" data-action="run-preview-regression">
           自动回归试玩路线测试
@@ -22697,7 +22763,7 @@ function getPreviewRegressionFixRecommendation(caseResult) {
     return "先确认这段是不是本来就该收尾；如果不是，补正文、分支承接或结尾跳转会更稳。";
   }
 
-  return "这条路线建议优先复看一次，确认它的推进节奏和去向都符合你现在的设计。";
+  return "这条路线适合优先复看一次，确认推进节奏和去向是否符合当前设计。";
 }
 
 function buildPreviewRegressionFixQueue() {
@@ -22731,7 +22797,7 @@ function renderPreviewRegressionFixQueuePanel() {
         <h2>发布前回归修复优先队列</h2>
         <span class="badge badge-soft">先修这几条最省力</span>
       </div>
-      <p class="helper-text">这里会把刚才回归里最值得先处理的失败路线和提醒路线排成优先队列，避免你一条条自己判断先后顺序。</p>
+      <p class="helper-text">这里会把刚才回归里优先处理的失败路线和提醒路线排成队列，便于按顺序处理。</p>
       ${
         queue.length > 0
           ? `
@@ -22798,7 +22864,7 @@ function renderProjectValidationSummary() {
   return `
     ${renderDetailRows([
       ["结构错误", `${state.validation.errors.length} 项`],
-      ["建议提醒", `${state.validation.warnings.length} 项`],
+      ["补充提醒", `${state.validation.warnings.length} 项`],
       ["未使用素材", `${unusedAssets.length} 个`],
       ["当前导出判断", state.validation.errors.length === 0 ? "结构上可以继续做原型" : "先修错误"],
     ])}
@@ -22844,7 +22910,7 @@ function renderProjectValidationSummary() {
         : `
           <article class="detail-card">
             <strong>当前导出提醒</strong>
-            <p class="helper-text">新手模式下这里只先显示最需要你马上处理的几条。如果你想搜全量问题、看更细的导出诊断，再切到高级模式。</p>
+            <p class="helper-text">新手模式下这里只显示最优先处理的几条。如需搜索全量问题或查看更细的导出诊断，可切到高级模式。</p>
           </article>
         `
     }
@@ -23050,7 +23116,7 @@ function renderProjectValidationSummary() {
                   exportResult.releaseVersion ?? "1.0.0-preview"
                 )}<br />启动文件：${escapeHtml(
                   exportResult.launcherFileName ?? "未生成"
-                )}<br />推荐启动：${escapeHtml(
+                )}<br />默认启动：${escapeHtml(
                   exportResult.startHelperFileName ?? "启动游戏"
                 )}<br />桌面模式：${escapeHtml(exportResult.runtimeModeLabel ?? `${exportResult.targetLabel ?? "桌面包"}`)}<br />打包方式：${escapeHtml(
                   exportResult.packageModeLabel ?? "文件夹版"
@@ -23289,7 +23355,7 @@ function renderPlayerProfileOverviewPanel() {
         ${renderRouteMetricCard(
           "标题页入口",
           scenes.length > 0 ? "会显示" : "暂不显示",
-          scenes.length > 0 ? "只要项目里已经有可玩的场景，标题页就会出现“玩家档案”按钮" : "先做出第一章和第一场景后，标题页玩家档案入口才会出现"
+          scenes.length > 0 ? "只要项目里已经有可玩的场景，标题页就会出现“玩家档案”按钮" : "完成第一章和第一场景后，标题页玩家档案入口才会出现"
         )}
         ${renderRouteMetricCard(
           "会累计什么",
@@ -23386,7 +23452,7 @@ function renderVoiceReplayOverviewPanel() {
             ? missingVoiceBlocks.length > 0
               ? `还有 ${missingVoiceBlocks.length} 句绑了语音条目但还没真实文件`
               : "这批语音素材已经能支持标题页回听"
-            : "先去配音工作流里生成或上传语音"
+            : "去配音工作流里生成或上传语音"
         )}
         ${renderRouteMetricCard(
           "标题页入口",
@@ -23474,7 +23540,7 @@ function renderExtraModeOverviewPanel() {
             ? overview.cg.missing > 0
               ? `还有 ${overview.cg.missing} 张缺真实文件`
               : "这些 CG 导出后就能参与回想解锁"
-            : "去素材页先补第一张 CG"
+            : "去素材页补第一张 CG"
         )}
         ${renderRouteMetricCard(
           "音乐条目",
@@ -23483,7 +23549,7 @@ function renderExtraModeOverviewPanel() {
             ? overview.bgm.missing > 0
               ? `还有 ${overview.bgm.missing} 首缺真实文件`
               : "这些 BGM 导出后就能参与音乐鉴赏解锁"
-            : "去素材页先补第一首 BGM"
+            : "去素材页补第一首 BGM"
         )}
         ${renderRouteMetricCard(
           "标题页入口",
@@ -23569,7 +23635,7 @@ function renderAchievementOverviewPanel() {
             ? choiceBlockCount > 0
               ? "会自动记录开始试玩和首次做出选项"
               : "会自动记录第一次开始试玩"
-            : "先做出第一章剧情后，这类成就才会出现"
+            : "完成第一章剧情后，这类成就才会出现"
         )}
         ${renderRouteMetricCard(
           "收集里程碑",
@@ -23625,7 +23691,7 @@ function renderChapterReplayOverviewPanel() {
           chapters.length > 0 ? `${chapters.length} 章` : "暂时没有",
           chapters.length > 0
             ? "每一章都会从自己的第一个场景开头重放"
-            : "先做出第一章后，标题页章节选集入口才会出现"
+            : "完成第一章后，标题页章节选集入口才会出现"
         )}
         ${renderRouteMetricCard(
           "标题页入口",
@@ -23957,7 +24023,7 @@ function renderCharacterArchiveOverviewPanel() {
   return `
     <article class="detail-card">
       <strong>角色图鉴 / 人物档案馆</strong>
-      <p class="helper-text">导出后的标题页会根据项目里的角色条目自动显示“角色图鉴”。玩家第一次在剧情里见到角色、或者看到角色开口说话后，这个角色就会自动收录进自己的图鉴里。</p>
+      <p class="helper-text">导出后的标题页会根据项目里的角色条目显示“角色图鉴”。玩家第一次在剧情里见到角色，或第一次看到角色开口说话后，该角色会收录进图鉴。</p>
       <div class="preview-sprint-metrics">
         ${renderRouteMetricCard(
           "角色条目",
@@ -23966,7 +24032,7 @@ function renderCharacterArchiveOverviewPanel() {
             ? missingVisualCount > 0
               ? `还有 ${missingVisualCount} 位角色缺可显示立绘`
               : "这些角色导出后就能参与图鉴收录"
-            : "先去角色页建第一个角色"
+            : "去角色页建立第一个角色"
         )}
         ${renderRouteMetricCard(
           "标题页入口",
@@ -24026,7 +24092,7 @@ function renderEndingCollectionOverviewPanel(routeOverview = buildSceneRouteOver
   return `
     <article class="detail-card">
       <strong>结局回收馆 / 通关记录</strong>
-      <p class="helper-text">导出后的标题页会自动把“没有继续跳往别处的收束场景”当成可回收结局。玩家真正打到这条路线收尾后，就会在自己的本机回收馆里亮起，并且可以从标题页直接回放那个结局。</p>
+      <p class="helper-text">导出后的标题页会把“没有继续跳往别处的收束场景”识别为可回收结局。玩家真正打到这条路线收尾后，该结局会在本机回收馆中点亮，并可从标题页直接回放。</p>
       <div class="preview-sprint-metrics">
         ${renderRouteMetricCard(
           "可回收结局",
@@ -24100,7 +24166,7 @@ function buildInspectionReportContent() {
     "",
     "总体结果：",
     `- 结构错误：${state.validation.errors.length} 项`,
-    `- 建议提醒：${state.validation.warnings.length} 项`,
+    `- 补充提醒：${state.validation.warnings.length} 项`,
     `- 已引用缺口素材：${state.data.assetList.filter((asset) => isAssetUrgentMissing(asset)).length} 个`,
     `- 闲置素材：${getUnusedAssets().length} 个`,
     `- 入口场景：${routeOverview.metrics.entrySceneName}`,
@@ -24136,7 +24202,7 @@ function buildInspectionReportContent() {
   }
 
   if (state.validation.warnings.length > 0) {
-    lines.push("建议提醒：");
+    lines.push("补充提醒：");
     state.validation.warnings.forEach((issue) => {
       lines.push(`- ${issue.message} / ${issue.location}`);
     });
@@ -24153,7 +24219,7 @@ function buildInspectionReportContent() {
     lines.push("闲置素材：", `- ${unusedAssetItem.title}`, `- ${unusedAssetItem.meta}`, "");
   }
 
-  lines.push("建议动作：");
+  lines.push("处理动作：");
   if (state.validation.errors.length > 0) {
     lines.push("- 先清结构错误，再继续试玩和正式导出。");
   } else if ((exportResult?.missingAssets ?? 0) > 0) {
@@ -24213,7 +24279,7 @@ function buildInspectionReportContent() {
         `   来源：${caseResult.chapterName} · ${caseResult.sourceLabel}`,
         `   优先分：${caseResult.priorityScore}`,
         `   先修原因：${caseResult.reason}`,
-        `   建议动作：${caseResult.recommendation}`,
+        `   处理动作：${caseResult.recommendation}`,
         ""
       );
     });
@@ -24312,7 +24378,7 @@ function buildReleaseFixOrder(routeOverview) {
       tone: "warn",
       title: "集中补待绑语音",
       statusLabel: `还有 ${missingVoiceWarnings.length} 句待绑语音`,
-      description: "如果你准备做正式版本，这一批最好先集中清掉，后面的配音整理和最终试玩都会轻很多。",
+      description: "如需准备正式版本，这一批最好先集中清掉，后面的配音整理和最终试玩都会轻很多。",
       actions: [
         { label: "只看待绑语音", action: "focus-script-missing-voice" },
         firstVoiceAction
@@ -24350,12 +24416,12 @@ function buildReleaseFixOrder(routeOverview) {
     const firstWarningAction = getValidationIssueAction(nonVoiceWarnings[0]);
     steps.push({
       tone: "soft",
-      title: "顺手压低建议提醒",
-      statusLabel: `还有 ${nonVoiceWarnings.length} 项建议提醒`,
+      title: "顺手处理补充提醒",
+      statusLabel: `还有 ${nonVoiceWarnings.length} 项补充提醒`,
       description: "这些不一定会卡死项目，但修完以后最终试玩手感和导出稳定度通常会更好。",
       actions: [
         {
-          label: "只看建议提醒",
+          label: "只看补充提醒",
           action: "set-preview-issue-filter",
           dataset: { "preview-issue-filter": "warnings" },
         },
@@ -24501,14 +24567,14 @@ function renderInspectionOverviewPanel(routeOverview) {
       </article>
       <div class="summary-grid">
         ${renderStatCard("结构错误", `${state.validation.errors.length} 项`)}
-        ${renderStatCard("建议提醒", `${state.validation.warnings.length} 项`)}
+        ${renderStatCard("补充提醒", `${state.validation.warnings.length} 项`)}
         ${renderStatCard("缺口素材", `${urgentMissingAssets} 个`)}
         ${renderStatCard("待绑语音", `${missingVoiceWarnings} 句`)}
       </div>
       <div class="preview-sprint-metrics">
         ${renderRouteMetricCard("入口场景", routeOverview.metrics.entrySceneName, "当前项目从这里开始")}
         ${renderRouteMetricCard("分支场景", routeOverview.metrics.branchingScenes, "可继续扩路线")}
-        ${renderRouteMetricCard("孤立场景", routeOverview.metrics.orphanScenes, "建议检查入口")}
+        ${renderRouteMetricCard("孤立场景", routeOverview.metrics.orphanScenes, "待检查入口")}
         ${renderRouteMetricCard("坏链数量", routeOverview.metrics.brokenRoutes, "先清零会更稳")}
       </div>
       ${renderReleaseFixOrderPanel(routeOverview)}
@@ -25298,7 +25364,7 @@ function renderStorySceneOptimizerSection(scene, overview) {
                 )
                 .join("")}
             </div>`
-          : renderEmpty("这一场的基础骨架已经比较完整了。你可以先从这里试玩一遍，感受节奏和演出手感。")
+          : renderEmpty("这一场的基础骨架已经比较完整了。可先从这里试玩一遍，确认节奏和演出手感。")
       }
     </article>
   `;
@@ -25313,7 +25379,7 @@ function renderStorySceneStructurePanel(scene, routeNode = null) {
       <div class="story-structure-head">
         <div>
           <h3>场景结构总览</h3>
-          <p>这一块会自动帮你看这场的骨架、分支口、演出密度和最值得先补的地方。</p>
+          <p>这里会汇总这场的骨架、分支口、演出密度和当前最值得先补的部分。</p>
         </div>
         <span class="issue-tag ${getDashboardTaskToneClass(tone)}">完成度 ${overview.completionScore}%</span>
       </div>
@@ -25389,7 +25455,7 @@ function renderStorySceneStructurePanel(scene, routeNode = null) {
                     )
                     .join("")}
                 </div>`
-              : renderEmpty("这场还没出现特别明显的高光点。你可以先补正文，再让镜头或粒子把重点抬出来。")
+              : renderEmpty("这场还没出现特别明显的高光点。可先补正文，再用镜头或粒子强化重点。")
           }
         </article>
       </div>
@@ -25519,7 +25585,7 @@ function renderDialogueEditor(block) {
     : `
         <article class="editor-card">
           <h3>这句还没有语音</h3>
-          <p>如果你想先把配音工作流立住，可以直接生成一个语音占位条目，系统会自动绑回这句台词，后面再慢慢上传真实文件。</p>
+          <p>如需先搭起配音工作流，可直接生成一个语音占位条目；系统会自动绑定到这句台词，后续再上传真实文件即可。</p>
           <div class="detail-actions">
             <button
               class="toolbar-button"
@@ -26005,7 +26071,7 @@ function renderParticleEffectEditor(block) {
       </div>
       <div class="detail-row">
         <label>快速套用</label>
-        <button class="toolbar-button" data-action="apply-particle-preset-defaults">套用这个预设的推荐高级参数</button>
+        <button class="toolbar-button" data-action="apply-particle-preset-defaults">套用这个预设的高级参数</button>
       </div>
       <div class="detail-row">
         <label for="editorParticleScenePreset">演出级预设库</label>
@@ -26197,7 +26263,7 @@ function renderParticleEffectEditor(block) {
       </div>
       <article class="editor-card particle-custom-layer-toolbar">
         <h3>自定义多层组合</h3>
-        <p>如果现成的组合方案还不够，你可以自己继续往上叠更多发射器。现在支持按需要新增或删除这些附加层。</p>
+        <p>如果现成的组合方案还不够，这里支持继续叠加更多发射器，并按需要新增或删除附加层。</p>
         <div class="detail-actions">
           <button class="toolbar-button" type="button" data-action="add-particle-custom-layer" ${
             customComboLayers.length >= PARTICLE_CUSTOM_COMBO_LAYER_LIMIT ? "disabled" : ""
@@ -26209,7 +26275,7 @@ function renderParticleEffectEditor(block) {
       ${
         customComboLayers.length > 0
           ? customComboLayers.map((layer, index) => renderParticleCustomLayerEditor(index, layer)).join("")
-          : `<article class="editor-card particle-custom-layer-empty"><p>当前还没有额外叠层。你可以先用上面的按钮继续叠烟雾、星尘、法阵、火焰这些辅助层。</p></article>`
+          : `<article class="editor-card particle-custom-layer-empty"><p>当前还没有额外叠层。可使用上面的按钮继续叠加烟雾、星尘、法阵、火焰等辅助层。</p></article>`
       }
       <article class="editor-card">
         <h3>发射器和外力</h3>
@@ -26411,7 +26477,7 @@ function renderParticleEffectEditor(block) {
       </div>
       <article class="editor-card">
         <h3>XYZ 运动和疏散</h3>
-        <p>X / Y / Z 三个轴现在都可以调。你可以把它理解成：X 是横向力，Y 是上下重力，Z 是远近层次；疏散越高，粒子越不整齐、越有空间感。</p>
+        <p>X / Y / Z 三个轴都可调。可将它理解为：X 是横向力，Y 是上下重力，Z 是远近层次；疏散越高，粒子越不整齐、越有空间感。</p>
       </article>
       <div class="detail-row">
         <label for="editorParticleGravityX">重力 X</label>
@@ -26657,7 +26723,7 @@ function renderScreenFadeEditor(block) {
             .join("")}
         </select>
       </div>
-      <div class="helper-text">如果你想做“先黑场，再切背景，再亮起”，通常会按“淡出 -> 切背景 -> 淡入”这样的顺序摆卡片。</div>
+      <div class="helper-text">需要做“先黑场，再切背景，再亮起”时，通常会按“淡出 -> 切背景 -> 淡入”的顺序摆卡片。</div>
     </div>
     <div class="detail-actions">
       <button class="toolbar-button toolbar-button-primary" data-action="save-block">保存这张卡片</button>
@@ -27780,7 +27846,7 @@ async function acknowledgeProjectRecoveryNotice() {
     if (state.currentScreen === "dashboard") {
       rerenderProjectHistoryPanel();
     }
-    setSaveStatus("已经记下，你可以继续工作了");
+    setSaveStatus("已记录当前操作");
     showToast("已收起异常退出提醒");
   } catch (error) {
     setSaveStatus("收起提醒失败", true);
@@ -29747,7 +29813,7 @@ function applyParticlePresetDefaultsToEditor() {
   assignValue("editorParticleOpacityCurve", advancedDefaults.opacityCurve);
   assignValue("editorParticleColorCurve", getParticleDefaultColorCurve(preset));
   assignValue("editorParticleColorEnd", defaults.colorAccent);
-  setSaveStatus(`已套用 ${getParticlePresetLabel(preset)} 的推荐高级参数`);
+  setSaveStatus(`已套用 ${getParticlePresetLabel(preset)} 的高级参数`);
   showToast(`已套用 ${getParticlePresetLabel(preset)} 参数`);
 }
 
@@ -30761,7 +30827,7 @@ function buildAssetDuplicateOverview(data = state.data) {
         reasonNote:
           info.pathMatchIds.size > 0
             ? "这组素材里至少有两项指向了同一个文件路径，通常很适合回头合并或确认是不是误导入。"
-            : "这些素材的名字或文件名非常接近，建议回头确认是不是同一组素材的重复版本。",
+            : "这些素材的名字或文件名非常接近，可回头确认是不是同一组素材的重复版本。",
       };
     });
 
@@ -30835,11 +30901,11 @@ function buildAssetDuplicateOverview(data = state.data) {
         nameMatchIds: new Set(clusterEntries.flatMap((entry) => Array.from(entry.nameMatchIds))),
         stemMatchIds: new Set(clusterEntries.flatMap((entry) => Array.from(entry.stemMatchIds))),
       }),
-      summary: `这一组共 ${assets.length} 项，建议先保留 ${preferredAsset.name}`,
+      summary: `这一组共 ${assets.length} 项，优先保留 ${preferredAsset.name}`,
       recommendation:
         usedAssetsCount > 1
-          ? `这一组里已经有 ${usedAssetsCount} 项被剧情引用，建议先围着“${preferredAsset.name}”统一整理。`
-          : `这一组建议先以“${preferredAsset.name}”为主版本，再决定其他条目是删除、改名还是补标签。`,
+          ? `这一组里已经有 ${usedAssetsCount} 项被剧情引用，可先围着“${preferredAsset.name}”统一整理。`
+          : `这一组可先以“${preferredAsset.name}”为主版本，再决定其他条目是删除、改名还是补标签。`,
       priorityScore:
         (clusterEntries.some((entry) => entry.pathMatchIds.size > 0) ? 120 : 0) +
         usedAssetsCount * 28 +
@@ -30868,7 +30934,7 @@ function buildAssetDuplicateOverview(data = state.data) {
       const isPreferred = cluster?.preferredAssetId === entry.assetId;
       const recommendationText = isPreferred
         ? `这一项更适合作为主版本保留。`
-        : `更建议保留：${cluster?.preferredAsset?.name ?? "另一项更完整的素材"}`;
+        : `优先保留：${cluster?.preferredAsset?.name ?? "另一项更完整的素材"}`;
 
       return {
         ...entry,
@@ -31942,7 +32008,7 @@ function renderParticleCustomPresetQuickList() {
   const filteredPresets = getFilteredParticleCustomPresets();
 
   if (!filteredPresets.length) {
-    return `<div class="helper-text">当前筛选下还没有命中的粒子预设。你可以换个关键词，或者先保存一组新的项目预设。</div>`;
+    return `<div class="helper-text">当前筛选下还没有命中的粒子预设。可换一个关键词，或先保存一组新的项目预设。</div>`;
   }
 
   return groupParticleCustomPresets(filteredPresets)
@@ -34160,5 +34226,6 @@ function escapeHtml(value) {
     .replaceAll("'", "&#39;");
 }
 
-applyEditorUiTheme(PREVIEW_PLAYBACK_DEFAULTS.uiThemeMode);
+state.previewPlayback.uiThemeMode = loadStoredEditorUiThemeMode();
+applyEditorUiTheme(state.previewPlayback.uiThemeMode);
 scheduleEditorUiThemeAutoRefresh();

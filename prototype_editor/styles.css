@@ -4620,7 +4620,7 @@ button.asset-gap-stat-card:hover {
   }
 }
 
-@media (max-width: 1280px) {
+@media (max-width: 1080px) {
   .topbar {
     grid-template-columns: 1fr;
     justify-items: stretch;
@@ -7082,4 +7082,497 @@ html[data-ui-theme="light"] .topbar {
 html[data-ui-theme="light"] .brand-mark,
 html[data-ui-theme="light"] .start-brand-mark {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(241, 247, 255, 0.96));
+}
+
+/* === Practical Layout Refresh === */
+
+.topbar {
+  align-items: start;
+  gap: 16px;
+  grid-template-columns: minmax(260px, auto) minmax(0, 1fr) minmax(320px, auto);
+}
+
+.nav,
+.topbar-meta,
+.topbar-history-actions {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.nav {
+  justify-content: flex-start;
+  padding-bottom: 2px;
+}
+
+.topbar-meta {
+  max-width: 100%;
+  padding-bottom: 2px;
+}
+
+.nav::-webkit-scrollbar,
+.topbar-meta::-webkit-scrollbar,
+.topbar-history-actions::-webkit-scrollbar {
+  height: 6px;
+}
+
+.brand-copy p {
+  max-width: 36ch;
+}
+
+.brand-kicker,
+.brand-signature,
+.nav-mode-hint,
+.panel-note,
+.helper-text {
+  letter-spacing: 0.04em;
+  text-transform: none;
+}
+
+.brand-signature {
+  opacity: 0.78;
+  row-gap: 6px;
+}
+
+.app-main {
+  padding: 20px;
+}
+
+.panel,
+.state-card,
+.project-card,
+.blank-project-card,
+.beginner-dashboard-card,
+.beginner-dashboard-focus-card,
+.project-center-banner,
+.project-center-sidecard,
+.story-template-button {
+  border-radius: 20px;
+  box-shadow: 0 14px 30px rgba(6, 14, 28, 0.18);
+}
+
+.panel-heading h2::after,
+.formal-save-dialog-head h2::after,
+.preview-save-heading h3::after {
+  width: 44px;
+  opacity: 0.7;
+}
+
+.app-shell::before,
+.app-shell::after,
+.topbar::before,
+.topbar::after {
+  opacity: 0.42;
+}
+
+.ui-theme-switch-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 6px 4px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(121, 220, 255, 0.14);
+  background: rgba(7, 15, 29, 0.56);
+  backdrop-filter: blur(12px);
+}
+
+.ui-theme-switch-label {
+  color: rgba(188, 208, 232, 0.78);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+
+.ui-theme-switch {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.ui-theme-mode-button {
+  min-width: 58px;
+  min-height: 34px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(121, 220, 255, 0.12);
+  background: transparent;
+  color: rgba(206, 230, 252, 0.82);
+  box-shadow: none;
+}
+
+.ui-theme-mode-button.is-active {
+  color: #081320;
+  background: linear-gradient(135deg, rgba(121, 220, 255, 0.96), rgba(110, 124, 255, 0.92));
+  border-color: rgba(121, 220, 255, 0.32);
+  box-shadow: 0 10px 22px rgba(48, 123, 255, 0.22);
+}
+
+html[data-ui-theme="light"] .ui-theme-switch-wrap {
+  background: rgba(255, 255, 255, 0.76);
+  border-color: rgba(108, 145, 196, 0.18);
+}
+
+html[data-ui-theme="light"] .ui-theme-switch-label {
+  color: rgba(85, 113, 148, 0.82);
+}
+
+html[data-ui-theme="light"] .ui-theme-mode-button {
+  color: rgba(64, 95, 132, 0.88);
+  border-color: rgba(108, 145, 196, 0.14);
+}
+
+@media (max-width: 1180px) {
+  .topbar {
+    grid-template-columns: 1fr;
+  }
+
+  .topbar-meta,
+  .nav {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 900px) {
+  .ui-theme-switch-wrap {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .ui-theme-switch {
+    width: 100%;
+  }
+
+  .ui-theme-mode-button {
+    flex: 1 1 0;
+  }
+}
+
+/* === Practical Surface Cleanup === */
+
+.project-center-banner,
+.project-card,
+.blank-project-card,
+.beginner-dashboard-card,
+.beginner-guide-card,
+.starter-kit-card,
+.recent-work-card,
+.scene-status-column,
+.scene-status-card,
+.production-task-card,
+.panel,
+.state-card {
+  background: linear-gradient(180deg, rgba(10, 18, 34, 0.84), rgba(8, 15, 28, 0.8));
+  border-color: rgba(121, 220, 255, 0.12);
+  box-shadow: 0 16px 34px rgba(4, 10, 22, 0.2);
+}
+
+.project-center-banner::before,
+.project-center-banner::after,
+.project-card::before,
+.blank-project-card::after,
+.beginner-dashboard-card::before,
+.panel::before,
+.panel::after {
+  opacity: 0.2;
+}
+
+.project-center-banner h2,
+.project-card h3,
+.blank-project-card h3,
+.beginner-dashboard-card strong,
+.panel-heading h2 {
+  letter-spacing: 0.01em;
+}
+
+.project-center-banner p,
+.project-card p,
+.blank-project-card p,
+.beginner-dashboard-card p,
+.beginner-guide-card p,
+.starter-kit-card p,
+.recent-work-summary,
+.panel-note,
+.helper-text {
+  color: rgba(186, 204, 228, 0.78);
+}
+
+.toolbar {
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.toolbar-button,
+.nav-button,
+.editor-mode-button {
+  min-height: 38px;
+}
+
+.story-template-button,
+.story-template-button span,
+.story-template-button strong {
+  text-align: left;
+}
+
+.story-template-button {
+  padding: 14px 16px;
+  gap: 8px;
+}
+
+.recent-work-grid,
+.scene-status-board,
+.production-board-grid,
+.story-structure-grid,
+.story-optimizer-grid,
+.preview-sprint-grid,
+.starter-kit-grid,
+.blank-project-grid,
+.beginner-dashboard-grid,
+.dashboard-grid,
+.hero-grid {
+  gap: 14px;
+}
+
+.panel-heading {
+  margin-bottom: 12px;
+}
+
+.panel-heading::after {
+  opacity: 0.48;
+}
+
+.badge,
+.badge-soft {
+  letter-spacing: 0.05em;
+}
+
+.hero-grid {
+  grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.92fr);
+  align-items: start;
+}
+
+.dashboard-grid {
+  grid-template-columns: minmax(0, 1.32fr) minmax(300px, 0.9fr);
+  align-items: start;
+}
+
+.project-center-banner,
+.beginner-dashboard-focus-card,
+.dashboard-search-panel {
+  padding: 20px 22px;
+}
+
+.project-center-banner h2,
+.beginner-dashboard-focus-card strong {
+  font-size: clamp(24px, 3vw, 34px);
+}
+
+.project-center-banner p,
+.beginner-dashboard-focus-card p {
+  max-width: 58ch;
+}
+
+.dashboard-search-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.route-summary-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.route-metric-card,
+.metric-card {
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(121, 220, 255, 0.08);
+}
+
+.recent-work-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.recent-work-card,
+.production-task-card,
+.scene-status-column,
+.scene-status-card {
+  padding: 14px 16px;
+}
+
+.scene-status-board {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.scene-status-column {
+  padding: 12px;
+}
+
+.scene-status-column-head p,
+.production-task-card p,
+.recent-work-summary,
+.detail-meta {
+  line-height: 1.58;
+}
+
+.script-entry-actions,
+.action-row,
+.project-card-actions {
+  gap: 8px;
+}
+
+.story-template-grid {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.story-template-button span {
+  color: rgba(184, 202, 226, 0.72);
+  line-height: 1.45;
+}
+
+@media (max-width: 1280px) {
+  .recent-work-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* === Practical Typographic Finish === */
+
+.topbar-meta,
+.topbar-history-actions {
+  align-items: center;
+}
+
+.toolbar-button,
+.nav-button,
+.editor-mode-button,
+.ui-theme-mode-button {
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.015em;
+}
+
+.toolbar-button,
+.editor-mode-button,
+.ui-theme-mode-button {
+  background: rgba(255, 255, 255, 0.035);
+  border-color: rgba(121, 220, 255, 0.1);
+}
+
+.toolbar-button:hover,
+.editor-mode-button:hover,
+.ui-theme-mode-button:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(121, 220, 255, 0.16);
+}
+
+.toolbar-button-primary,
+.nav-button.is-active,
+.editor-mode-button.is-active,
+.ui-theme-mode-button.is-active {
+  box-shadow: 0 12px 24px rgba(44, 113, 236, 0.18);
+}
+
+.toolbar-button-danger {
+  background: rgba(232, 81, 109, 0.08);
+  border-color: rgba(232, 81, 109, 0.16);
+  color: rgba(255, 196, 206, 0.94);
+}
+
+.toolbar-button-danger:hover {
+  background: rgba(232, 81, 109, 0.14);
+  border-color: rgba(232, 81, 109, 0.22);
+}
+
+.nav-button-label,
+.story-template-button strong,
+.project-card h3,
+.blank-project-card h3,
+.recent-work-title,
+.scene-status-card strong,
+.production-task-card strong {
+  letter-spacing: 0.012em;
+}
+
+.panel-heading h2,
+.formal-save-dialog-head h2,
+.preview-save-heading h3 {
+  font-size: clamp(17px, 1.55vw, 22px);
+  line-height: 1.2;
+}
+
+.project-center-banner h2,
+.beginner-dashboard-focus-card strong {
+  font-size: clamp(22px, 2.4vw, 31px);
+  line-height: 1.12;
+  letter-spacing: -0.015em;
+}
+
+.project-center-banner p,
+.beginner-dashboard-focus-card p,
+.project-card p,
+.blank-project-card p,
+.recent-work-summary,
+.panel-note,
+.helper-text,
+.detail-meta,
+.scene-status-column-head p,
+.production-task-card p {
+  font-size: 13px;
+}
+
+.panel-note,
+.helper-text,
+.detail-meta {
+  color: rgba(186, 204, 228, 0.72);
+}
+
+.badge,
+.badge-soft {
+  min-height: 30px;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.route-metric-card strong,
+.metric-card strong {
+  display: block;
+  font-size: 22px;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+}
+
+.route-metric-card span,
+.metric-card span {
+  font-size: 12px;
+  color: rgba(186, 204, 228, 0.72);
+}
+
+.topbar-history-actions,
+.toolbar,
+.script-entry-actions,
+.action-row,
+.project-card-actions {
+  row-gap: 8px;
+}
+
+@media (max-width: 1180px) {
+  .topbar-meta {
+    row-gap: 10px;
+  }
+
+  .topbar-history-actions {
+    width: 100%;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    padding-bottom: 2px;
+  }
+
+  .topbar-history-actions::-webkit-scrollbar {
+    height: 6px;
+  }
 }
