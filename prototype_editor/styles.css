@@ -6808,3 +6808,126 @@ textarea::placeholder {
     opacity: var(--particle-opacity-end, 0.08);
   }
 }
+
+.beginner-tutorial-dialog {
+  width: min(1080px, calc(100vw - 32px));
+  max-height: min(88vh, 920px);
+}
+
+.beginner-tutorial-shell {
+  display: grid;
+  grid-template-columns: minmax(240px, 290px) minmax(0, 1fr);
+  gap: 18px;
+}
+
+.beginner-tutorial-step-list {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+.beginner-tutorial-step-button {
+  width: 100%;
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(120, 167, 255, 0.16);
+  background: rgba(12, 20, 34, 0.72);
+  color: rgba(225, 234, 255, 0.94);
+  text-align: left;
+  transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+}
+
+.beginner-tutorial-step-button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(120, 167, 255, 0.34);
+  box-shadow: 0 16px 28px rgba(7, 11, 22, 0.24);
+}
+
+.beginner-tutorial-step-button.is-active {
+  border-color: rgba(125, 188, 255, 0.48);
+  background:
+    linear-gradient(135deg, rgba(38, 63, 112, 0.54), rgba(13, 24, 45, 0.9)),
+    rgba(12, 20, 34, 0.88);
+  box-shadow: 0 0 0 1px rgba(125, 188, 255, 0.18), 0 22px 42px rgba(4, 10, 22, 0.32);
+}
+
+.beginner-tutorial-step-button.is-done {
+  border-color: rgba(110, 221, 179, 0.26);
+}
+
+.beginner-tutorial-step-meta,
+.beginner-tutorial-step-state {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(185, 205, 255, 0.78);
+}
+
+.beginner-tutorial-step-button strong {
+  font-size: 16px;
+  letter-spacing: 0.02em;
+}
+
+.beginner-tutorial-content {
+  display: grid;
+  gap: 16px;
+  align-content: start;
+}
+
+.beginner-tutorial-focus,
+.beginner-tutorial-note-card,
+.beginner-tutorial-footer-card {
+  border-radius: 22px;
+  border: 1px solid rgba(117, 171, 255, 0.14);
+  background:
+    linear-gradient(180deg, rgba(13, 21, 38, 0.9), rgba(10, 17, 32, 0.82)),
+    rgba(9, 14, 24, 0.9);
+  box-shadow: 0 24px 48px rgba(5, 9, 19, 0.28);
+}
+
+.beginner-tutorial-focus {
+  display: grid;
+  gap: 14px;
+  padding: 22px 24px;
+}
+
+.beginner-tutorial-focus h3 {
+  margin: 0;
+  font-size: 30px;
+}
+
+.beginner-tutorial-focus p,
+.beginner-tutorial-note-card p,
+.beginner-tutorial-footer-card p {
+  margin: 0;
+  line-height: 1.8;
+  color: rgba(213, 224, 255, 0.88);
+}
+
+.beginner-tutorial-note-stack {
+  display: grid;
+  gap: 12px;
+}
+
+.beginner-tutorial-note-card,
+.beginner-tutorial-footer-card {
+  display: grid;
+  gap: 8px;
+  padding: 18px 20px;
+}
+
+.beginner-tutorial-note-card strong,
+.beginner-tutorial-footer-card strong {
+  font-size: 14px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+@media (max-width: 960px) {
+  .beginner-tutorial-shell {
+    grid-template-columns: 1fr;
+  }
+}

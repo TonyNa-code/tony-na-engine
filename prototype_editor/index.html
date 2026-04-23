@@ -96,6 +96,13 @@
               高级模式
             </button>
           </div>
+          <button
+            id="beginnerTutorialButton"
+            class="toolbar-button"
+            data-action="open-beginner-tutorial"
+          >
+            新手教程
+          </button>
           <div id="projectTitleBadge" class="badge">未打开项目</div>
           <div class="topbar-history-actions">
             <button id="historyCheckpointButton" class="toolbar-button" data-action="create-history-checkpoint" disabled>
@@ -833,6 +840,33 @@
         <div class="formal-save-confirm-actions">
           <button type="button" class="toolbar-button" data-action="close-preview-save-confirm">先不动它</button>
           <button type="button" class="toolbar-button toolbar-button-primary" data-action="confirm-preview-save-intent">确认继续</button>
+        </div>
+      </section>
+    </div>
+    <div id="beginnerTutorialDialog" class="formal-save-dialog-backdrop" hidden>
+      <section
+        class="formal-save-dialog beginner-tutorial-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="beginnerTutorialTitle"
+      >
+        <div class="formal-save-dialog-head">
+          <div>
+            <div class="eyebrow">Tony Na Engine · 新手教程</div>
+            <h2 id="beginnerTutorialTitle">第一次开工就照这个顺序来</h2>
+            <p id="beginnerTutorialSummary" class="formal-save-dialog-summary"></p>
+          </div>
+          <button
+            type="button"
+            class="toolbar-button"
+            data-action="close-beginner-tutorial"
+          >
+            关闭
+          </button>
+        </div>
+        <div class="beginner-tutorial-shell">
+          <aside id="beginnerTutorialStepList" class="beginner-tutorial-step-list"></aside>
+          <div id="beginnerTutorialContent" class="beginner-tutorial-content"></div>
         </div>
       </section>
     </div>

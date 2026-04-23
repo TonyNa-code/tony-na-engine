@@ -1601,6 +1601,8 @@ const state = {
   historyRecoveryPromptKey: "",
   sceneStatusDrag: null,
   storyBlockDrag: null,
+  beginnerTutorialOpen: false,
+  beginnerTutorialStep: 0,
 };
 
 let toastTimer = null;
@@ -1632,6 +1634,7 @@ const refs = {
   appMain: document.getElementById("appMain"),
   editorModeBeginnerButton: document.getElementById("editorModeBeginnerButton"),
   editorModeAdvancedButton: document.getElementById("editorModeAdvancedButton"),
+  beginnerTutorialButton: document.getElementById("beginnerTutorialButton"),
   projectTitleBadge: document.getElementById("projectTitleBadge"),
   saveStatusBadge: document.getElementById("saveStatusBadge"),
   validationBadge: document.getElementById("validationBadge"),
@@ -1740,6 +1743,10 @@ const refs = {
   previewReturnConfirmDialog: document.getElementById("previewReturnConfirmDialog"),
   previewSaveConfirmDialog: document.getElementById("previewSaveConfirmDialog"),
   previewSaveConfirmSummary: document.getElementById("previewSaveConfirmSummary"),
+  beginnerTutorialDialog: document.getElementById("beginnerTutorialDialog"),
+  beginnerTutorialSummary: document.getElementById("beginnerTutorialSummary"),
+  beginnerTutorialStepList: document.getElementById("beginnerTutorialStepList"),
+  beginnerTutorialContent: document.getElementById("beginnerTutorialContent"),
   interactionToast: document.getElementById("interactionToast"),
   historyCheckpointButton: document.getElementById("historyCheckpointButton"),
   historyUndoButton: document.getElementById("historyUndoButton"),
@@ -2276,6 +2283,8 @@ function resetProjectScopedUiState() {
   state.historyRecoveryPromptKey = "";
   state.sceneStatusDrag = null;
   state.storyBlockDrag = null;
+  state.beginnerTutorialOpen = false;
+  state.beginnerTutorialStep = 0;
   stopPreviewTypewriter();
   stopPreviewAutoAdvance();
   stopPreviewMusicPlayback();
@@ -2812,6 +2821,278 @@ function renderBeginnerCharacterGuide(character, stats) {
   `;
 }
 
+function hasBeginnerTutorialStoryContent(data = state.data) {
+  const scenes = data?.scenes ?? [];
+  return scenes.some((scene) =>
+    (scene.blocks ?? []).some((block) => ["dialogue", "narration", "choice"].includes(block.type))
+  );
+}
+
+function hasBeginnerTutorialPreviewProgress() {
+  const autoResume = sanitizeStoredPreviewSession(state.previewAutoResume?.session);
+  const quickSave = sanitizeStoredPreviewSession(state.previewQuickSave?.session);
+  const slotSession = state.previewSaveSlots.find((slot) => sanitizeStoredPreviewSession(slot?.session));
+  const sessionTimelineLength = state.previewSession?.timeline?.length ?? 0;
+  return Boolean(autoResume || quickSave || slotSession || sessionTimelineLength > 1);
+}
+
+function getRuntimeExportSupportSummary() {
+  return {
+    windows: "游戏成品现在支持网页试玩包和 Windows 桌面包，Windows 这边可以走可运行桌面包链路。",
+    macLinux:
+      "macOS 和 Linux 的游戏成品原生桌面包目前还没有单独做出来，当前更推荐先导网页试玩包分发。",
+    editor:
+      "编辑器本体已经能导出三系统桌面套装，所以创作工具和游戏成品的支持范围现在不是完全一样的。",
+  };
+}
+
+function getBeginnerTutorialSteps() {
+  const hasProject = Boolean(state.data?.project);
+  const isBlankProject = hasProject && isCurrentProjectBlank();
+  const hasScenes = (state.data?.scenes?.length ?? 0) > 0;
+  const hasStoryContent = hasProject && hasBeginnerTutorialStoryContent();
+  const starterKitOverview = hasProject ? getStarterKitOverview() : null;
+  const starterKitReady = hasProject && starterKitOverview ? !starterKitOverview.needsStarterKit : false;
+  const previewReady = hasProject && hasScenes;
+  const previewDone = previewReady && hasBeginnerTutorialPreviewProgress();
+  const exportDone = Boolean(state.lastExportResult);
+  const exportSupport = getRuntimeExportSupportSummary();
+
+  return [
+    {
+      id: "project",
+      step: "第 1 步",
+      title: hasProject ? "先确认当前项目入口" : "先创建或打开项目",
+      done: hasProject,
+      summary: hasProject
+        ? `当前已经打开《${state.data.project.title}》，后面的步骤会按这个项目的真实进度继续排。`
+        : "第一次开工先别急着点一堆按钮。先从项目中心创建空白项目，或者打开你已经做过的作品。",
+      notes: [
+        hasProject ? "现在已经拿到项目上下文了，切页面和保存都会跟着这个项目走。" : "空白项目不会自动塞样板剧情，你会先得到一张真正的白纸。",
+        "示例项目会单独放在项目中心下方，不会再一进编辑器就打扰你。",
+      ],
+      actions: hasProject
+        ? [
+            { label: "回项目中心看看", action: "open-project-center" },
+            { label: "继续留在当前项目", action: "switch-screen", dataset: { screen: "dashboard" } },
+          ]
+        : [
+            { label: "新建空白项目", action: "create-project" },
+            { label: "刷新项目列表", action: "refresh-project-center" },
+          ],
+    },
+    {
+      id: "chapter",
+      step: "第 2 步",
+      title: hasScenes ? "第一章和第一场已经有了" : "先建第一章和第一场",
+      done: hasScenes,
+      summary: hasScenes
+        ? "剧情骨架已经长出来了，下面就可以直接往里写正文。"
+        : "空白项目先长出第一章和第一场，后面的台词、角色、素材和试玩才有落点。",
+      notes: [
+        "这一条是所有后续操作的地基：没有场景，就没有可写的剧情块，也没有可试玩入口。",
+        "如果你不想用默认名字，也可以用“自定义名字再创建”。",
+      ],
+      actions: hasScenes
+        ? [
+            { label: "去剧情页继续写", action: "switch-screen", dataset: { screen: "story" } },
+            { label: "先看首页路线", action: "switch-screen", dataset: { screen: "dashboard" } },
+          ]
+        : [
+            { label: "一键创建第一章", action: "create-first-chapter" },
+            { label: "自定义名字再创建", action: "create-first-chapter-custom" },
+          ],
+    },
+    {
+      id: "story",
+      step: "第 3 步",
+      title: hasStoryContent ? "正文已经开始成形" : "先写第一段正文",
+      done: hasStoryContent,
+      summary: hasStoryContent
+        ? "当前项目里已经有正文卡片了，接下来就能把角色、背景、音乐和分支一点点补齐。"
+        : "先写一句台词或旁白，把项目从“只有空场景”推进到真正开始讲故事。",
+      notes: [
+        "新手模式下，剧情页已经按“正文优先”的顺序收过一轮，先把台词、旁白、选项写顺就够了。",
+        "复杂变量、条件和镜头演出可以等剧情顺了以后再切高级模式继续补。",
+      ],
+      actions: [
+        { label: hasStoryContent ? "继续写剧情" : "打开剧情页", action: "switch-screen", dataset: { screen: "story" } },
+        { label: "看新手工作流", action: "switch-screen", dataset: { screen: "story" } },
+      ],
+    },
+    {
+      id: "starter-kit",
+      step: "第 4 步",
+      title: starterKitReady ? "角色和基础素材已经补上" : "再补角色、背景和 BGM",
+      done: starterKitReady,
+      summary: starterKitReady
+        ? "项目已经不是纯文字骨架了，试玩时会更像真正的 galgame。"
+        : "补上第一个角色、一张背景和一首 BGM，项目马上就会从草稿变得更像游戏。",
+      notes: [
+        starterKitOverview?.needsStarterKit
+          ? `当前还缺：${starterKitOverview.missingLabels.join("、")}。`
+          : "如果你已经自己导入了素材，这一步就算完成，可以继续往试玩和导出走。",
+        "这里生成的是项目骨架条目，后面仍然可以在素材页替换成你的真实图片和音频文件。",
+      ],
+      actions: starterKitOverview?.needsStarterKit
+        ? [
+            { label: "一键生成起步骨架", action: "create-starter-kit" },
+            { label: "自定义名字再生成", action: "create-starter-kit-custom" },
+          ]
+        : [
+            { label: "去角色页看看", action: "switch-screen", dataset: { screen: "characters" } },
+            { label: "去素材页继续补", action: "switch-screen", dataset: { screen: "assets" } },
+          ],
+    },
+    {
+      id: "preview",
+      step: "第 5 步",
+      title: previewDone ? "试玩链已经跑过" : "先去试玩一遍",
+      done: previewDone,
+      summary: previewReady
+        ? previewDone
+          ? "你已经跑过这版内容了，正式存档、快速存档和系统菜单都能继续拿来做自测。"
+          : "现在已经有场景可以跑了，先去试玩页把节奏和基本链路过一遍，比闷头堆功能更值。"
+        : "还没有可试玩场景时，这一步会自然卡住，所以先把前面几步做完。",
+      notes: [
+        "试玩页现在已经有正式存档、快速存档、系统菜单、标题页读档和一批馆藏入口，足够拿来做第一轮自测。",
+        "先跑一遍自己的内容，很多节奏问题会比在编辑页里看得更快。",
+      ],
+      actions: previewReady
+        ? [
+            { label: "进入试玩收尾", action: "switch-screen", dataset: { screen: "preview" } },
+            { label: "回剧情页继续补", action: "switch-screen", dataset: { screen: "story" } },
+          ]
+        : [
+            { label: "先去建第一章", action: "create-first-chapter" },
+            { label: "回首页看看进度", action: "switch-screen", dataset: { screen: "dashboard" } },
+          ],
+    },
+    {
+      id: "export",
+      step: "第 6 步",
+      title: exportDone ? "已经导出过一版" : "最后再看导出目标",
+      done: exportDone,
+      summary: exportDone
+        ? "导出链已经实际跑过了，后面就可以继续收尾、修问题、再导下一版。"
+        : "导出前先把支持边界看清楚：现在游戏成品的原生桌面端重点在 Windows，mac 和 Linux 更推荐先导网页试玩包。",
+      notes: [
+        exportSupport.windows,
+        exportSupport.macLinux,
+        exportSupport.editor,
+      ],
+      actions: [
+        { label: "打开预览导出页", action: "switch-screen", dataset: { screen: "preview" } },
+        { label: "先去项目巡检", action: "switch-screen", dataset: { screen: "inspection" } },
+      ],
+    },
+  ];
+}
+
+function renderBeginnerTutorialDialog() {
+  if (!refs.beginnerTutorialDialog || !refs.beginnerTutorialContent || !refs.beginnerTutorialStepList) {
+    return;
+  }
+
+  const steps = getBeginnerTutorialSteps();
+  const maxIndex = Math.max(steps.length - 1, 0);
+  const stepIndex = Math.min(Math.max(Number.parseInt(state.beginnerTutorialStep ?? 0, 10) || 0, 0), maxIndex);
+  const currentStep = steps[stepIndex] ?? steps[0];
+  const activeProjectTitle = state.data?.project?.title ?? state.projectCenter?.projects?.find(
+    (project) => project.projectId === state.projectCenter?.activeProjectId
+  )?.title;
+
+  if (refs.beginnerTutorialSummary) {
+    refs.beginnerTutorialSummary.textContent = state.data?.project
+      ? `当前项目：${activeProjectTitle}。教程会按这个项目的真实进度告诉你下一步更值得先做什么。`
+      : activeProjectTitle
+        ? `上次打开的项目是《${activeProjectTitle}》。如果你准备继续做它，可以先从项目中心打开。`
+        : "还没有打开项目也没关系。先从项目中心创建空白项目，再按下面 6 步往下走。";
+  }
+
+  refs.beginnerTutorialStepList.innerHTML = steps
+    .map(
+      (step, index) => `
+        <button
+          type="button"
+          class="beginner-tutorial-step-button ${index === stepIndex ? "is-active" : ""} ${step.done ? "is-done" : ""}"
+          data-action="set-beginner-tutorial-step"
+          data-step-index="${index}"
+        >
+          <span class="beginner-tutorial-step-meta">${escapeHtml(step.step)}</span>
+          <strong>${escapeHtml(step.title)}</strong>
+          <span class="beginner-tutorial-step-state">${step.done ? "已到这一步" : "推荐接下来做"}</span>
+        </button>
+      `
+    )
+    .join("");
+
+  refs.beginnerTutorialContent.innerHTML = `
+    <article class="beginner-tutorial-focus">
+      <span class="issue-tag ${currentStep.done ? "good-text" : "warn-text"}">${escapeHtml(currentStep.step)}</span>
+      <h3>${escapeHtml(currentStep.title)}</h3>
+      <p>${escapeHtml(currentStep.summary)}</p>
+      <div class="detail-actions">
+        ${currentStep.actions.map((action, index) => renderQuickActionButton(action, index === 0)).join("")}
+      </div>
+    </article>
+    <section class="beginner-tutorial-note-stack">
+      ${currentStep.notes
+        .map(
+          (note) => `
+            <article class="detail-card beginner-tutorial-note-card">
+              <strong>这一条为什么重要</strong>
+              <p>${escapeHtml(note)}</p>
+            </article>
+          `
+        )
+        .join("")}
+    </section>
+    <article class="detail-card beginner-tutorial-footer-card">
+      <strong>最简单的记忆方式</strong>
+      <p>先建项目和第一场，再写正文，补角色和素材，去试玩，最后再看导出目标。先把一段做通，比一开始追求什么都配齐更重要。</p>
+    </article>
+  `;
+
+  refs.beginnerTutorialDialog.hidden = !state.beginnerTutorialOpen;
+  refs.beginnerTutorialDialog.classList.toggle("is-visible", state.beginnerTutorialOpen);
+}
+
+function openBeginnerTutorial(options = {}) {
+  const requestedStep = Number.parseInt(options.stepIndex ?? "", 10);
+  const steps = getBeginnerTutorialSteps();
+  const fallbackIndex = Math.max(
+    steps.findIndex((step) => !step.done),
+    0
+  );
+  state.beginnerTutorialStep = Number.isInteger(requestedStep)
+    ? Math.min(Math.max(requestedStep, 0), Math.max(steps.length - 1, 0))
+    : fallbackIndex;
+  state.beginnerTutorialOpen = true;
+  renderBeginnerTutorialDialog();
+  setSaveStatus("已打开新手教程");
+}
+
+function closeBeginnerTutorial(options = {}) {
+  if (!state.beginnerTutorialOpen) {
+    return;
+  }
+
+  state.beginnerTutorialOpen = false;
+  renderBeginnerTutorialDialog();
+
+  if (!options.silent) {
+    setSaveStatus("已关闭新手教程");
+  }
+}
+
+function setBeginnerTutorialStep(stepIndex) {
+  const steps = getBeginnerTutorialSteps();
+  const maxIndex = Math.max(steps.length - 1, 0);
+  state.beginnerTutorialStep = Math.min(Math.max(Number.parseInt(stepIndex ?? "0", 10) || 0, 0), maxIndex);
+  renderBeginnerTutorialDialog();
+}
+
 function renderProjectCenter() {
   if (!refs.projectCenterContent) {
     return;
@@ -2840,6 +3121,9 @@ function renderProjectCenter() {
             <div class="project-center-actions">
               <button type="button" class="toolbar-button toolbar-button-primary" data-action="create-project">
                 新建空白项目
+              </button>
+              <button type="button" class="toolbar-button" data-action="open-beginner-tutorial">
+                打开新手教程
               </button>
               <button type="button" class="toolbar-button" data-action="refresh-project-center">
                 刷新项目列表
@@ -2883,6 +3167,7 @@ function renderProjectCenter() {
       </section>
     </div>
   `;
+  renderBeginnerTutorialDialog();
 }
 
 function renderProjectCenterCard(project, activeProjectId) {
@@ -3040,6 +3325,25 @@ async function handleClick(event) {
   }
 
   const { action } = actionTarget.dataset;
+
+  if (action === "open-beginner-tutorial") {
+    openBeginnerTutorial({ stepIndex: actionTarget.dataset.stepIndex });
+    return;
+  }
+
+  if (action === "close-beginner-tutorial") {
+    closeBeginnerTutorial();
+    return;
+  }
+
+  if (action === "set-beginner-tutorial-step") {
+    setBeginnerTutorialStep(actionTarget.dataset.stepIndex);
+    return;
+  }
+
+  if (state.beginnerTutorialOpen) {
+    closeBeginnerTutorial({ silent: true });
+  }
 
   if (action === "open-project-center") {
     if (state.currentScreen === "story" && state.data) {
@@ -4780,6 +5084,20 @@ function handleInput(event) {
 }
 
 function handleGlobalKeydown(event) {
+  if (state.beginnerTutorialOpen && event.code === "Escape") {
+    event.preventDefault();
+    closeBeginnerTutorial();
+    return;
+  }
+
+  if (state.beginnerTutorialOpen) {
+    if (isKeyboardTypingTarget(event.target)) {
+      return;
+    }
+    event.preventDefault();
+    return;
+  }
+
   if (!state.data || state.currentScreen !== "preview") {
     return;
   }
@@ -7724,6 +8042,7 @@ function renderAll() {
   renderScriptScreen();
   renderInspectionScreen();
   renderPreviewScreen();
+  renderBeginnerTutorialDialog();
   applyEditorModeUi();
 }
 
@@ -8204,6 +8523,9 @@ function renderEditorModeGuideCard(context = "dashboard") {
       <p>${escapeHtml(description)}</p>
       <div class="detail-actions">
         ${renderEditorModeSwitchButtons(mode)}
+        <button type="button" class="toolbar-button" data-action="open-beginner-tutorial">
+          打开新手教程
+        </button>
       </div>
       <div class="detail-meta">${escapeHtml(note)}</div>
     </article>
@@ -8912,6 +9234,9 @@ function renderDashboard() {
             </button>
             <button class="toolbar-button" data-action="switch-screen" data-screen="assets">
               打开素材页
+            </button>
+            <button class="toolbar-button" data-action="open-beginner-tutorial">
+              打开新手教程
             </button>
           </div>
           <article class="detail-card">
