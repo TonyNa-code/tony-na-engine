@@ -10,7 +10,7 @@
 
 先确认根目录下这份配置已经填好：
 
-- [`/Users/na/Game Engine/editor_distribution.json`](/Users/na/Game%20Engine/editor_distribution.json)
+- [`editor_distribution.json`](editor_distribution.json)
 
 至少把这些改成你正式要发布的内容：
 
@@ -26,7 +26,7 @@
 
 再把下面这份示例复制成你自己的本地环境变量文件：
 
-- [`/Users/na/Game Engine/editor_signing.env.example`](/Users/na/Game%20Engine/editor_signing.env.example)
+- [`editor_signing.env.example`](editor_signing.env.example)
 
 ### macOS 需要
 

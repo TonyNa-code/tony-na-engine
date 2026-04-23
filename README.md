@@ -79,7 +79,8 @@ Tony Na Engine 当前更适合这样理解：
 或者命令行启动：
 
 ```bash
-cd "/Users/na/Game Engine"
+git clone https://github.com/najinxiang-byte/tony-na-engine.git
+cd tony-na-engine
 python3 run_editor.py
 ```
 
@@ -88,14 +89,14 @@ python3 run_editor.py
 后端 smoke：
 
 ```bash
-cd "/Users/na/Game Engine"
+cd tony-na-engine
 python3 -m unittest discover -s tests -p 'test_run_editor_smoke.py' -v
 ```
 
 浏览器 Playwright：
 
 ```bash
-cd "/Users/na/Game Engine"
+cd tony-na-engine
 python3 -m unittest discover -s tests -p 'test_browser_playwright_smoke.py' -v
 ```
 
@@ -116,14 +117,14 @@ python3 -m unittest discover -s tests -p 'test_browser_playwright_smoke.py' -v
 
 建议先看：
 
-- [`README_预览版发布说明.md`](README_%E9%A2%84%E8%A7%88%E7%89%88%E5%8F%91%E5%B8%83%E8%AF%B4%E6%98%8E.md)
-- [`RELEASE_预览版文案模板.md`](RELEASE_%E9%A2%84%E8%A7%88%E7%89%88%E6%96%87%E6%A1%88%E6%A8%A1%E6%9D%BF.md)
+- [`README_预览版发布说明.md`](README_预览版发布说明.md)
+- [`RELEASE_预览版文案模板.md`](RELEASE_预览版文案模板.md)
 
 ## 商业签名 / 公证
 
 如果你后面要做商业分发，可以继续看：
 
-- [`README_商业签名与公证操作指南.md`](README_%E5%95%86%E4%B8%9A%E7%AD%BE%E5%90%8D%E4%B8%8E%E5%85%AC%E8%AF%81%E6%93%8D%E4%BD%9C%E6%8C%87%E5%8D%97.md)
+- [`README_商业签名与公证操作指南.md`](README_商业签名与公证操作指南.md)
 - [`editor_signing.env.example`](editor_signing.env.example)
 - [`check_editor_signing_readiness.py`](check_editor_signing_readiness.py)
 - [`run_signing_readiness.command`](run_signing_readiness.command)

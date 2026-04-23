@@ -21,14 +21,14 @@
 ## 本地运行
 
 ```bash
-cd "/Users/na/Game Engine"
+cd tony-na-engine
 python3 run_editor.py
 ```
 
 ## 测试
 
 ```bash
-cd "/Users/na/Game Engine"
+cd tony-na-engine
 python3 -m unittest discover -s tests -v
 ```
 
