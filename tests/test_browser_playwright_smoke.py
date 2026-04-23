@@ -97,7 +97,7 @@ class BrowserPlaywrightSmokeTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.temp_dir = tempfile.TemporaryDirectory()
-        cls.repo_source = Path("/Users/na/Game Engine")
+        cls.repo_source = Path(__file__).resolve().parents[1]
         cls.repo_copy = Path(cls.temp_dir.name) / "browser_test_repo"
         shutil.copytree(
             cls.repo_source,
