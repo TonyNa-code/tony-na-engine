@@ -27,6 +27,9 @@
     <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
       <feDropShadow dx="0" dy="24" stdDeviation="22" flood-color="#020713" flood-opacity="0.32"/>
     </filter>
+    <clipPath id="logoCardClip">
+      <rect x="168" y="162" width="416" height="356" rx="28"/>
+    </clipPath>
   </defs>
 
   <rect width="1600" height="680" rx="44" fill="url(#heroBg)"/>
@@ -46,14 +49,7 @@
     <rect x="126" y="118" width="500" height="444" rx="34" fill="#07101F" fill-opacity="0.58"/>
     <rect x="126" y="118" width="500" height="444" rx="34" stroke="url(#cyanViolet)" stroke-opacity="0.28"/>
     <rect x="168" y="162" width="416" height="356" rx="28" fill="url(#panel)"/>
-    <circle cx="218" cy="210" r="13" fill="#8B45FF"/>
-    <circle cx="258" cy="210" r="13" fill="#246BFF"/>
-    <circle cx="298" cy="210" r="13" fill="#00A7FF"/>
-    <path d="M206 258H494L452 314H372V450L292 374V314H246L206 258Z" fill="#080F4D"/>
-    <path d="M402 338H496L554 258H458L402 338Z" fill="url(#cyanViolet)"/>
-    <path d="M402 370H532L494 422H402V370Z" fill="#166DFF"/>
-    <path d="M402 454H548L508 506H402V454Z" fill="#7B48FF"/>
-    <path d="M534 244L544 274L574 284L544 294L534 324L524 294L494 284L524 274L534 244Z" fill="#8B45FF"/>
+    <image href="../branding/tony-na-engine-logo.png" x="176" y="170" width="400" height="340" preserveAspectRatio="xMidYMid meet" clip-path="url(#logoCardClip)"/>
   </g>
 
   <g transform="translate(710 140)">

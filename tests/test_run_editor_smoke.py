@@ -492,6 +492,68 @@ class RunEditorSmokeTests(unittest.TestCase):
         self.assertIn('"type": "credits_roll"', index_html)
         self.assertIn("Opening Movie", index_html)
 
+    def test_video_blocks_export_to_native_runtime_bridge(self) -> None:
+        _, chapter_result = self.create_blank_project_with_chapter()
+
+        import_result = run_editor.import_assets(
+            "auto",
+            [build_upload_payload("opening_movie.mp4", b"fake-video-data")],
+        )
+        video_asset = import_result["assets"][0]
+
+        self.save_scene_with_blocks(
+            chapter_result["chapterId"],
+            chapter_result["scene"],
+            [
+                {
+                    "id": "block_video",
+                    "type": "video_play",
+                    "assetId": video_asset["id"],
+                    "title": "Opening Movie",
+                    "fit": "contain",
+                    "volume": 75,
+                    "startTimeSeconds": 1.5,
+                    "endTimeSeconds": 4,
+                    "skippable": True,
+                },
+                {
+                    "id": "block_after_video",
+                    "type": "narration",
+                    "text": "视频之后继续剧情。",
+                },
+            ],
+        )
+
+        export_result = run_editor.export_native_runtime_build()
+        build_dir = Path(export_result["buildPath"])
+
+        release_check_payload = json.loads((build_dir / run_editor.NATIVE_RUNTIME_RELEASE_CHECK_NAME).read_text(encoding="utf-8"))
+        issue_codes = {issue.get("code") for issue in release_check_payload["issues"]}
+        self.assertEqual(release_check_payload["status"], "warn")
+        self.assertTrue(
+            {"video_native_external_player_bridge", "video_native_external_player_missing"} & issue_codes
+        )
+
+        video_bridge_description = subprocess.run(
+            [
+                sys.executable,
+                str(build_dir / run_editor.NATIVE_RUNTIME_PLAYER_NAME),
+                "--describe-video-bridge",
+                str(build_dir),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(video_bridge_description.returncode, 0, video_bridge_description.stdout + video_bridge_description.stderr)
+        video_bridge_payload = json.loads(video_bridge_description.stdout)
+        self.assertEqual(video_bridge_payload["summary"]["videoAssetCount"], 1)
+        self.assertEqual(video_bridge_payload["summary"]["videoBlockCount"], 1)
+        self.assertEqual(video_bridge_payload["entries"][0]["externalPlaybackMode"], "system_player_bridge")
+        self.assertTrue(video_bridge_payload["entries"][0]["exists"])
+        self.assertTrue(video_bridge_payload["entries"][0]["extensionSupported"])
+        self.assertEqual(video_bridge_payload["entries"][0]["usages"][0]["title"], "Opening Movie")
+
     def test_voice_placeholder_and_match_workflow(self) -> None:
         _, chapter_result = self.create_blank_project_with_chapter()
 
@@ -738,6 +800,7 @@ class RunEditorSmokeTests(unittest.TestCase):
         self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_REQUIREMENTS_NAME).is_file())
         self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_BUILD_REQUIREMENTS_NAME).is_file())
         self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_APP_BUILDER_NAME).is_file())
+        self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_BRAND_LOGO_NAME).is_file())
         self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_RELEASE_CHECK_NAME).is_file())
         self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_MAC_COMMAND_NAME).is_file())
         self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_LINUX_COMMAND_NAME).is_file())
@@ -793,6 +856,27 @@ class RunEditorSmokeTests(unittest.TestCase):
         self.assertTrue(app_builder_payload["dataEntries"])
         self.assertFalse(app_builder_payload["missingAssetPaths"])
         self.assertEqual(app_builder_payload["releaseCheck"]["status"], "pass")
+        self.assertTrue(
+            any(entry["source"] == run_editor.NATIVE_RUNTIME_BRAND_LOGO_NAME for entry in app_builder_payload["dataEntries"])
+        )
+
+        title_screen_description = subprocess.run(
+            [
+                sys.executable,
+                str(build_dir / run_editor.NATIVE_RUNTIME_PLAYER_NAME),
+                "--describe-title-screen",
+                str(build_dir),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(title_screen_description.returncode, 0, title_screen_description.stdout + title_screen_description.stderr)
+        title_screen_payload = json.loads(title_screen_description.stdout)
+        self.assertEqual(title_screen_payload["status"], "ready")
+        self.assertTrue(title_screen_payload["engineBrandLogoExists"])
+        self.assertIn("start", {item["key"] for item in title_screen_payload["menuItems"]})
+        self.assertIn("settings", {item["key"] for item in title_screen_payload["menuItems"]})
 
         validation = subprocess.run(
             [

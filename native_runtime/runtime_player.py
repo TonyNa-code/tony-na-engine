@@ -3,8 +3,11 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import platform
 import random
+import shutil
+import subprocess
 import sys
 import traceback
 from datetime import datetime
@@ -13,6 +16,7 @@ from pathlib import Path
 
 ASSET_TYPE_IMAGE = {"background", "sprite", "cg", "ui"}
 DEFAULT_GAME_DATA_NAME = "game_data.json"
+ENGINE_BRAND_LOGO_RELATIVE_PATH = "assets/brand-logo.png"
 COLOR_BG = (12, 15, 28)
 COLOR_PANEL = (18, 24, 40)
 COLOR_PANEL_BORDER = (78, 106, 168)
@@ -229,6 +233,14 @@ SYSTEM_MENU_ITEMS = [
     ("restart", "回到开头"),
     ("exit", "退出预览"),
 ]
+TITLE_MENU_ITEMS = [
+    ("start", "开始游戏"),
+    ("resume", "继续上次"),
+    ("load", "读取存档"),
+    ("settings", "体验设置"),
+    ("archives", "资料馆"),
+    ("exit", "退出"),
+]
 SETTINGS_MENU_ITEMS = [
     ("themeMode", "界面主题"),
     ("displayMode", "显示模式"),
@@ -299,8 +311,10 @@ SCREEN_FILTER_STRENGTH_MULTIPLIER = {"soft": 0.62, "medium": 1.0, "strong": 1.38
 DEPTH_BLUR_ALPHA = {"soft": 24, "medium": 42, "strong": 64}
 SUPPORTED_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".webp"}
 SUPPORTED_AUDIO_EXTENSIONS = {".ogg", ".wav", ".mp3"}
+SUPPORTED_VIDEO_EXTENSIONS = {".mp4", ".webm", ".mov", ".m4v"}
 LARGE_IMAGE_WARNING_BYTES = 18 * 1024 * 1024
 LARGE_AUDIO_WARNING_BYTES = 30 * 1024 * 1024
+LARGE_VIDEO_WARNING_BYTES = 300 * 1024 * 1024
 
 
 class NativeRuntimeError(RuntimeError):
@@ -335,6 +349,59 @@ def resolve_game_data_argument(game_data_value: str) -> Path:
     if game_data_value == DEFAULT_GAME_DATA_NAME and not candidate.is_file():
         return resolve_default_game_data_path()
     return candidate.resolve()
+
+
+def get_external_video_opener_command(video_path: Path) -> list[str] | None:
+    if sys.platform.startswith("win"):
+        return None
+    if sys.platform == "darwin":
+        opener = shutil.which("open")
+        return [opener or "open", str(video_path)]
+    if sys.platform.startswith("linux"):
+        opener = shutil.which("xdg-open")
+        if opener:
+            return [opener, str(video_path)]
+        gio = shutil.which("gio")
+        if gio:
+            return [gio, "open", str(video_path)]
+    return None
+
+
+def get_external_video_opener_label() -> str:
+    if sys.platform.startswith("win"):
+        return "Windows 默认视频播放器"
+    if sys.platform == "darwin":
+        return "macOS 默认视频播放器"
+    if sys.platform.startswith("linux"):
+        if shutil.which("xdg-open"):
+            return "Linux xdg-open 默认视频播放器"
+        if shutil.which("gio"):
+            return "Linux gio 默认视频播放器"
+    return "系统默认视频播放器"
+
+
+def can_open_external_video() -> bool:
+    if sys.platform.startswith("win"):
+        return hasattr(os, "startfile")
+    return get_external_video_opener_command(Path("preview.mp4")) is not None
+
+
+def open_external_video(video_path: Path) -> tuple[bool, str]:
+    if not video_path.is_file():
+        return False, f"视频文件不存在：{video_path.name}"
+    try:
+        if sys.platform.startswith("win"):
+            if not hasattr(os, "startfile"):
+                return False, "当前 Windows Python 环境没有 os.startfile，无法唤起默认播放器。"
+            os.startfile(str(video_path))  # type: ignore[attr-defined]
+        else:
+            command = get_external_video_opener_command(video_path)
+            if not command:
+                return False, "当前系统没有找到可用的默认视频打开器。"
+            subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception as error:
+        return False, f"打开视频失败：{error}"
+    return True, f"已交给{get_external_video_opener_label()}播放。"
 
 
 def validate_bundle(bundle_dir: Path) -> None:
@@ -509,6 +576,7 @@ def build_release_check_report(bundle_dir: Path) -> dict:
             )
             continue
         extension = asset_path.suffix.lower()
+        file_size = asset_path.stat().st_size
         if asset_type in ASSET_TYPE_IMAGE and extension not in SUPPORTED_IMAGE_EXTENSIONS:
             add_release_check_issue(
                 issues,
@@ -528,15 +596,40 @@ def build_release_check_report(bundle_dir: Path) -> dict:
                 export_url,
             )
         if asset_type == "video":
+            if extension not in SUPPORTED_VIDEO_EXTENSIONS:
+                add_release_check_issue(
+                    issues,
+                    "warning",
+                    "video_extension_risk",
+                    f"视频素材格式可能不稳定：{asset_name} ({extension or '无扩展名'})",
+                    "建议使用 mp4、webm、mov 或 m4v，并在目标系统实机播放一次。",
+                    export_url,
+                )
+            video_bridge_available = can_open_external_video()
             add_release_check_issue(
                 issues,
                 "warning",
-                "video_native_preview_fallback",
-                f"原生 Runtime 会以提示页降级预览视频素材：{asset_name}",
-                "OP/ED/PV 在网页包和 NW.js 桌面包中可直接播放；Python + pygame 原生包建议在目标系统实机确认，或后续接入视频解码器。",
+                "video_native_external_player_bridge"
+                if video_bridge_available
+                else "video_native_external_player_missing",
+                f"原生 Runtime 会用系统播放器桥接视频素材：{asset_name}",
+                (
+                    f"运行到视频卡时可按 V 调用{get_external_video_opener_label()}播放；"
+                    "这不是内嵌解码，正式发布前仍建议在目标系统实机确认 OP/ED/PV。"
+                    if video_bridge_available
+                    else "当前系统没有检测到可用的视频打开器；网页包和 NW.js 桌面包仍可直接播放视频。"
+                ),
                 export_url,
             )
-        file_size = asset_path.stat().st_size
+            if file_size > LARGE_VIDEO_WARNING_BYTES:
+                add_release_check_issue(
+                    issues,
+                    "warning",
+                    "large_video_asset",
+                    f"视频素材偏大：{asset_name} ({file_size // 1024 // 1024} MB)",
+                    "建议压缩码率或提供较短 OP/ED 版本，避免 Preview 包体过大。",
+                    export_url,
+                )
         if asset_type in ASSET_TYPE_IMAGE and file_size > LARGE_IMAGE_WARNING_BYTES:
             add_release_check_issue(
                 issues,
@@ -576,6 +669,127 @@ def build_release_check_report(bundle_dir: Path) -> dict:
 
 def print_release_check_report(bundle_dir: Path) -> None:
     report = build_release_check_report(bundle_dir)
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+
+
+def collect_video_block_usages(chapters: list[dict]) -> dict[str, list[dict]]:
+    usages: dict[str, list[dict]] = {}
+    for chapter in chapters:
+        chapter_name = str(chapter.get("name") or chapter.get("chapterId") or "未命名章节")
+        for scene in chapter.get("scenes") or []:
+            scene_id = str(scene.get("id") or "")
+            scene_name = str(scene.get("name") or scene_id or "未命名场景")
+            for block_index, block in enumerate(scene.get("blocks") or []):
+                if str(block.get("type") or "").strip() != "video_play":
+                    continue
+                asset_id = str(block.get("assetId") or "").strip()
+                if not asset_id:
+                    continue
+                usages.setdefault(asset_id, []).append(
+                    {
+                        "chapterName": chapter_name,
+                        "sceneId": scene_id,
+                        "sceneName": scene_name,
+                        "blockIndex": block_index,
+                        "title": str(block.get("title") or "视频播放"),
+                        "startTimeSeconds": block.get("startTimeSeconds"),
+                        "endTimeSeconds": block.get("endTimeSeconds"),
+                        "skippable": bool(block.get("skippable", True)),
+                    }
+                )
+    return usages
+
+
+def build_native_video_bridge_report(bundle_dir: Path) -> dict:
+    data_path = bundle_dir / DEFAULT_GAME_DATA_NAME
+    payload = load_game_data(data_path)
+    assets_doc = payload.get("assets") if isinstance(payload.get("assets"), dict) else {}
+    assets = assets_doc.get("assets") if isinstance(assets_doc.get("assets"), list) else []
+    chapters = payload.get("chapters") if isinstance(payload.get("chapters"), list) else []
+    video_usages = collect_video_block_usages(chapters)
+    opener_available = can_open_external_video()
+    entries = []
+    for asset in assets:
+        if not isinstance(asset, dict) or asset.get("type") != "video":
+            continue
+        asset_id = str(asset.get("id") or "")
+        export_url = str(asset.get("exportUrl") or "").strip()
+        asset_path = bundle_dir / export_url if export_url else None
+        extension = asset_path.suffix.lower() if asset_path else ""
+        exists = bool(asset_path and asset_path.is_file())
+        entries.append(
+            {
+                "assetId": asset_id,
+                "name": str(asset.get("name") or asset_id or "未命名视频"),
+                "exportUrl": export_url,
+                "exists": exists,
+                "extension": extension,
+                "extensionSupported": extension in SUPPORTED_VIDEO_EXTENSIONS,
+                "externalPlaybackMode": "system_player_bridge",
+                "openerAvailable": opener_available,
+                "openerLabel": get_external_video_opener_label() if opener_available else "",
+                "usages": video_usages.get(asset_id, []),
+            }
+        )
+    return {
+        "status": "ready" if entries and opener_available else ("no_video" if not entries else "needs_system_opener"),
+        "checkedAt": now_iso(),
+        "bundleDir": str(bundle_dir),
+        "summary": {
+            "videoAssetCount": len(entries),
+            "videoBlockCount": sum(len(entry["usages"]) for entry in entries),
+            "openerAvailable": opener_available,
+        },
+        "entries": entries,
+    }
+
+
+def print_native_video_bridge_report(bundle_dir: Path) -> None:
+    report = build_native_video_bridge_report(bundle_dir)
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+
+
+def build_native_title_screen_report(bundle_dir: Path) -> dict:
+    payload = load_game_data(bundle_dir / DEFAULT_GAME_DATA_NAME)
+    project = payload.get("project") if isinstance(payload.get("project"), dict) else {}
+    project_id = str(project.get("projectId") or "untitled_project")
+    formal_slot_count = get_project_formal_save_slot_count(project)
+    save_store = load_project_save_store(project_id, formal_slot_count)
+    formal_slots = save_store.get("formalSlots") or []
+    filled_formal_count = sum(1 for item in formal_slots if item)
+    title_logo_asset_id = str((project.get("gameUiConfig") or {}).get("titleLogoAssetId") or "").strip()
+    assets_doc = payload.get("assets") if isinstance(payload.get("assets"), dict) else {}
+    assets = assets_doc.get("assets") if isinstance(assets_doc.get("assets"), list) else []
+    assets_by_id = {str(asset.get("id")): asset for asset in assets if isinstance(asset, dict) and asset.get("id")}
+    title_logo_asset = assets_by_id.get(title_logo_asset_id) if title_logo_asset_id else None
+    title_logo_path = get_asset_runtime_path(bundle_dir, title_logo_asset)
+    brand_logo_path = bundle_dir / ENGINE_BRAND_LOGO_RELATIVE_PATH
+    auto_resume = load_project_auto_resume(project_id)
+    return {
+        "status": "ready",
+        "checkedAt": now_iso(),
+        "bundleDir": str(bundle_dir),
+        "projectTitle": str(project.get("title") or project.get("name") or "Tony Na Engine"),
+        "titleLogoAssetId": title_logo_asset_id,
+        "titleLogoExists": bool(title_logo_path and title_logo_path.is_file()),
+        "engineBrandLogo": ENGINE_BRAND_LOGO_RELATIVE_PATH,
+        "engineBrandLogoExists": brand_logo_path.is_file(),
+        "formalSaveSlotCount": formal_slot_count,
+        "filledFormalSaveCount": filled_formal_count,
+        "hasAutoResume": auto_resume is not None,
+        "menuItems": [
+            {
+                "key": key,
+                "label": label,
+                "enabled": key != "resume" or auto_resume is not None,
+            }
+            for key, label in TITLE_MENU_ITEMS
+        ],
+    }
+
+
+def print_native_title_screen_report(bundle_dir: Path) -> None:
+    report = build_native_title_screen_report(bundle_dir)
     print(json.dumps(report, ensure_ascii=False, indent=2))
 
 
@@ -1784,6 +1998,7 @@ class NativeRuntimePlayer:
         self.font_title = self._create_font(36, bold=True)
         self.font_ui = self._create_font(18)
         self.image_cache: dict[str, object] = {}
+        self.image_file_cache: dict[str, object] = {}
         self.sound_cache: dict[str, object] = {}
         self.current_bgm_asset_id: str | None = None
         self.current_voice_channel = None
@@ -1805,6 +2020,7 @@ class NativeRuntimePlayer:
         self.overlay_focus_index = 0
         self.overlay_hotspots: list[dict] = []
         self.system_menu_index = 0
+        self.title_menu_index = 0
         self.settings_menu_index = 0
         self.archive_selection_index = 0
         self.current_archive_key = "chapters"
@@ -1839,6 +2055,7 @@ class NativeRuntimePlayer:
         self.current_line: dict | None = None
         self.current_choices: list[dict] | None = None
         self.current_choice_index = 0
+        self.title_screen_active = False
         self.finished = False
         self.finished_message = ""
         self.status_message = "正在初始化原生 Runtime…"
@@ -1846,8 +2063,7 @@ class NativeRuntimePlayer:
         self._initialize_audio()
         self.apply_runtime_settings()
         self.record_player_session_start()
-        self.advance_until_pause()
-        self.persist_auto_resume_snapshot()
+        self.open_title_screen()
 
     def _create_font(self, size: int, bold: bool = False):
         candidates = [
@@ -2596,6 +2812,41 @@ class NativeRuntimePlayer:
         self.image_cache[asset_id] = image
         return image
 
+    def _load_image_file(self, image_path: Path | None):
+        if not image_path:
+            return None
+        cache_key = str(image_path)
+        if cache_key in self.image_file_cache:
+            return self.image_file_cache[cache_key]
+        if not image_path.is_file():
+            self.image_file_cache[cache_key] = None
+            return None
+        try:
+            image = self.pygame.image.load(str(image_path)).convert_alpha()
+        except Exception:
+            image = None
+        self.image_file_cache[cache_key] = image
+        return image
+
+    def get_engine_brand_logo_path(self) -> Path | None:
+        candidates = [
+            self.bundle_dir / ENGINE_BRAND_LOGO_RELATIVE_PATH,
+            Path(__file__).resolve().parent / ENGINE_BRAND_LOGO_RELATIVE_PATH,
+            Path(__file__).resolve().parent.parent / "prototype_editor" / "assets" / "brand-logo.png",
+        ]
+        for candidate in candidates:
+            if candidate.is_file():
+                return candidate
+        return None
+
+    def get_title_logo_image(self):
+        title_logo_asset_id = str(self.game_ui_config.get("titleLogoAssetId") or "").strip()
+        if title_logo_asset_id:
+            title_logo = self._load_image(title_logo_asset_id)
+            if title_logo:
+                return title_logo
+        return self._load_image_file(self.get_engine_brand_logo_path())
+
     def _load_sound(self, asset_id: str | None):
         if not asset_id:
             return None
@@ -2721,8 +2972,63 @@ class NativeRuntimePlayer:
                 self.overlay_focus_index = 0
             else:
                 self.overlay_focus_index = max(0, min(slot_count - 1, self.overlay_focus_index))
+        elif self.overlay_mode == "title":
+            self.title_menu_index = max(0, min(len(TITLE_MENU_ITEMS) - 1, self.title_menu_index))
         elif self.overlay_mode == "system":
             self.system_menu_index = max(0, min(len(SYSTEM_MENU_ITEMS) - 1, self.system_menu_index))
+
+    def get_title_preview_background_asset_id(self) -> str:
+        title_background_asset_id = str(self.game_ui_config.get("titleBackgroundAssetId") or "").strip()
+        if title_background_asset_id:
+            return title_background_asset_id
+        for scene in self.scenes_by_id.values():
+            for block in scene.get("blocks", []) or []:
+                if str(block.get("type") or "") == "background" and block.get("assetId"):
+                    return str(block.get("assetId") or "")
+        return ""
+
+    def open_title_screen(self) -> None:
+        self.title_screen_active = True
+        self.overlay_mode = "title"
+        self.title_menu_index = 0
+        self.overlay_hotspots = []
+        self.current_line = None
+        self.current_choices = None
+        self.finished = False
+        self.finished_message = ""
+        self.stage_background_asset_id = self.get_title_preview_background_asset_id() or None
+        self.status_message = "标题页：选择开始、续玩、读档或设置。"
+
+    def start_story_from_title(self) -> None:
+        self.title_screen_active = False
+        self.overlay_mode = None
+        self.overlay_hotspots = []
+        self.stop_voice()
+        self.stop_bgm()
+        self.clear_particle_effect()
+        self.clear_stage_visual_effects(include_persistent=True)
+        self.current_line = None
+        self.current_choices = None
+        self.current_choice_index = 0
+        self.finished = False
+        self.finished_message = ""
+        self.stage_background_asset_id = None
+        self.visible_characters = {}
+        self.current_bgm_asset_id = None
+        self.variable_state = {
+            variable.get("id"): variable.get("defaultValue")
+            for variable in self.variables
+            if variable.get("id")
+        }
+        self.current_scene_id = self.project.get("entrySceneId") or self.scene_order[0]
+        if self.current_scene_id not in self.scenes_by_id:
+            self.current_scene_id = self.scene_order[0]
+        self.current_block_index = 0
+        self.auto_resume_write_enabled = True
+        self.unlock_current_chapter_replay()
+        self.advance_until_pause()
+        self.persist_auto_resume_snapshot()
+        self.status_message = "已开始游戏。"
 
     def open_save_dialog(self, mode: str) -> None:
         self.overlay_mode = mode if mode in {"save", "load"} else "save"
@@ -2753,10 +3059,16 @@ class NativeRuntimePlayer:
         self.status_message = "续玩记录已打开。"
 
     def close_overlay(self, preserve_status: bool = False) -> None:
-        self.overlay_mode = None
+        closing_mode = self.overlay_mode
         self.overlay_hotspots = []
         self.archive_detail_entry = None
         self.archive_detail_key = None
+        if self.title_screen_active and closing_mode != "title":
+            self.overlay_mode = "title"
+            if not preserve_status:
+                self.status_message = "已返回标题页。"
+            return
+        self.overlay_mode = None
         if not preserve_status:
             self.status_message = "已返回游戏画面。"
 
@@ -2784,32 +3096,8 @@ class NativeRuntimePlayer:
             self.close_overlay(preserve_status=True)
 
     def restart_story(self) -> None:
-        self.stop_voice()
-        self.stop_bgm()
-        self.clear_particle_effect()
-        self.clear_stage_visual_effects(include_persistent=True)
-        self.current_line = None
-        self.current_choices = None
-        self.current_choice_index = 0
-        self.finished = False
-        self.finished_message = ""
-        self.stage_background_asset_id = None
-        self.visible_characters = {}
-        self.current_bgm_asset_id = None
-        self.variable_state = {
-            variable.get("id"): variable.get("defaultValue")
-            for variable in self.variables
-            if variable.get("id")
-        }
-        self.current_scene_id = self.project.get("entrySceneId") or self.scene_order[0]
-        if self.current_scene_id not in self.scenes_by_id:
-            self.current_scene_id = self.scene_order[0]
-        self.current_block_index = 0
-        self.overlay_mode = None
-        self.auto_resume_write_enabled = True
         self.record_player_return_to_start()
-        self.advance_until_pause()
-        self.persist_auto_resume_snapshot()
+        self.start_story_from_title()
         self.status_message = "已回到开头。"
 
     def activate_system_menu_item(self, item_key: str) -> bool:
@@ -2844,6 +3132,57 @@ class NativeRuntimePlayer:
             return True
         if item_key == "restart":
             self.restart_story()
+            return True
+        if item_key == "exit":
+            return False
+        return True
+
+    def get_title_menu_items(self) -> list[dict]:
+        self.auto_resume_snapshot = load_project_auto_resume(self.project_id)
+        formal_slots = self.save_store.get("formalSlots") or []
+        filled_formal_count = sum(1 for item in formal_slots if item)
+        menu_items = []
+        for item_key, item_label in TITLE_MENU_ITEMS:
+            enabled = True
+            subtitle = ""
+            if item_key == "start":
+                subtitle = "从入口场景开始新的游玩。"
+            elif item_key == "resume":
+                enabled = self.auto_resume_snapshot is not None
+                subtitle = (
+                    f"{self.auto_resume_snapshot.get('sceneName') or '未命名场景'} · {format_snapshot_saved_at(self.auto_resume_snapshot.get('savedAt'))}"
+                    if self.auto_resume_snapshot
+                    else "推进一次剧情后会自动生成续玩记录。"
+                )
+            elif item_key == "load":
+                subtitle = f"正式存档 {filled_formal_count}/{self.formal_save_slot_count}。"
+            elif item_key == "settings":
+                subtitle = "主题、全屏、文字速度和音量。"
+            elif item_key == "archives":
+                subtitle = "章节、音乐、CG、角色、结局和成就。"
+            elif item_key == "exit":
+                subtitle = "关闭原生 Runtime。"
+            menu_items.append({"key": item_key, "label": item_label, "subtitle": subtitle, "enabled": enabled})
+        return menu_items
+
+    def activate_title_menu_item(self, item_key: str) -> bool:
+        if item_key == "start":
+            self.start_story_from_title()
+            return True
+        if item_key == "resume":
+            if not self.auto_resume_snapshot:
+                self.status_message = "当前还没有续玩记录。"
+                return True
+            self.load_auto_resume_snapshot()
+            return True
+        if item_key == "load":
+            self.open_save_dialog("load")
+            return True
+        if item_key == "settings":
+            self.open_settings_overlay()
+            return True
+        if item_key == "archives":
+            self.open_archive_overlay()
             return True
         if item_key == "exit":
             return False
@@ -2923,6 +3262,7 @@ class NativeRuntimePlayer:
             self.current_line = None
             self.finished = False
             self.finished_message = ""
+            self.title_screen_active = False
             self.set_scene(first_scene_id)
             self.close_overlay(preserve_status=True)
             self.advance_until_pause()
@@ -2967,6 +3307,7 @@ class NativeRuntimePlayer:
             self.current_line = None
             self.finished = False
             self.finished_message = ""
+            self.title_screen_active = False
             self.set_scene(scene_id)
             self.close_overlay(preserve_status=True)
             self.advance_until_pause()
@@ -3082,6 +3423,8 @@ class NativeRuntimePlayer:
         self.status_message = f"已读入正式存档 {slot_index + 1}：{snapshot.get('sceneName') or '未命名场景'}"
 
     def restore_from_snapshot(self, snapshot: dict) -> None:
+        self.title_screen_active = False
+        self.overlay_mode = None
         self.auto_resume_write_enabled = True
         self.stop_voice()
         self.current_line = None
@@ -3399,38 +3742,46 @@ class NativeRuntimePlayer:
                 continue
 
             if block_type == "video_play":
-                asset = self.assets_by_id.get(str(block.get("assetId") or "")) or {}
-                title = str(block.get("title") or asset.get("name") or "视频播放")
+                asset_id = str(block.get("assetId") or "")
+                asset = self.assets_by_id.get(asset_id) or {}
+                asset_path = get_asset_runtime_path(self.bundle_dir, asset)
+                text = self.build_native_video_prompt(block, asset, asset_path)
                 self.current_line = {
                     "type": block_type,
                     "speakerId": None,
-                    "text": (
-                        f"{title}\n\n"
-                        "当前 Python + pygame 原生 Runtime 暂以提示页预览视频卡片；"
-                        "网页包和 NW.js 桌面包会直接播放视频文件。"
-                    ),
+                    "speakerName": "视频",
+                    "text": text,
                     "voiceAssetId": None,
+                    "videoAssetId": asset_id,
+                    "videoAssetPath": str(asset_path) if asset_path else "",
+                    "videoOpened": False,
                     "blockLabel": get_block_label(block_type),
                 }
                 self.stop_voice()
-                self.status_message = "视频卡片：原生预览降级提示"
+                self.start_current_line_display(text)
+                self.reveal_current_line_immediately()
+                self.status_message = "视频卡片：按 V 用系统播放器播放，Enter 继续"
                 return
 
             if block_type == "credits_roll":
                 lines = block.get("lines") if isinstance(block.get("lines"), list) else []
                 credits_text = "\n".join(str(line) for line in lines[:12] if str(line).strip())
+                text = (
+                    f"{str(block.get('title') or 'STAFF')}\n"
+                    f"{str(block.get('subtitle') or '').strip()}\n\n"
+                    f"{credits_text or '感谢游玩。'}"
+                ).strip()
                 self.current_line = {
                     "type": block_type,
                     "speakerId": None,
-                    "text": (
-                        f"{str(block.get('title') or 'STAFF')}\n"
-                        f"{str(block.get('subtitle') or '').strip()}\n\n"
-                        f"{credits_text or '感谢游玩。'}"
-                    ).strip(),
+                    "speakerName": "片尾字幕",
+                    "text": text,
                     "voiceAssetId": None,
                     "blockLabel": get_block_label(block_type),
                 }
                 self.stop_voice()
+                self.start_current_line_display(text)
+                self.reveal_current_line_immediately()
                 self.status_message = "片尾字幕：按继续推进"
                 return
 
@@ -3546,6 +3897,53 @@ class NativeRuntimePlayer:
             except Exception:
                 pass
         self.current_voice_channel = None
+
+    def build_native_video_prompt(self, block: dict, asset: dict, asset_path: Path | None) -> str:
+        title = str(block.get("title") or asset.get("name") or "视频播放")
+        lines = [
+            title,
+            "",
+            "原生 Runtime Preview 会用系统默认视频播放器桥接这段视频。",
+        ]
+        if asset_path:
+            lines.extend(
+                [
+                    f"文件：{asset_path.name}",
+                    f"操作：按 V 播放/重新打开视频；播放结束后回到游戏窗口，按 Enter 或 Space 继续。",
+                ]
+            )
+        else:
+            lines.extend(
+                [
+                    "视频文件没有被找到，可能是素材缺失或导出包不完整。",
+                    "建议回到编辑器重新导出，或改用网页包 / NW.js 桌面包验证视频。",
+                ]
+            )
+
+        start_time = block.get("startTimeSeconds")
+        end_time = block.get("endTimeSeconds")
+        has_clip_range = start_time not in (None, "", 0, 0.0) or end_time not in (None, "", 0, 0.0)
+        if has_clip_range:
+            lines.append(
+                f"剪辑提示：编辑器设置了 {start_time or 0}s 到 {end_time or '结尾'}s；"
+                "系统播放器桥接不会强制裁切，正式 OP/ED 建议优先用网页/NW.js 包或预先导出剪辑后的视频。"
+            )
+        if not bool(block.get("skippable", True)):
+            lines.append("不可跳过提示：系统播放器桥无法检测真实播放结束，Preview 中需要人工确认后继续。")
+        lines.append("后续如果接入 FFmpeg/OpenCV 等解码后端，这里可以升级为窗口内嵌播放。")
+        return "\n".join(lines)
+
+    def open_current_video(self) -> None:
+        if not self.current_line or self.current_line.get("type") != "video_play":
+            return
+        video_path_value = str(self.current_line.get("videoAssetPath") or "").strip()
+        if not video_path_value:
+            self.status_message = "当前视频文件不存在，无法打开。"
+            return
+        success, message = open_external_video(Path(video_path_value))
+        self.current_line["videoOpened"] = bool(success)
+        self.status_message = message
+        self.reveal_current_line_immediately()
 
     def apply_variable_set(self, block: dict) -> None:
         variable_id = block.get("variableId")
@@ -3817,7 +4215,11 @@ class NativeRuntimePlayer:
         status_text = f"{project_title} · {target_label}"
         self.screen.blit(self.font_ui.render(status_text, True, palette["text"]), (36, 30))
         self.screen.blit(self.font_ui.render(self.status_message, True, palette["muted"]), (36, 52))
-        controls = "F1：系统 · F6：正式存档 · F7：读档 · F5：快存 · F8：快读 · F11：全屏 · Esc：关闭/退出"
+        controls = (
+            "↑↓：选择 · Enter：确认 · F11：全屏 · Esc：退出"
+            if self.overlay_mode == "title"
+            else "F1：系统 · F6：正式存档 · F7：读档 · F5：快存 · F8：快读 · F11：全屏 · Esc：关闭/退出"
+        )
         control_surface = self.font_ui.render(controls, True, palette["muted"])
         self.screen.blit(control_surface, (self.width - control_surface.get_width() - 36, 30))
 
@@ -3835,6 +4237,10 @@ class NativeRuntimePlayer:
         if line.get("type") == "dialogue":
             character = self.characters_by_id.get(speaker_id) or {}
             speaker_name = character.get("displayName") or str(speaker_id or "")
+        elif line.get("speakerName"):
+            speaker_name = str(line.get("speakerName") or "")
+        elif line.get("blockLabel"):
+            speaker_name = str(line.get("blockLabel") or "")
         else:
             speaker_name = "旁白"
 
@@ -3904,7 +4310,9 @@ class NativeRuntimePlayer:
         backdrop.fill(palette["overlay"])
         self.screen.blit(backdrop, (0, 0))
         self.overlay_hotspots = []
-        if self.overlay_mode in {"save", "load"}:
+        if self.overlay_mode == "title":
+            self.render_title_overlay()
+        elif self.overlay_mode in {"save", "load"}:
             self.render_save_dialog_overlay()
         elif self.overlay_mode == "system":
             self.render_system_menu_overlay()
@@ -3918,6 +4326,70 @@ class NativeRuntimePlayer:
             self.render_archive_overlay()
         elif self.overlay_mode == "archive-detail":
             self.render_archive_detail_overlay()
+
+    def render_title_overlay(self) -> None:
+        palette = self.get_active_palette()
+        menu_items = self.get_title_menu_items()
+        panel = self.pygame.Rect(0, 0, min(self.width - 84, 1060), min(self.height - 92, 610))
+        panel.center = (self.width // 2, self.height // 2)
+        self.pygame.draw.rect(self.screen, (*palette["panel"], 242), panel, border_radius=32)
+        self.pygame.draw.rect(self.screen, with_alpha(palette["panelBorder"], 78), panel, 2, border_radius=32)
+
+        glow = self.pygame.Surface((panel.width, panel.height), self.pygame.SRCALPHA)
+        self.pygame.draw.circle(glow, with_alpha(palette["accent"], 34), (int(panel.width * 0.28), int(panel.height * 0.24)), 190)
+        self.pygame.draw.circle(glow, with_alpha(palette["accentAlt"], 30), (int(panel.width * 0.88), int(panel.height * 0.14)), 170)
+        self.screen.blit(glow, panel.topleft)
+
+        logo_rect = self.pygame.Rect(panel.left + 46, panel.top + 70, 300, 250)
+        self.pygame.draw.rect(self.screen, with_alpha(palette["panel"], 68), logo_rect, border_radius=28)
+        self.pygame.draw.rect(self.screen, with_alpha(palette["panelBorder"], 36), logo_rect, 1, border_radius=28)
+        logo = self.get_title_logo_image()
+        if logo:
+            logo_width, logo_height = logo.get_size()
+            scale = min(logo_rect.width * 0.86 / max(1, logo_width), logo_rect.height * 0.86 / max(1, logo_height))
+            scaled = self.pygame.transform.smoothscale(
+                logo,
+                (max(1, int(logo_width * scale)), max(1, int(logo_height * scale))),
+            )
+            self.screen.blit(scaled, scaled.get_rect(center=logo_rect.center))
+        else:
+            self.blit_text_center(self.font_title, "TNE", logo_rect.centerx, logo_rect.centery - 18, palette["text"])
+            self.blit_text_center(self.font_ui, "Tony Na Engine", logo_rect.centerx, logo_rect.centery + 26, palette["muted"])
+
+        title_left = logo_rect.right + 42
+        title_top = panel.top + 78
+        project_title = str(self.project.get("title") or self.project.get("name") or "Tony Na Engine")
+        self.screen.blit(self.font_ui.render("NATIVE RUNTIME PREVIEW", True, palette["accent"]), (title_left, title_top))
+        self.screen.blit(self.font_title.render(project_title[:28], True, palette["text"]), (title_left, title_top + 34))
+        summary = f"{len(self.chapters)} 章 · {len(self.scenes_by_id)} 场景 · 正式存档 {self.formal_save_slot_count} 格"
+        self.screen.blit(self.font_ui.render(summary, True, palette["muted"]), (title_left, title_top + 82))
+        self.screen.blit(
+            self.font_ui.render("标题页支持续玩、读档、设置和资料馆，适合作为独立 App 的第一屏。", True, palette["muted"]),
+            (title_left, title_top + 112),
+        )
+
+        menu_left = title_left
+        menu_top = title_top + 160
+        menu_width = panel.right - menu_left - 46
+        row_height = 56
+        for index, item in enumerate(menu_items):
+            row_rect = self.pygame.Rect(menu_left, menu_top + index * row_height, menu_width, 46)
+            is_active = index == self.title_menu_index
+            enabled = bool(item.get("enabled", True))
+            fill_color = palette["accent"] if is_active else palette["panel"]
+            fill_alpha = 78 if is_active else 36
+            border_color = palette["accentAlt"] if is_active else palette["panelBorder"]
+            self.pygame.draw.rect(self.screen, with_alpha(fill_color, fill_alpha if enabled else 20), row_rect, border_radius=18)
+            self.pygame.draw.rect(self.screen, with_alpha(border_color, 86 if is_active else 24), row_rect, 1, border_radius=18)
+            label_color = palette["text"] if enabled else palette["muted"]
+            self.screen.blit(self.font_body.render(str(item["label"]), True, label_color), (row_rect.left + 18, row_rect.top + 6))
+            subtitle = str(item.get("subtitle") or "")
+            subtitle_surface = self.font_ui.render(subtitle[:46], True, palette["muted"])
+            self.screen.blit(subtitle_surface, (row_rect.right - subtitle_surface.get_width() - 18, row_rect.top + 15))
+            self.overlay_hotspots.append({"kind": "title-item", "value": item["key"], "rect": row_rect})
+
+        footer = "↑↓ 选择 · Enter 确认 · F11 全屏 · Esc 退出"
+        self.screen.blit(self.font_ui.render(footer, True, palette["muted"]), (panel.left + 46, panel.bottom - 48))
 
     def render_save_dialog_overlay(self) -> None:
         dialog_data = self.get_save_dialog_data()
@@ -4591,6 +5063,8 @@ class NativeRuntimePlayer:
             return False
         if event.type == self.pygame.KEYDOWN and event.key == self.pygame.K_ESCAPE:
             if self.overlay_mode:
+                if self.overlay_mode == "title":
+                    return False
                 if self.overlay_mode == "archive-detail":
                     self.close_archive_detail()
                     return True
@@ -4598,9 +5072,14 @@ class NativeRuntimePlayer:
                 return True
             return False
         if event.type == self.pygame.KEYDOWN:
+            if self.current_line and self.current_line.get("type") == "video_play" and event.key == self.pygame.K_v:
+                self.open_current_video()
+                return True
             if event.key == self.pygame.K_F11:
                 self.toggle_display_mode()
                 return True
+            if self.overlay_mode == "title":
+                return self.handle_overlay_event(event)
             if event.key in (self.pygame.K_F1, self.pygame.K_TAB):
                 self.open_system_menu()
                 return True
@@ -4633,6 +5112,8 @@ class NativeRuntimePlayer:
         return True
 
     def handle_overlay_event(self, event) -> bool:
+        if self.overlay_mode == "title":
+            return self.handle_title_overlay_event(event)
         if self.overlay_mode in {"save", "load"}:
             return self.handle_save_dialog_event(event)
         if self.overlay_mode == "system":
@@ -4647,6 +5128,37 @@ class NativeRuntimePlayer:
             return self.handle_archive_overlay_event(event)
         if self.overlay_mode == "archive-detail":
             return self.handle_archive_detail_overlay_event(event)
+        return True
+
+    def handle_title_overlay_event(self, event) -> bool:
+        pygame = self.pygame
+        menu_items = self.get_title_menu_items()
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_UP:
+                self.title_menu_index = (self.title_menu_index - 1) % len(menu_items)
+                return True
+            if event.key == pygame.K_DOWN:
+                self.title_menu_index = (self.title_menu_index + 1) % len(menu_items)
+                return True
+            if event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                return self.activate_title_menu_item(str(menu_items[self.title_menu_index]["key"]))
+            shortcut_map = {
+                pygame.K_n: "start",
+                pygame.K_r: "resume",
+                pygame.K_l: "load",
+                pygame.K_s: "settings",
+                pygame.K_a: "archives",
+            }
+            if event.key in shortcut_map:
+                return self.activate_title_menu_item(shortcut_map[event.key])
+        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            for target in self.overlay_hotspots:
+                if target.get("kind") == "title-item" and target["rect"].collidepoint(event.pos):
+                    for index, item in enumerate(menu_items):
+                        if item["key"] == target.get("value"):
+                            self.title_menu_index = index
+                            break
+                    return self.activate_title_menu_item(str(target.get("value") or "start"))
         return True
 
     def handle_save_dialog_event(self, event) -> bool:
@@ -4948,6 +5460,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--exercise-particles", dest="exercise_particles", help="检查原生 Runtime 粒子配置能否生成可播放条目")
     parser.add_argument("--exercise-visual-effects", dest="exercise_visual_effects", help="检查原生 Runtime 高级演出配置能否规范化")
     parser.add_argument("--exercise-profile", dest="exercise_profile", help="检查原生 Runtime 玩家档案和续玩记录能否写入和读回")
+    parser.add_argument("--describe-title-screen", dest="describe_title_screen", help="输出原生 Runtime 标题页配置摘要，不启动窗口")
+    parser.add_argument("--describe-video-bridge", dest="describe_video_bridge", help="输出原生 Runtime 视频桥接摘要，不启动窗口")
     parser.add_argument("--describe-save-dialog", dest="describe_save_dialog", help="输出正式存档面板摘要，不启动窗口")
     parser.add_argument("--page", dest="save_dialog_page", type=int, default=0, help="配合 --describe-save-dialog 使用，指定页码")
     args = parser.parse_args(argv)
@@ -5011,6 +5525,22 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         except NativeRuntimeError as error:
             print(f"Native runtime profile validation failed: {error}")
+            return 1
+
+    if args.describe_title_screen:
+        try:
+            print_native_title_screen_report(Path(args.describe_title_screen).resolve())
+            return 0
+        except NativeRuntimeError as error:
+            print(f"Native runtime title screen description failed: {error}")
+            return 1
+
+    if args.describe_video_bridge:
+        try:
+            print_native_video_bridge_report(Path(args.describe_video_bridge).resolve())
+            return 0
+        except NativeRuntimeError as error:
+            print(f"Native runtime video bridge description failed: {error}")
             return 1
 
     if args.describe_save_dialog:

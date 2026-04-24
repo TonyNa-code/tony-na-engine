@@ -18,6 +18,7 @@
 - 基础系统菜单
 - 主题 / 显示模式 / 文字速度 / 四路音量设置
 - 玩家档案 / 自动续玩记录
+- 原生标题页 / 主菜单入口
 - 多馆标签页资料馆
 - 章节回放 / 音乐鉴赏 / CG 回想
 - 地点图鉴 / 角色图鉴 / 结局回放 / 成就馆
@@ -27,6 +28,7 @@
 - 项目级成品 UI 皮肤颜色基础同步
 - 基础粒子特效表现
 - 基础镜头 / 闪屏 / 淡入淡出 / 滤镜 / 景深演出
+- 视频卡片的系统播放器桥接预览
 - PyInstaller 独立 App 打包脚手架
 
 ## 当前还没完整平移
@@ -34,6 +36,7 @@
 - 粒子高级表现与更复杂的组合层
 - 系统菜单里的更多高级功能与细分设置
 - 资料馆里的高级筛选、排序和更多专属演出
+- 窗口内嵌视频解码、视频时间轴裁切与自动播完检测
 - 网页 Runtime 里的全部高级演出细节
 
 ## 启动要求
@@ -185,6 +188,14 @@ python3 runtime_player.py --exercise-save-load .
 python3 runtime_player.py --describe-save-dialog .
 ```
 
+## 标题页自检
+
+不启动窗口，输出原生标题页的菜单、Logo、续玩与存档摘要：
+
+```bash
+python3 runtime_player.py --describe-title-screen .
+```
+
 ## 设置自检
 
 不启动窗口，验证主题 / 显示模式 / 文字速度 / 音量设置的写入与读回：
@@ -216,6 +227,16 @@ python3 runtime_player.py --exercise-particles .
 ```bash
 python3 runtime_player.py --exercise-visual-effects .
 ```
+
+## 视频桥接自检
+
+原生 Runtime Preview 暂不在窗口内直接解码视频，而是在运行到视频卡时允许玩家按 `V` 调用系统默认视频播放器。这个命令可检查导出包里有哪些视频、是否存在、被哪些视频卡引用，以及当前系统是否能唤起默认播放器：
+
+```bash
+python3 runtime_player.py --describe-video-bridge .
+```
+
+如果项目依赖 OP / ED / PV，正式发布前仍建议同时导出网页包或 NW.js 桌面包实机确认，因为那两条链路可以直接在 Runtime 内播放视频。
 
 ## 玩家档案自检
 

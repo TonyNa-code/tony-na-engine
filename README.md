@@ -81,16 +81,34 @@ Tony Na Engine 当前更适合这样理解：
 
 ### 启动编辑器
 
-最简单的方式：
+最简单的方式是使用对应系统的启动脚本：
 
-- 双击 [`start_editor.command`](start_editor.command)
+- macOS：双击 [`start_editor.command`](start_editor.command)
+- Windows：双击 [`start_editor.cmd`](start_editor.cmd)
+- Linux：运行 [`start_editor.sh`](start_editor.sh)
 
-或者命令行启动：
+或者命令行启动。下面这些命令逻辑是通用的，主要差别只是不同系统里 Python 启动器名字不一样：
+
+macOS / Linux：
 
 ```bash
 git clone https://github.com/<your-github-account>/tony-na-engine.git
 cd tony-na-engine
 python3 run_editor.py
+```
+
+Windows：
+
+```bat
+git clone https://github.com/<your-github-account>/tony-na-engine.git
+cd tony-na-engine
+py -3 run_editor.py
+```
+
+如果 Windows 没有 `py` 启动器，也可以改用：
+
+```bat
+python run_editor.py
 ```
 
 ## 下载成 App 形式
@@ -122,9 +140,10 @@ python3 run_editor.py
 说明：
 
 - `Windows / macOS / Linux 桌面包` 当前主要走 NW.js 桌面 Runtime
-- `原生 Runtime 包` 是正在推进中的新路线，当前已经覆盖基础剧情主链、正式存档/读档、系统菜单设置项、玩家档案/自动续玩、基础粒子与镜头演出，以及第一批资料馆和详情查看能力；导出包内会附带发布前自检报告、崩溃日志能力和 PyInstaller 脚本，可在 macOS / Windows / Linux 目标系统继续打成 Preview App
+- `原生 Runtime 包` 是正在推进中的新路线，当前已经覆盖标题页主菜单、基础剧情主链、正式存档/读档、系统菜单设置项、玩家档案/自动续玩、基础粒子与镜头演出、视频卡片系统播放器桥接，以及第一批资料馆和详情查看能力；导出包内会附带发布前自检报告、崩溃日志能力和 PyInstaller 脚本，可在 macOS / Windows / Linux 目标系统继续打成 Preview App
 - `手机端 Runtime` 目前处于实验规划阶段，不走 PyInstaller；更适合先用 WebView / 网页 Runtime 验证触控和音频策略，再决定是否做 Android / iOS 独立原生壳
 - 发布前建议按 [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md) 做一次 Preview 发布体检
+- 最后发布闸门可参考 [`RELEASE_P0.md`](RELEASE_P0.md)，GitHub Release 正文草稿可参考 [`docs/github/preview-release-draft.md`](docs/github/preview-release-draft.md)
 
 ## 测试
 
@@ -132,15 +151,27 @@ python3 run_editor.py
 
 浏览器自动化测试依赖 Playwright。第一次运行前建议先执行：
 
+macOS / Linux：
+
 ```bash
 cd tony-na-engine
 python3 -m pip install -r requirements-dev.txt
 python3 -m playwright install chromium
 ```
 
+Windows：
+
+```bat
+cd tony-na-engine
+py -3 -m pip install -r requirements-dev.txt
+py -3 -m playwright install chromium
+```
+
 ### 本地检查
 
 前端脚本与关键 Python 文件语法检查：
+
+macOS / Linux：
 
 ```bash
 cd tony-na-engine
@@ -149,26 +180,54 @@ node --check export_player_template/player.js
 python3 -m py_compile run_editor.py
 ```
 
+Windows：
+
+```bat
+cd tony-na-engine
+node --check prototype_editor/app.js
+node --check export_player_template/player.js
+py -3 -m py_compile run_editor.py
+```
+
 ### 自动化测试
 
 后端 smoke：
+
+macOS / Linux：
 
 ```bash
 cd tony-na-engine
 python3 -m unittest discover -s tests -p 'test_run_editor_smoke.py' -v
 ```
 
+Windows：
+
+```bat
+cd tony-na-engine
+py -3 -m unittest discover -s tests -p "test_run_editor_smoke.py" -v
+```
+
 浏览器 Playwright：
+
+macOS / Linux：
 
 ```bash
 cd tony-na-engine
 python3 -m unittest discover -s tests -p 'test_browser_playwright_smoke.py' -v
 ```
 
-或者直接双击：
+Windows：
 
-- [`run_tests.command`](run_tests.command)
-- [`run_browser_tests.command`](run_browser_tests.command)
+```bat
+cd tony-na-engine
+py -3 -m unittest discover -s tests -p "test_browser_playwright_smoke.py" -v
+```
+
+或者直接运行对应系统脚本：
+
+- macOS：[`run_tests.command`](run_tests.command) / [`run_browser_tests.command`](run_browser_tests.command)
+- Windows：[`run_tests.cmd`](run_tests.cmd) / [`run_browser_tests.cmd`](run_browser_tests.cmd)
+- Linux：[`run_tests.sh`](run_tests.sh) / [`run_browser_tests.sh`](run_browser_tests.sh)
 
 ### GitHub Actions
 

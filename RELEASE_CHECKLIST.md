@@ -11,6 +11,8 @@ This checklist is for publishing a source-available Preview / Early Access build
 
 ## Must Pass Before GitHub Release
 
+For the final short gate, also review [`RELEASE_P0.md`](RELEASE_P0.md).
+
 - Run the full automated suite:
 
 ```bash
@@ -35,16 +37,18 @@ node --check export_player_template/player.js
 Current Preview-ready criteria:
 
 - Core story playback works.
+- Native title screen can be inspected with `runtime_player.py --describe-title-screen .`.
 - Save / load, quick save, player profile, and auto resume are present.
 - System menu, text speed, volume, theme, and fullscreen settings are present.
 - Archive/gallery/replay surfaces are functional enough for Preview.
 - Crash logs are written to `~/.tony-na-engine/native-runtime-logs/`.
+- Video cards can be inspected with `runtime_player.py --describe-video-bridge .`; in native Preview they use a system-player bridge rather than embedded decoding.
 - `build_native_runtime_app.py --describe .` returns a packaging plan.
 - PyInstaller packaging can produce a platform Preview zip on the target system.
 
 Current known limitations:
 
-- Video playback is not yet a complete native Runtime path.
+- Video playback is not yet an embedded native Runtime decoder path.
 - Mobile Runtime is not produced by PyInstaller.
 - macOS unsigned apps can be blocked by Gatekeeper.
 - Windows unsigned apps can trigger SmartScreen warnings.

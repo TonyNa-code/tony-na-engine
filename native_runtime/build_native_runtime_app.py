@@ -16,6 +16,7 @@ DEFAULT_APP_NAME = "TonyNaNativeGame"
 GAME_DATA_NAME = "game_data.json"
 RUNTIME_PLAYER_NAME = "runtime_player.py"
 PACKAGE_MANIFEST_NAME = "native_app_package_manifest.json"
+ENGINE_BRAND_LOGO_RELATIVE_PATH = "assets/brand-logo.png"
 
 
 class NativeAppBuildError(RuntimeError):
@@ -134,6 +135,13 @@ def collect_data_entries(bundle_dir: Path, payload: dict) -> tuple[list[dict], l
             "dest": ".",
         }
     }
+    brand_logo_path = bundle_dir / ENGINE_BRAND_LOGO_RELATIVE_PATH
+    if brand_logo_path.is_file():
+        entries_by_key[(ENGINE_BRAND_LOGO_RELATIVE_PATH, ".")] = {
+            "source": brand_logo_path,
+            "relativeSource": ENGINE_BRAND_LOGO_RELATIVE_PATH,
+            "dest": "assets",
+        }
     missing_assets: list[str] = []
     for export_url in iter_asset_export_urls(payload):
         asset_path = bundle_dir / export_url

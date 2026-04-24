@@ -252,10 +252,12 @@ NATIVE_RUNTIME_PLAYER_SOURCE = NATIVE_RUNTIME_TEMPLATE_DIR / "runtime_player.py"
 NATIVE_RUNTIME_README_SOURCE = NATIVE_RUNTIME_TEMPLATE_DIR / "README.md"
 NATIVE_RUNTIME_REQUIREMENTS_SOURCE = NATIVE_RUNTIME_TEMPLATE_DIR / "requirements.txt"
 NATIVE_RUNTIME_BUILD_REQUIREMENTS_SOURCE = NATIVE_RUNTIME_TEMPLATE_DIR / "requirements-build.txt"
+NATIVE_RUNTIME_BRAND_LOGO_SOURCE = ROOT_DIR / "prototype_editor" / "assets" / "brand-logo.png"
 NATIVE_RUNTIME_PLAYER_NAME = "runtime_player.py"
 NATIVE_RUNTIME_README_NAME = "README_原生_Runtime_包先看这里.md"
 NATIVE_RUNTIME_REQUIREMENTS_NAME = "requirements-native-runtime.txt"
 NATIVE_RUNTIME_BUILD_REQUIREMENTS_NAME = "requirements-native-runtime-build.txt"
+NATIVE_RUNTIME_BRAND_LOGO_NAME = "assets/brand-logo.png"
 NATIVE_RUNTIME_APP_BUILDER_SOURCE = NATIVE_RUNTIME_TEMPLATE_DIR / "build_native_runtime_app.py"
 NATIVE_RUNTIME_APP_BUILDER_NAME = "build_native_runtime_app.py"
 NATIVE_RUNTIME_RELEASE_CHECK_NAME = "native-runtime-release-check.json"
@@ -5692,6 +5694,10 @@ def write_native_runtime_files(build_dir: Path, export_payload: dict) -> dict:
     shutil.copy2(NATIVE_RUNTIME_REQUIREMENTS_SOURCE, build_dir / NATIVE_RUNTIME_REQUIREMENTS_NAME)
     shutil.copy2(NATIVE_RUNTIME_BUILD_REQUIREMENTS_SOURCE, build_dir / NATIVE_RUNTIME_BUILD_REQUIREMENTS_NAME)
     shutil.copy2(NATIVE_RUNTIME_APP_BUILDER_SOURCE, build_dir / NATIVE_RUNTIME_APP_BUILDER_NAME)
+    if NATIVE_RUNTIME_BRAND_LOGO_SOURCE.is_file():
+        brand_logo_path = build_dir / NATIVE_RUNTIME_BRAND_LOGO_NAME
+        brand_logo_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(NATIVE_RUNTIME_BRAND_LOGO_SOURCE, brand_logo_path)
 
     mac_launcher_path = build_dir / NATIVE_RUNTIME_MAC_COMMAND_NAME
     linux_launcher_path = build_dir / NATIVE_RUNTIME_LINUX_COMMAND_NAME
@@ -5866,6 +5872,8 @@ def write_native_runtime_files(build_dir: Path, export_payload: dict) -> dict:
         "requirementsPath": str(build_dir / NATIVE_RUNTIME_REQUIREMENTS_NAME),
         "buildRequirementsName": NATIVE_RUNTIME_BUILD_REQUIREMENTS_NAME,
         "buildRequirementsPath": str(build_dir / NATIVE_RUNTIME_BUILD_REQUIREMENTS_NAME),
+        "brandLogoName": NATIVE_RUNTIME_BRAND_LOGO_NAME,
+        "brandLogoPath": str(build_dir / NATIVE_RUNTIME_BRAND_LOGO_NAME),
         "appBuilderName": NATIVE_RUNTIME_APP_BUILDER_NAME,
         "appBuilderPath": str(build_dir / NATIVE_RUNTIME_APP_BUILDER_NAME),
         "releaseCheckName": release_check_path.name,
