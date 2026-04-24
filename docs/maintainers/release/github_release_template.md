@@ -14,6 +14,14 @@
 python3 tools/release/prepare_preview_release.py
 ```
 
+发布后复查 GitHub Release 页面真实附件是否和本地推荐清单一致：
+
+```bash
+python3 tools/release/prepare_preview_release.py --release-tag v0.1.0-preview
+```
+
+如果输出里出现 `missing suggested artifacts`、`extra release assets` 或 `size mismatches`，先修正 Release 附件，再把该版本标记为可公开推荐。
+
 如果需要额外扫描旧用户名、真实姓名或其他私密字符串，不要把这些词写进仓库文件；用本地环境变量临时传入：
 
 ```bash

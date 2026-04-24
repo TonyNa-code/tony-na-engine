@@ -7,6 +7,8 @@ import json
 import os
 import re
 import subprocess
+import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import datetime
 from pathlib import Path
@@ -83,11 +85,13 @@ def git_info() -> dict[str, Any]:
     _, short_commit, _ = run_command(["git", "rev-parse", "--short", "HEAD"])
     _, status, _ = run_command(["git", "status", "--short"])
     _, remote, _ = run_command(["git", "config", "--get", "remote.origin.url"])
+    _, tags, _ = run_command(["git", "tag", "--points-at", "HEAD"])
     return {
         "branch": branch,
         "commit": commit,
         "shortCommit": short_commit,
         "remote": remote,
+        "tagsAtHead": [line.strip() for line in tags.splitlines() if line.strip()],
         "workingTreeClean": not bool(status.strip()),
         "statusLines": [line for line in status.splitlines() if line.strip()],
     }
@@ -141,6 +145,100 @@ def github_ci_status(git: dict[str, Any], *, skip_network: bool = False) -> dict
             "conclusion": latest.get("conclusion") or "",
             "url": latest.get("html_url") or "",
         },
+    }
+
+
+def choose_release_tag(git: dict[str, Any], release_tag: str) -> str:
+    explicit_tag = release_tag.strip()
+    if explicit_tag:
+        return explicit_tag
+    tags = [str(tag).strip() for tag in git.get("tagsAtHead") or [] if str(tag).strip()]
+    return sorted(tags)[0] if tags else ""
+
+
+def github_release_status(
+    git: dict[str, Any],
+    artifacts: list[dict[str, Any]],
+    *,
+    release_tag: str,
+    skip_reason: str = "",
+) -> dict[str, Any]:
+    if skip_reason:
+        return {"checked": False, "reason": skip_reason}
+    repo = parse_github_repo(str(git.get("remote") or ""))
+    if not repo:
+        return {"checked": False, "reason": "remote is not a GitHub repository"}
+    tag = choose_release_tag(git, release_tag)
+    if not tag:
+        return {"checked": False, "reason": "no release tag provided and current commit has no tag"}
+
+    encoded_tag = urllib.parse.quote(tag, safe="")
+    url = f"https://api.github.com/repos/{repo}/releases/tags/{encoded_tag}"
+    try:
+        with urllib.request.urlopen(url, timeout=15) as response:
+            data = json.load(response)
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return {
+                "checked": True,
+                "exists": False,
+                "tag": tag,
+                "url": "",
+                "assets": [],
+                "matchedAssets": [],
+                "missingAssets": sorted({artifact["name"] for artifact in artifacts}),
+                "extraAssets": [],
+                "sizeMismatches": [],
+            }
+        return {"checked": False, "tag": tag, "reason": f"HTTPError {exc.code}: {exc.reason}"}
+    except Exception as exc:  # noqa: BLE001 - release prep should report, not crash.
+        return {"checked": False, "tag": tag, "reason": f"{type(exc).__name__}: {exc}"}
+
+    remote_assets = [
+        {
+            "name": str(asset.get("name") or ""),
+            "size": int(asset.get("size") or 0),
+            "sizeLabel": human_size(int(asset.get("size") or 0)),
+            "updatedAt": asset.get("updated_at") or "",
+            "url": asset.get("browser_download_url") or "",
+        }
+        for asset in data.get("assets", [])
+        if asset.get("name")
+    ]
+    local_by_name = {artifact["name"]: artifact for artifact in artifacts}
+    remote_by_name = {asset["name"]: asset for asset in remote_assets}
+    local_names = set(local_by_name)
+    remote_names = set(remote_by_name)
+    matched = sorted(local_names & remote_names)
+    size_mismatches = []
+    for name in matched:
+        local_size = int(local_by_name[name].get("size") or 0)
+        remote_size = int(remote_by_name[name].get("size") or 0)
+        if local_size != remote_size:
+            size_mismatches.append(
+                {
+                    "name": name,
+                    "localSize": local_size,
+                    "localSizeLabel": human_size(local_size),
+                    "releaseSize": remote_size,
+                    "releaseSizeLabel": human_size(remote_size),
+                }
+            )
+
+    return {
+        "checked": True,
+        "exists": True,
+        "tag": tag,
+        "name": data.get("name") or "",
+        "url": data.get("html_url") or "",
+        "draft": bool(data.get("draft")),
+        "prerelease": bool(data.get("prerelease")),
+        "publishedAt": data.get("published_at") or "",
+        "assets": remote_assets,
+        "matchedAssets": matched,
+        "missingAssets": sorted(local_names - remote_names),
+        "extraAssets": sorted(remote_names - local_names),
+        "sizeMismatches": size_mismatches,
     }
 
 
@@ -301,6 +399,7 @@ def build_warnings(report: dict[str, Any]) -> list[str]:
     warnings: list[str] = []
     git = report["git"]
     ci = report["githubActions"]
+    release = report.get("githubRelease") or {}
     privacy = report["privacy"]
     if not git["workingTreeClean"]:
         warnings.append("Working tree is not clean; commit or discard local changes before tagging a release.")
@@ -314,6 +413,23 @@ def build_warnings(report: dict[str, Any]) -> list[str]:
         warnings.append("Tracked files larger than 20 MB were found.")
     if not report["artifacts"]:
         warnings.append("No local release artifacts were found under exports/.")
+    if release.get("checked"):
+        if not release.get("exists", True):
+            warnings.append(f"GitHub Release `{release.get('tag')}` does not exist yet.")
+        elif release.get("exists"):
+            if release.get("draft"):
+                warnings.append(f"GitHub Release `{release.get('tag')}` is still a draft.")
+            if not release.get("prerelease"):
+                warnings.append(f"GitHub Release `{release.get('tag')}` is not marked as a prerelease.")
+            if release.get("missingAssets"):
+                names = ", ".join(f"`{name}`" for name in release["missingAssets"])
+                warnings.append(f"GitHub Release `{release.get('tag')}` is missing suggested artifacts: {names}.")
+            if release.get("extraAssets"):
+                names = ", ".join(f"`{name}`" for name in release["extraAssets"])
+                warnings.append(f"GitHub Release `{release.get('tag')}` has assets not in the current local manifest: {names}.")
+            if release.get("sizeMismatches"):
+                names = ", ".join(f"`{item['name']}`" for item in release["sizeMismatches"])
+                warnings.append(f"GitHub Release `{release.get('tag')}` has asset size mismatches: {names}.")
     return warnings
 
 
@@ -321,13 +437,26 @@ def build_report(args: argparse.Namespace) -> dict[str, Any]:
     git = git_info()
     extra_sensitive = list(args.extra_sensitive or [])
     discovered_artifacts = discover_artifacts(args.max_artifacts)
+    accepted_artifacts = [artifact for artifact in discovered_artifacts if not has_release_check_errors(artifact)]
+    rejected_artifacts = [artifact for artifact in discovered_artifacts if has_release_check_errors(artifact)]
+    release_skip_reason = ""
+    if args.skip_network:
+        release_skip_reason = "network skipped"
+    elif args.skip_release_check:
+        release_skip_reason = "release check skipped"
     report = {
         "generatedAt": datetime.now().astimezone().isoformat(timespec="seconds"),
         "git": git,
         "githubActions": github_ci_status(git, skip_network=args.skip_network),
         "privacy": scan_privacy(extra_sensitive),
-        "artifacts": [artifact for artifact in discovered_artifacts if not has_release_check_errors(artifact)],
-        "rejectedArtifacts": [artifact for artifact in discovered_artifacts if has_release_check_errors(artifact)],
+        "artifacts": accepted_artifacts,
+        "rejectedArtifacts": rejected_artifacts,
+        "githubRelease": github_release_status(
+            git,
+            accepted_artifacts,
+            release_tag=args.release_tag,
+            skip_reason=release_skip_reason,
+        ),
     }
     report["warnings"] = build_warnings(report)
     report["readyForPreviewTag"] = not report["warnings"]
@@ -357,6 +486,36 @@ def render_upload_manifest(report: dict[str, Any]) -> str:
         )
     else:
         lines.append(f"- Not checked: {ci.get('reason')}")
+    lines.extend(["", "## GitHub Release Page", ""])
+    release = report.get("githubRelease") or {}
+    if release.get("checked"):
+        if release.get("exists"):
+            lines.extend(
+                [
+                    f"- Tag: `{release.get('tag', '')}`",
+                    f"- Name: `{release.get('name', '')}`",
+                    f"- URL: {release.get('url', '') or 'n/a'}",
+                    f"- Prerelease: `{release.get('prerelease')}`",
+                    f"- Assets on GitHub: `{len(release.get('assets') or [])}`",
+                    f"- Matched suggested assets: `{len(release.get('matchedAssets') or [])}`",
+                ]
+            )
+            if release.get("missingAssets"):
+                lines.append(f"- Missing suggested assets: {', '.join(f'`{name}`' for name in release['missingAssets'])}")
+            if release.get("extraAssets"):
+                lines.append(f"- Extra release assets: {', '.join(f'`{name}`' for name in release['extraAssets'])}")
+            if release.get("sizeMismatches"):
+                names = ", ".join(f"`{item['name']}`" for item in release["sizeMismatches"])
+                lines.append(f"- Size mismatches: {names}")
+        else:
+            lines.extend(
+                [
+                    f"- Tag: `{release.get('tag', '')}`",
+                    "- Release page was not found yet.",
+                ]
+            )
+    else:
+        lines.append(f"- Not checked: {release.get('reason')}")
     lines.extend(["", "## Privacy Gate", ""])
     privacy = report["privacy"]
     lines.append(f"- Passed: `{privacy['passed']}`")
@@ -444,6 +603,18 @@ def print_summary(report: dict[str, Any], outputs: dict[str, str]) -> None:
         print(f"- GitHub Actions: {ci.get('status')} / {ci.get('conclusion')}")
     else:
         print(f"- GitHub Actions: not checked ({ci.get('reason')})")
+    release = report.get("githubRelease") or {}
+    if release.get("checked"):
+        if release.get("exists"):
+            print(
+                "- GitHub Release: "
+                f"{release.get('tag')} / matched {len(release.get('matchedAssets') or [])} "
+                f"of {len(report['artifacts'])} suggested assets"
+            )
+        else:
+            print(f"- GitHub Release: {release.get('tag')} not found")
+    else:
+        print(f"- GitHub Release: not checked ({release.get('reason')})")
     print(f"- Privacy findings: {len(report['privacy']['sensitiveFindings'])}")
     print(f"- Artifacts listed: {len(report['artifacts'])}")
     print(f"- Rejected artifacts: {len(report.get('rejectedArtifacts') or [])}")
@@ -464,6 +635,8 @@ def main() -> int:
     parser.add_argument("--output-dir", type=Path, default=None, help="Output directory, default release_preview/<timestamp>")
     parser.add_argument("--max-artifacts", type=int, default=12, help="Maximum local artifacts to list from exports/")
     parser.add_argument("--skip-network", action="store_true", help="Do not query GitHub Actions status")
+    parser.add_argument("--release-tag", default="", help="GitHub Release tag to compare against; default uses a tag at HEAD")
+    parser.add_argument("--skip-release-check", action="store_true", help="Do not compare GitHub Release assets")
     parser.add_argument(
         "--extra-sensitive",
         action="append",

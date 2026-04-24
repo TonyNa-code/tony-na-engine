@@ -35318,7 +35318,7 @@ function getBlockSummary(block, scene) {
     default:
       return {
         title: block.type,
-        meta: "暂时还没有做这类卡片的说明",
+        meta: "来自较新项目数据或扩展插件的卡片，编辑器会保留它并按原顺序参与导出",
       };
   }
 }
