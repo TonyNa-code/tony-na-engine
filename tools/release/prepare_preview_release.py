@@ -98,6 +98,8 @@ def parse_github_repo(remote_url: str) -> str:
     patterns = [
         r"github\.com[:/](?P<owner>[^/]+)/(?P<repo>[^/.]+)(?:\.git)?$",
         r"https://github\.com/(?P<owner>[^/]+)/(?P<repo>[^/.]+)(?:\.git)?$",
+        r"git@[^:]+:(?P<owner>[^/]+)/(?P<repo>[^/.]+)(?:\.git)?$",
+        r"ssh://git@[^/]+/(?P<owner>[^/]+)/(?P<repo>[^/.]+)(?:\.git)?$",
     ]
     for pattern in patterns:
         match = re.search(pattern, remote_url)
