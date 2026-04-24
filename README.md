@@ -92,7 +92,7 @@ Tony Na Engine 当前更适合这样理解：
 macOS / Linux：
 
 ```bash
-git clone https://github.com/<your-github-account>/tony-na-engine.git
+git clone https://github.com/TonyNa-code/tony-na-engine.git
 cd tony-na-engine
 python3 run_editor.py
 ```
@@ -100,7 +100,7 @@ python3 run_editor.py
 Windows：
 
 ```bat
-git clone https://github.com/<your-github-account>/tony-na-engine.git
+git clone https://github.com/TonyNa-code/tony-na-engine.git
 cd tony-na-engine
 py -3 run_editor.py
 ```
