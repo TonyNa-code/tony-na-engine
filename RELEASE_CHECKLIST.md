@@ -31,6 +31,7 @@ node --check export_player_template/player.js
 - Export a native Runtime build and confirm `native-runtime-release-check.json` exists.
 - Confirm the native Runtime release check has `summary.errors` equal to `0`.
 - Confirm no local privacy-sensitive files are staged, especially certificates, keys, local project exports, or signing env files.
+- Confirm GitHub Actions has passed both backend smoke and Playwright browser smoke tests on the release commit.
 
 ## Native Runtime Preview Gate
 

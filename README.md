@@ -231,11 +231,12 @@ py -3 -m unittest discover -s tests -p "test_browser_playwright_smoke.py" -v
 
 ### GitHub Actions
 
-仓库已内置最小 CI，会在 `push / pull request` 时自动执行：
+仓库已内置 CI，会在 `push / pull request` 时自动执行：
 
 - Python 语法检查
 - 前端脚本语法检查
 - 后端 smoke 测试
+- Playwright 浏览器烟测
 
 ## 发布状态
 
@@ -280,7 +281,7 @@ py -3 -m unittest discover -s tests -p "test_browser_playwright_smoke.py" -v
 - [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)
 - [`SECURITY.md`](SECURITY.md)
 
-Issue / PR 模板也已经准备好了：
+Issue / PR 入口：
 
 - [Bug report](.github/ISSUE_TEMPLATE/bug_report.md)
 - [Feature request](.github/ISSUE_TEMPLATE/feature_request.md)

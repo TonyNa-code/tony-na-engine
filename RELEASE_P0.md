@@ -16,7 +16,7 @@ This page is the final go / no-go checklist before publishing a GitHub Preview r
 - `node --check prototype_editor/app.js`
 - `node --check export_player_template/player.js`
 - `git diff --check`
-- GitHub Actions `CI / verify` is green after push.
+- GitHub Actions `CI / verify` is green after push, including backend smoke and Playwright browser smoke tests.
 
 ## Privacy Gate
 
