@@ -80,8 +80,23 @@
     "titleLogoAssetId": "",
     "panelFrameAssetId": "",
     "panelFrameOpacity": 18,
+    "panelFrameSlice": {
+      "top": 24,
+      "right": 24,
+      "bottom": 24,
+      "left": 24
+    },
     "buttonFrameAssetId": "",
+    "buttonHoverFrameAssetId": "",
+    "buttonPressedFrameAssetId": "",
+    "buttonDisabledFrameAssetId": "",
     "buttonFrameOpacity": 24,
+    "buttonFrameSlice": {
+      "top": 18,
+      "right": 18,
+      "bottom": 18,
+      "left": 18
+    },
     "saveSlotFrameAssetId": "",
     "systemPanelFrameAssetId": "",
     "uiOverlayAssetId": "",

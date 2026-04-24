@@ -92,8 +92,13 @@ DEFAULT_GAME_UI_CONFIG = {
     "titleLogoAssetId": "",
     "panelFrameAssetId": "",
     "panelFrameOpacity": 18,
+    "panelFrameSlice": {"top": 24, "right": 24, "bottom": 24, "left": 24},
     "buttonFrameAssetId": "",
+    "buttonHoverFrameAssetId": "",
+    "buttonPressedFrameAssetId": "",
+    "buttonDisabledFrameAssetId": "",
     "buttonFrameOpacity": 24,
+    "buttonFrameSlice": {"top": 18, "right": 18, "bottom": 18, "left": 18},
     "saveSlotFrameAssetId": "",
     "systemPanelFrameAssetId": "",
     "uiOverlayAssetId": "",
@@ -1306,6 +1311,16 @@ def parse_hex_color(value, fallback):
     return fallback
 
 
+def get_safe_frame_slice(value, fallback: dict) -> dict:
+    source = value if isinstance(value, dict) else {}
+    return {
+        "top": clamp_int(source.get("top"), 0, 96, int(fallback.get("top", 18))),
+        "right": clamp_int(source.get("right"), 0, 96, int(fallback.get("right", 18))),
+        "bottom": clamp_int(source.get("bottom"), 0, 96, int(fallback.get("bottom", 18))),
+        "left": clamp_int(source.get("left"), 0, 96, int(fallback.get("left", 18))),
+    }
+
+
 def with_alpha(color, opacity_percent: int) -> tuple[int, int, int, int]:
     alpha = clamp_int(opacity_percent, 0, 100, 100)
     return (*color, int(round(alpha * 2.55)))
@@ -1458,8 +1473,13 @@ def get_project_game_ui_config(project: dict | None) -> dict:
         "titleLogoAssetId": str(source.get("titleLogoAssetId") or "").strip(),
         "panelFrameAssetId": str(source.get("panelFrameAssetId") or "").strip(),
         "panelFrameOpacity": clamp_int(source.get("panelFrameOpacity"), 0, 100, base["panelFrameOpacity"]),
+        "panelFrameSlice": get_safe_frame_slice(source.get("panelFrameSlice"), base["panelFrameSlice"]),
         "buttonFrameAssetId": str(source.get("buttonFrameAssetId") or "").strip(),
+        "buttonHoverFrameAssetId": str(source.get("buttonHoverFrameAssetId") or "").strip(),
+        "buttonPressedFrameAssetId": str(source.get("buttonPressedFrameAssetId") or "").strip(),
+        "buttonDisabledFrameAssetId": str(source.get("buttonDisabledFrameAssetId") or "").strip(),
         "buttonFrameOpacity": clamp_int(source.get("buttonFrameOpacity"), 0, 100, base["buttonFrameOpacity"]),
+        "buttonFrameSlice": get_safe_frame_slice(source.get("buttonFrameSlice"), base["buttonFrameSlice"]),
         "saveSlotFrameAssetId": str(source.get("saveSlotFrameAssetId") or "").strip(),
         "systemPanelFrameAssetId": str(source.get("systemPanelFrameAssetId") or "").strip(),
         "uiOverlayAssetId": str(source.get("uiOverlayAssetId") or "").strip(),

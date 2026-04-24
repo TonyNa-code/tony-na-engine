@@ -328,8 +328,13 @@ class RunEditorSmokeTests(unittest.TestCase):
                 "titleLogoAssetId": "asset_title_logo",
                 "panelFrameAssetId": "asset_panel_frame",
                 "panelFrameOpacity": 41,
+                "panelFrameSlice": {"top": 12, "right": 18, "bottom": 20, "left": 14},
                 "buttonFrameAssetId": "asset_button_frame",
+                "buttonHoverFrameAssetId": "asset_button_hover",
+                "buttonPressedFrameAssetId": "asset_button_pressed",
+                "buttonDisabledFrameAssetId": "asset_button_disabled",
                 "buttonFrameOpacity": 36,
+                "buttonFrameSlice": {"top": 8, "right": 16, "bottom": 10, "left": 16},
                 "saveSlotFrameAssetId": "asset_save_frame",
                 "systemPanelFrameAssetId": "asset_system_frame",
                 "uiOverlayAssetId": "asset_overlay_grid",
@@ -385,8 +390,13 @@ class RunEditorSmokeTests(unittest.TestCase):
         self.assertEqual(saved_project["gameUiConfig"]["titleLogoAssetId"], "asset_title_logo")
         self.assertEqual(saved_project["gameUiConfig"]["panelFrameAssetId"], "asset_panel_frame")
         self.assertEqual(saved_project["gameUiConfig"]["panelFrameOpacity"], 41)
+        self.assertEqual(saved_project["gameUiConfig"]["panelFrameSlice"], {"top": 12, "right": 18, "bottom": 20, "left": 14})
         self.assertEqual(saved_project["gameUiConfig"]["buttonFrameAssetId"], "asset_button_frame")
+        self.assertEqual(saved_project["gameUiConfig"]["buttonHoverFrameAssetId"], "asset_button_hover")
+        self.assertEqual(saved_project["gameUiConfig"]["buttonPressedFrameAssetId"], "asset_button_pressed")
+        self.assertEqual(saved_project["gameUiConfig"]["buttonDisabledFrameAssetId"], "asset_button_disabled")
         self.assertEqual(saved_project["gameUiConfig"]["buttonFrameOpacity"], 36)
+        self.assertEqual(saved_project["gameUiConfig"]["buttonFrameSlice"], {"top": 8, "right": 16, "bottom": 10, "left": 16})
         self.assertEqual(saved_project["gameUiConfig"]["saveSlotFrameAssetId"], "asset_save_frame")
         self.assertEqual(saved_project["gameUiConfig"]["systemPanelFrameAssetId"], "asset_system_frame")
         self.assertEqual(saved_project["gameUiConfig"]["uiOverlayAssetId"], "asset_overlay_grid")
@@ -755,8 +765,11 @@ class RunEditorSmokeTests(unittest.TestCase):
                 "sidePanelWidth": 280,
                 "titleBackgroundFit": "contain",
                 "titleBackgroundOpacity": 33,
+                "panelFrameSlice": {"top": 9, "right": 11, "bottom": 13, "left": 15},
+                "buttonHoverFrameAssetId": "asset_button_hover",
                 "panelFrameOpacity": 22,
                 "buttonFrameOpacity": 12,
+                "buttonFrameSlice": {"top": 7, "right": 12, "bottom": 7, "left": 12},
                 "uiOverlayOpacity": 5,
             },
         )
@@ -831,6 +844,9 @@ class RunEditorSmokeTests(unittest.TestCase):
         self.assertEqual(game_data["project"]["gameUiConfig"]["sidePanelWidth"], 280)
         self.assertEqual(game_data["project"]["gameUiConfig"]["titleBackgroundFit"], "contain")
         self.assertEqual(game_data["project"]["gameUiConfig"]["titleBackgroundOpacity"], 33)
+        self.assertEqual(game_data["project"]["gameUiConfig"]["panelFrameSlice"], {"top": 9, "right": 11, "bottom": 13, "left": 15})
+        self.assertEqual(game_data["project"]["gameUiConfig"]["buttonHoverFrameAssetId"], "asset_button_hover")
+        self.assertEqual(game_data["project"]["gameUiConfig"]["buttonFrameSlice"], {"top": 7, "right": 12, "bottom": 7, "left": 12})
 
         app_builder_description = subprocess.run(
             [

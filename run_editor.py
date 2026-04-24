@@ -112,8 +112,13 @@ DEFAULT_GAME_UI_CONFIG = {
     "titleLogoAssetId": "",
     "panelFrameAssetId": "",
     "panelFrameOpacity": 18,
+    "panelFrameSlice": {"top": 24, "right": 24, "bottom": 24, "left": 24},
     "buttonFrameAssetId": "",
+    "buttonHoverFrameAssetId": "",
+    "buttonPressedFrameAssetId": "",
+    "buttonDisabledFrameAssetId": "",
     "buttonFrameOpacity": 24,
+    "buttonFrameSlice": {"top": 18, "right": 18, "bottom": 18, "left": 18},
     "saveSlotFrameAssetId": "",
     "systemPanelFrameAssetId": "",
     "uiOverlayAssetId": "",
@@ -590,7 +595,7 @@ def build_default_dialog_box_config() -> dict:
 
 
 def build_default_game_ui_config() -> dict:
-    return dict(DEFAULT_GAME_UI_CONFIG)
+    return json.loads(json.dumps(DEFAULT_GAME_UI_CONFIG, ensure_ascii=False))
 
 
 def sanitize_project_runtime_settings(value: object) -> dict:
@@ -653,6 +658,16 @@ def sanitize_dialog_box_config(value: object) -> dict:
 def sanitize_choice(value: object, allowed: set[str], fallback: str) -> str:
     normalized = str(value or fallback).strip().lower() or fallback
     return normalized if normalized in allowed else fallback
+
+
+def sanitize_ui_frame_slice(value: object, fallback: dict) -> dict:
+    source = value if isinstance(value, dict) else {}
+    return {
+        "top": clamp_int(source.get("top"), fallback.get("top", 18), 0, 96),
+        "right": clamp_int(source.get("right"), fallback.get("right", 18), 0, 96),
+        "bottom": clamp_int(source.get("bottom"), fallback.get("bottom", 18), 0, 96),
+        "left": clamp_int(source.get("left"), fallback.get("left", 18), 0, 96),
+    }
 
 
 def sanitize_game_ui_config(value: object) -> dict:
@@ -761,8 +776,13 @@ def sanitize_game_ui_config(value: object) -> dict:
         "titleLogoAssetId": str(source.get("titleLogoAssetId") or "").strip(),
         "panelFrameAssetId": str(source.get("panelFrameAssetId") or "").strip(),
         "panelFrameOpacity": clamp_int(source.get("panelFrameOpacity"), defaults["panelFrameOpacity"], 0, 100),
+        "panelFrameSlice": sanitize_ui_frame_slice(source.get("panelFrameSlice"), defaults["panelFrameSlice"]),
         "buttonFrameAssetId": str(source.get("buttonFrameAssetId") or "").strip(),
+        "buttonHoverFrameAssetId": str(source.get("buttonHoverFrameAssetId") or "").strip(),
+        "buttonPressedFrameAssetId": str(source.get("buttonPressedFrameAssetId") or "").strip(),
+        "buttonDisabledFrameAssetId": str(source.get("buttonDisabledFrameAssetId") or "").strip(),
         "buttonFrameOpacity": clamp_int(source.get("buttonFrameOpacity"), defaults["buttonFrameOpacity"], 0, 100),
+        "buttonFrameSlice": sanitize_ui_frame_slice(source.get("buttonFrameSlice"), defaults["buttonFrameSlice"]),
         "saveSlotFrameAssetId": str(source.get("saveSlotFrameAssetId") or "").strip(),
         "systemPanelFrameAssetId": str(source.get("systemPanelFrameAssetId") or "").strip(),
         "uiOverlayAssetId": str(source.get("uiOverlayAssetId") or "").strip(),

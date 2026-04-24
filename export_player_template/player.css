@@ -4582,10 +4582,13 @@ body::before {
   z-index: 0;
   pointer-events: none;
   border-radius: inherit;
-  background-image: var(--game-ui-panel-frame-image, none);
-  background-position: center;
-  background-repeat: no-repeat;
-  background-size: cover;
+  border-style: solid;
+  border-color: transparent;
+  border-width: var(--game-ui-panel-frame-width, 24px);
+  border-image-source: var(--game-ui-panel-frame-image, none);
+  border-image-slice: var(--game-ui-panel-frame-slice, 24 fill);
+  border-image-width: var(--game-ui-panel-frame-width, 24px);
+  border-image-repeat: stretch;
   opacity: var(--game-ui-panel-frame-opacity, 0);
   mix-blend-mode: screen;
 }
@@ -4604,15 +4607,45 @@ body::before {
   content: "";
   position: absolute;
   inset: 0;
-  z-index: -1;
+  z-index: 0;
   pointer-events: none;
   border-radius: inherit;
-  background-image: var(--game-ui-button-frame-image, none);
-  background-position: center;
-  background-repeat: no-repeat;
-  background-size: cover;
+  border-style: solid;
+  border-color: transparent;
+  border-width: var(--game-ui-button-frame-width, 18px);
+  border-image-source: var(--game-ui-button-frame-image, none);
+  border-image-slice: var(--game-ui-button-frame-slice, 18 fill);
+  border-image-width: var(--game-ui-button-frame-width, 18px);
+  border-image-repeat: stretch;
   opacity: var(--game-ui-button-frame-opacity, 0);
   mix-blend-mode: screen;
+  transform: none;
+}
+
+.pill-button > *,
+.continue-button > *,
+.choice-button > * {
+  position: relative;
+  z-index: 1;
+}
+
+.pill-button:hover::before,
+.continue-button:hover::before,
+.choice-button:hover::before {
+  border-image-source: var(--game-ui-button-hover-frame-image, var(--game-ui-button-frame-image, none));
+}
+
+.pill-button:active::before,
+.continue-button:active::before,
+.choice-button:active::before {
+  border-image-source: var(--game-ui-button-pressed-frame-image, var(--game-ui-button-frame-image, none));
+}
+
+.pill-button:disabled::before,
+.continue-button:disabled::before,
+.choice-button:disabled::before {
+  border-image-source: var(--game-ui-button-disabled-frame-image, var(--game-ui-button-frame-image, none));
+  filter: grayscale(0.45);
 }
 
 .save-slot-card {
@@ -4628,24 +4661,20 @@ body::before {
   z-index: 0;
   pointer-events: none;
   border-radius: inherit;
-  background-image:
-    var(--game-ui-save-slot-frame-image, none),
-    var(--game-ui-panel-frame-image, none);
-  background-size: cover, cover;
-  background-position: center, center;
-  background-repeat: no-repeat, no-repeat;
+  border-style: solid;
+  border-color: transparent;
+  border-width: var(--game-ui-panel-frame-width, 24px);
+  border-image-source: var(--game-ui-save-slot-frame-image, var(--game-ui-panel-frame-image, none));
+  border-image-slice: var(--game-ui-panel-frame-slice, 24 fill);
+  border-image-width: var(--game-ui-panel-frame-width, 24px);
+  border-image-repeat: stretch;
   opacity: var(--game-ui-panel-frame-opacity, 0);
   mix-blend-mode: screen;
 }
 
 .save-dialog::before,
 .save-dialog-system-settings::before {
-  background-image:
-    var(--game-ui-system-panel-frame-image, none),
-    var(--game-ui-panel-frame-image, none);
-  background-size: cover, cover;
-  background-position: center, center;
-  background-repeat: no-repeat, no-repeat;
+  border-image-source: var(--game-ui-system-panel-frame-image, var(--game-ui-panel-frame-image, none));
 }
 
 html[data-game-ui-layout="cinematic"] .player-layout,

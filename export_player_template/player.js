@@ -1262,8 +1262,13 @@ const DEFAULT_PROJECT_GAME_UI_CONFIG = {
   titleLogoAssetId: "",
   panelFrameAssetId: "",
   panelFrameOpacity: 18,
+  panelFrameSlice: { top: 24, right: 24, bottom: 24, left: 24 },
   buttonFrameAssetId: "",
+  buttonHoverFrameAssetId: "",
+  buttonPressedFrameAssetId: "",
+  buttonDisabledFrameAssetId: "",
   buttonFrameOpacity: 24,
+  buttonFrameSlice: { top: 18, right: 18, bottom: 18, left: 18 },
   saveSlotFrameAssetId: "",
   systemPanelFrameAssetId: "",
   uiOverlayAssetId: "",
@@ -4782,6 +4787,16 @@ function getSafeProjectGameUiTitleCardAnchor(value) {
     : DEFAULT_PROJECT_GAME_UI_CONFIG.titleCardAnchor;
 }
 
+function getSafeGameUiFrameSlice(value, fallback = { top: 18, right: 18, bottom: 18, left: 18 }) {
+  const source = value && typeof value === "object" ? value : {};
+  return {
+    top: clamp(getSafeNumber(source.top, fallback.top), 0, 96),
+    right: clamp(getSafeNumber(source.right, fallback.right), 0, 96),
+    bottom: clamp(getSafeNumber(source.bottom, fallback.bottom), 0, 96),
+    left: clamp(getSafeNumber(source.left, fallback.left), 0, 96),
+  };
+}
+
 function getProjectGameUiPresetConfig(preset) {
   const safePreset = getSafeProjectGameUiPreset(preset);
   return {
@@ -4832,8 +4847,13 @@ function getProjectGameUiConfig(project = data.project) {
     titleLogoAssetId: String(source.titleLogoAssetId ?? "").trim(),
     panelFrameAssetId: String(source.panelFrameAssetId ?? "").trim(),
     panelFrameOpacity: clamp(getSafeNumber(source.panelFrameOpacity, base.panelFrameOpacity), 0, 100),
+    panelFrameSlice: getSafeGameUiFrameSlice(source.panelFrameSlice, base.panelFrameSlice),
     buttonFrameAssetId: String(source.buttonFrameAssetId ?? "").trim(),
+    buttonHoverFrameAssetId: String(source.buttonHoverFrameAssetId ?? "").trim(),
+    buttonPressedFrameAssetId: String(source.buttonPressedFrameAssetId ?? "").trim(),
+    buttonDisabledFrameAssetId: String(source.buttonDisabledFrameAssetId ?? "").trim(),
     buttonFrameOpacity: clamp(getSafeNumber(source.buttonFrameOpacity, base.buttonFrameOpacity), 0, 100),
+    buttonFrameSlice: getSafeGameUiFrameSlice(source.buttonFrameSlice, base.buttonFrameSlice),
     saveSlotFrameAssetId: String(source.saveSlotFrameAssetId ?? "").trim(),
     systemPanelFrameAssetId: String(source.systemPanelFrameAssetId ?? "").trim(),
     uiOverlayAssetId: String(source.uiOverlayAssetId ?? "").trim(),
@@ -4846,6 +4866,19 @@ function cssUrlFromAssetId(assetId) {
   return assetUrl ? `url("${assetUrl.replace(/"/g, "%22")}")` : "none";
 }
 
+function cssImageWithFallback(assetId, fallbackImage = "none") {
+  const image = cssUrlFromAssetId(assetId);
+  return image === "none" ? fallbackImage : image;
+}
+
+function cssFrameSliceValue(slice) {
+  return `${slice.top} ${slice.right} ${slice.bottom} ${slice.left} fill`;
+}
+
+function cssFrameWidthValue(slice) {
+  return `${slice.top}px ${slice.right}px ${slice.bottom}px ${slice.left}px`;
+}
+
 function applyProjectGameUiSkin(project = data.project) {
   const config = getProjectGameUiConfig(project);
   const root = document.documentElement;
@@ -4853,6 +4886,8 @@ function applyProjectGameUiSkin(project = data.project) {
   const panelStrong = toRgbaString(config.panelColor, Math.min(100, config.panelOpacity + 8));
   const border = toRgbaString(config.borderColor, config.borderOpacity);
   const lowMotion = config.motionIntensity <= 15 ? "0" : "1";
+  const panelFrameImage = cssUrlFromAssetId(config.panelFrameAssetId);
+  const buttonFrameImage = cssUrlFromAssetId(config.buttonFrameAssetId);
 
   root.dataset.gameUiPreset = config.preset;
   root.dataset.gameUiLayout = config.layoutPreset;
@@ -4897,12 +4932,19 @@ function applyProjectGameUiSkin(project = data.project) {
   root.style.setProperty("--game-ui-title-bg-image", cssUrlFromAssetId(config.titleBackgroundAssetId));
   root.style.setProperty("--game-ui-title-bg-fit", config.titleBackgroundFit);
   root.style.setProperty("--game-ui-title-bg-opacity", (config.titleBackgroundOpacity / 100).toFixed(2));
-  root.style.setProperty("--game-ui-panel-frame-image", cssUrlFromAssetId(config.panelFrameAssetId));
+  root.style.setProperty("--game-ui-panel-frame-image", panelFrameImage);
   root.style.setProperty("--game-ui-panel-frame-opacity", (config.panelFrameOpacity / 100).toFixed(2));
-  root.style.setProperty("--game-ui-button-frame-image", cssUrlFromAssetId(config.buttonFrameAssetId));
+  root.style.setProperty("--game-ui-panel-frame-slice", cssFrameSliceValue(config.panelFrameSlice));
+  root.style.setProperty("--game-ui-panel-frame-width", cssFrameWidthValue(config.panelFrameSlice));
+  root.style.setProperty("--game-ui-button-frame-image", buttonFrameImage);
+  root.style.setProperty("--game-ui-button-hover-frame-image", cssImageWithFallback(config.buttonHoverFrameAssetId, buttonFrameImage));
+  root.style.setProperty("--game-ui-button-pressed-frame-image", cssImageWithFallback(config.buttonPressedFrameAssetId, buttonFrameImage));
+  root.style.setProperty("--game-ui-button-disabled-frame-image", cssImageWithFallback(config.buttonDisabledFrameAssetId, buttonFrameImage));
   root.style.setProperty("--game-ui-button-frame-opacity", (config.buttonFrameOpacity / 100).toFixed(2));
-  root.style.setProperty("--game-ui-save-slot-frame-image", cssUrlFromAssetId(config.saveSlotFrameAssetId));
-  root.style.setProperty("--game-ui-system-panel-frame-image", cssUrlFromAssetId(config.systemPanelFrameAssetId));
+  root.style.setProperty("--game-ui-button-frame-slice", cssFrameSliceValue(config.buttonFrameSlice));
+  root.style.setProperty("--game-ui-button-frame-width", cssFrameWidthValue(config.buttonFrameSlice));
+  root.style.setProperty("--game-ui-save-slot-frame-image", cssImageWithFallback(config.saveSlotFrameAssetId, panelFrameImage));
+  root.style.setProperty("--game-ui-system-panel-frame-image", cssImageWithFallback(config.systemPanelFrameAssetId, panelFrameImage));
   root.style.setProperty("--game-ui-overlay-image", cssUrlFromAssetId(config.uiOverlayAssetId));
   root.style.setProperty("--game-ui-overlay-opacity", (config.uiOverlayOpacity / 100).toFixed(2));
 

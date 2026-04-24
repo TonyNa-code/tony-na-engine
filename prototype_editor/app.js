@@ -1507,8 +1507,13 @@ const DEFAULT_PROJECT_GAME_UI_CONFIG = {
   titleLogoAssetId: "",
   panelFrameAssetId: "",
   panelFrameOpacity: 18,
+  panelFrameSlice: { top: 24, right: 24, bottom: 24, left: 24 },
   buttonFrameAssetId: "",
+  buttonHoverFrameAssetId: "",
+  buttonPressedFrameAssetId: "",
+  buttonDisabledFrameAssetId: "",
   buttonFrameOpacity: 24,
+  buttonFrameSlice: { top: 18, right: 18, bottom: 18, left: 18 },
   saveSlotFrameAssetId: "",
   systemPanelFrameAssetId: "",
   uiOverlayAssetId: "",
@@ -9114,6 +9119,16 @@ function getSafeProjectGameUiTitleCardAnchor(value) {
     : DEFAULT_PROJECT_GAME_UI_CONFIG.titleCardAnchor;
 }
 
+function getSafeGameUiFrameSlice(value, fallback = { top: 18, right: 18, bottom: 18, left: 18 }) {
+  const source = value && typeof value === "object" ? value : {};
+  return {
+    top: clamp(getSafeNumber(source.top, fallback.top), 0, 96),
+    right: clamp(getSafeNumber(source.right, fallback.right), 0, 96),
+    bottom: clamp(getSafeNumber(source.bottom, fallback.bottom), 0, 96),
+    left: clamp(getSafeNumber(source.left, fallback.left), 0, 96),
+  };
+}
+
 function getProjectGameUiPresetConfig(preset) {
   const safePreset = getSafeProjectGameUiPreset(preset);
   return {
@@ -9164,8 +9179,13 @@ function getProjectGameUiConfig(project = state.data?.project) {
     titleLogoAssetId: String(source.titleLogoAssetId ?? "").trim(),
     panelFrameAssetId: String(source.panelFrameAssetId ?? "").trim(),
     panelFrameOpacity: clamp(getSafeNumber(source.panelFrameOpacity, base.panelFrameOpacity), 0, 100),
+    panelFrameSlice: getSafeGameUiFrameSlice(source.panelFrameSlice, base.panelFrameSlice),
     buttonFrameAssetId: String(source.buttonFrameAssetId ?? "").trim(),
+    buttonHoverFrameAssetId: String(source.buttonHoverFrameAssetId ?? "").trim(),
+    buttonPressedFrameAssetId: String(source.buttonPressedFrameAssetId ?? "").trim(),
+    buttonDisabledFrameAssetId: String(source.buttonDisabledFrameAssetId ?? "").trim(),
     buttonFrameOpacity: clamp(getSafeNumber(source.buttonFrameOpacity, base.buttonFrameOpacity), 0, 100),
+    buttonFrameSlice: getSafeGameUiFrameSlice(source.buttonFrameSlice, base.buttonFrameSlice),
     saveSlotFrameAssetId: String(source.saveSlotFrameAssetId ?? "").trim(),
     systemPanelFrameAssetId: String(source.systemPanelFrameAssetId ?? "").trim(),
     uiOverlayAssetId: String(source.uiOverlayAssetId ?? "").trim(),
@@ -29562,6 +29582,40 @@ function buildGameUiAssetSelectOptions(selectedAssetId = "", allowedTypes = ["ui
   return options.join("");
 }
 
+function renderGameUiFrameSliceControls(idPrefix, title, slice) {
+  const fields = [
+    ["top", "上"],
+    ["right", "右"],
+    ["bottom", "下"],
+    ["left", "左"],
+  ];
+  return `
+    <div class="detail-card ui-frame-slice-card">
+      <strong>${escapeHtml(title)}</strong>
+      <p class="helper-text">九宫格边距会决定 UI 贴图四角不被拉伸，中间区域自动延展；适合按钮框、科幻边框、纸张卷轴等资源。</p>
+      <div class="playback-setting-grid dialog-config-grid">
+        ${fields
+          .map(
+            ([key, label]) => `
+              <label class="playback-setting">
+                <span>${label}边距</span>
+                <input
+                  id="${idPrefix}${key[0].toUpperCase()}${key.slice(1)}Input"
+                  type="number"
+                  min="0"
+                  max="96"
+                  step="1"
+                  value="${slice[key]}"
+                />
+              </label>
+            `
+          )
+          .join("")}
+      </div>
+    </div>
+  `;
+}
+
 function renderProjectRuntimeSettingsPanel() {
   const runtimeSettings = getProjectRuntimeSettings();
   const dialogBoxConfig = getProjectDialogBoxConfig();
@@ -29900,9 +29954,27 @@ function renderProjectRuntimeSettingsPanel() {
               </select>
             </label>
             <label class="playback-setting">
-              <span>按钮贴图</span>
+              <span>按钮默认贴图</span>
               <select id="projectGameUiButtonFrameAssetSelect">
                 ${buildGameUiAssetSelectOptions(gameUiConfig.buttonFrameAssetId, ["ui"], "不使用按钮贴图")}
+              </select>
+            </label>
+            <label class="playback-setting">
+              <span>按钮悬停贴图</span>
+              <select id="projectGameUiButtonHoverFrameAssetSelect">
+                ${buildGameUiAssetSelectOptions(gameUiConfig.buttonHoverFrameAssetId, ["ui"], "沿用默认按钮贴图")}
+              </select>
+            </label>
+            <label class="playback-setting">
+              <span>按钮按下贴图</span>
+              <select id="projectGameUiButtonPressedFrameAssetSelect">
+                ${buildGameUiAssetSelectOptions(gameUiConfig.buttonPressedFrameAssetId, ["ui"], "沿用默认按钮贴图")}
+              </select>
+            </label>
+            <label class="playback-setting">
+              <span>按钮禁用贴图</span>
+              <select id="projectGameUiButtonDisabledFrameAssetSelect">
+                ${buildGameUiAssetSelectOptions(gameUiConfig.buttonDisabledFrameAssetId, ["ui"], "沿用默认按钮贴图")}
               </select>
             </label>
             <label class="playback-setting">
@@ -29924,6 +29996,8 @@ function renderProjectRuntimeSettingsPanel() {
               </select>
             </label>
           </div>
+          ${renderGameUiFrameSliceControls("projectGameUiPanelFrameSlice", "面板 / 存档 / 弹窗九宫格", gameUiConfig.panelFrameSlice)}
+          ${renderGameUiFrameSliceControls("projectGameUiButtonFrameSlice", "按钮九宫格", gameUiConfig.buttonFrameSlice)}
           <div class="playback-setting-grid dialog-config-grid dialog-config-colors">
             <label class="playback-setting">
               <span>背景色</span>
@@ -30042,7 +30116,7 @@ function renderProjectRuntimeSettingsPanel() {
               导出网页包检查外观
             </button>
           </div>
-          <div class="detail-meta">当前覆盖标题页、系统菜单、存档/读档、EXTRA/图鉴弹窗、侧栏、按钮、HUD、布局位置和 UI 贴图绑定；后续可以继续扩到九宫格切片、逐状态按钮和更细的组件状态样式。</div>
+          <div class="detail-meta">当前覆盖标题页、系统菜单、存档/读档、EXTRA/图鉴弹窗、侧栏、按钮、HUD、布局位置、UI 贴图绑定、九宫格拉伸和按钮多状态贴图。</div>
         </section>
       </div>
     </article>
@@ -30075,6 +30149,18 @@ function readProjectDialogBoxConfigFromInputs() {
   });
 }
 
+function readGameUiFrameSliceFromInputs(idPrefix, fallbackSlice) {
+  return getSafeGameUiFrameSlice(
+    {
+      top: document.getElementById(`${idPrefix}TopInput`)?.value,
+      right: document.getElementById(`${idPrefix}RightInput`)?.value,
+      bottom: document.getElementById(`${idPrefix}BottomInput`)?.value,
+      left: document.getElementById(`${idPrefix}LeftInput`)?.value,
+    },
+    fallbackSlice
+  );
+}
+
 function readProjectGameUiConfigFromInputs() {
   const currentConfig = getProjectGameUiConfig();
   return getProjectGameUiConfig({
@@ -30101,8 +30187,13 @@ function readProjectGameUiConfigFromInputs() {
       titleLogoAssetId: document.getElementById("projectGameUiTitleLogoAssetSelect")?.value,
       panelFrameAssetId: document.getElementById("projectGameUiPanelFrameAssetSelect")?.value,
       panelFrameOpacity: document.getElementById("projectGameUiPanelFrameOpacityInput")?.value,
+      panelFrameSlice: readGameUiFrameSliceFromInputs("projectGameUiPanelFrameSlice", currentConfig.panelFrameSlice),
       buttonFrameAssetId: document.getElementById("projectGameUiButtonFrameAssetSelect")?.value,
+      buttonHoverFrameAssetId: document.getElementById("projectGameUiButtonHoverFrameAssetSelect")?.value,
+      buttonPressedFrameAssetId: document.getElementById("projectGameUiButtonPressedFrameAssetSelect")?.value,
+      buttonDisabledFrameAssetId: document.getElementById("projectGameUiButtonDisabledFrameAssetSelect")?.value,
       buttonFrameOpacity: document.getElementById("projectGameUiButtonFrameOpacityInput")?.value,
+      buttonFrameSlice: readGameUiFrameSliceFromInputs("projectGameUiButtonFrameSlice", currentConfig.buttonFrameSlice),
       saveSlotFrameAssetId: document.getElementById("projectGameUiSaveSlotFrameAssetSelect")?.value,
       systemPanelFrameAssetId: document.getElementById("projectGameUiSystemPanelFrameAssetSelect")?.value,
       uiOverlayAssetId: document.getElementById("projectGameUiOverlayAssetSelect")?.value,
@@ -30256,6 +30347,14 @@ function applyProjectGameUiPreset(preset) {
     projectGameUiPanelFrameOpacityInput: nextConfig.panelFrameOpacity,
     projectGameUiButtonFrameOpacityInput: nextConfig.buttonFrameOpacity,
     projectGameUiOverlayOpacityInput: nextConfig.uiOverlayOpacity,
+    projectGameUiPanelFrameSliceTopInput: nextConfig.panelFrameSlice.top,
+    projectGameUiPanelFrameSliceRightInput: nextConfig.panelFrameSlice.right,
+    projectGameUiPanelFrameSliceBottomInput: nextConfig.panelFrameSlice.bottom,
+    projectGameUiPanelFrameSliceLeftInput: nextConfig.panelFrameSlice.left,
+    projectGameUiButtonFrameSliceTopInput: nextConfig.buttonFrameSlice.top,
+    projectGameUiButtonFrameSliceRightInput: nextConfig.buttonFrameSlice.right,
+    projectGameUiButtonFrameSliceBottomInput: nextConfig.buttonFrameSlice.bottom,
+    projectGameUiButtonFrameSliceLeftInput: nextConfig.buttonFrameSlice.left,
     projectGameUiBackgroundColorInput: nextConfig.backgroundColor,
     projectGameUiBackgroundAccentColorInput: nextConfig.backgroundAccentColor,
     projectGameUiPanelColorInput: nextConfig.panelColor,
@@ -30285,6 +30384,9 @@ function applyProjectGameUiPreset(preset) {
     "projectGameUiTitleLogoAssetSelect",
     "projectGameUiPanelFrameAssetSelect",
     "projectGameUiButtonFrameAssetSelect",
+    "projectGameUiButtonHoverFrameAssetSelect",
+    "projectGameUiButtonPressedFrameAssetSelect",
+    "projectGameUiButtonDisabledFrameAssetSelect",
     "projectGameUiSaveSlotFrameAssetSelect",
     "projectGameUiSystemPanelFrameAssetSelect",
     "projectGameUiOverlayAssetSelect",
