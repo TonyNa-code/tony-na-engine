@@ -8,6 +8,18 @@
 
 - [`../../../RELEASE_P0.md`](../../../RELEASE_P0.md)
 
+生成上传清单、哈希和可复制 Release 正文：
+
+```bash
+python3 tools/release/prepare_preview_release.py
+```
+
+如果需要额外扫描旧用户名、真实姓名或其他私密字符串，不要把这些词写进仓库文件；用本地环境变量临时传入：
+
+```bash
+TNE_PRIVACY_EXTRA_PATTERNS="old-real-name,old-username" python3 tools/release/prepare_preview_release.py
+```
+
 维护者发布时应保持以下口径：
 
 - 使用 `Preview`、`Early Access` 或 `source-available preview`。

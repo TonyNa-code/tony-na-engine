@@ -31,7 +31,8 @@ Before publishing, scan staged files and the full tracked tree for:
 Recommended scan:
 
 ```bash
-rg -n --hidden --glob '!.git/**' --glob '!exports/**' --glob '!projects/**' --glob '!.export_runtime_cache/**' --glob '!__pycache__/**' --glob '!*.pyc' "najinxiang|/Users/na|na@|BEGIN [A-Z ]*PRIVATE KEY|password|token|secret|api[_-]?key" .
+TNE_PRIVACY_EXTRA_PATTERNS="old-real-name,old-username" python3 tools/release/prepare_preview_release.py
+rg -n --hidden --glob '!.git/**' --glob '!exports/**' --glob '!projects/**' --glob '!.export_runtime_cache/**' --glob '!__pycache__/**' --glob '!*.pyc' "BEGIN [A-Z ]*PRIVATE KEY|ghp_|github_pat_|password\\s*[:=]|secret\\s*[:=]|api[_-]?key\\s*[:=]" .
 find . -path './.git' -prune -o -path './exports' -prune -o -path './projects' -prune -o -path './.export_runtime_cache' -prune -o -type f -size +20M -print
 ```
 

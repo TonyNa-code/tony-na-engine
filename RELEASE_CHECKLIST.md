@@ -32,6 +32,7 @@ node --check export_player_template/player.js
 - Confirm the native Runtime release check has `summary.errors` equal to `0`.
 - Confirm no local privacy-sensitive files are staged, especially certificates, keys, local project exports, or signing env files.
 - Confirm GitHub Actions has passed both backend smoke and Playwright browser smoke tests on the release commit.
+- Run `python3 tools/release/prepare_preview_release.py` and review the generated upload manifest before creating the GitHub Release.
 
 ## Native Runtime Preview Gate
 

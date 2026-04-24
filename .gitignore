@@ -15,6 +15,7 @@ projects/
 .pytest_cache/
 playwright-report/
 test-results/
+release_preview/
 
 *.log
 *.tmp
