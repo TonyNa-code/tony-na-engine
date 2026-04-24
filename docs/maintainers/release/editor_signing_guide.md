@@ -19,6 +19,7 @@
 - `publisherName`
 - `companyName`
 - `website`
+- `supportUrl`
 - `supportEmail`
 - `copyright`
 

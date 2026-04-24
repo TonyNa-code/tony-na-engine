@@ -344,7 +344,8 @@ def build_default_editor_distribution_config() -> dict:
         "bundleIdentifier": "com.tonyna.engine.editor",
         "publisherName": "Tony Na",
         "companyName": "Tony Na Engine Project",
-        "website": "",
+        "website": "https://github.com/TonyNa-code/tony-na-engine",
+        "supportUrl": "https://github.com/TonyNa-code/tony-na-engine/issues",
         "supportEmail": "",
         "copyright": "Copyright (c) 2026 Tony Na Engine Contributors",
         "macOS": {
@@ -410,6 +411,8 @@ def normalize_editor_distribution_config(raw_config: dict | None = None) -> dict
     merged["publisherName"] = str(merged.get("publisherName") or "Tony Na").strip() or "Tony Na"
     merged["companyName"] = str(merged.get("companyName") or merged["publisherName"]).strip() or merged["publisherName"]
     merged["website"] = str(merged.get("website") or "").strip()
+    default_support_url = "https://github.com/TonyNa-code/tony-na-engine/issues"
+    merged["supportUrl"] = str(merged.get("supportUrl") or merged["website"] or default_support_url).strip()
     merged["supportEmail"] = str(merged.get("supportEmail") or "").strip()
     merged["copyright"] = (
         str(merged.get("copyright") or "").strip() or "Copyright (c) 2026 Tony Na Engine Contributors"
@@ -4647,9 +4650,9 @@ def build_editor_windows_installer_script(config: dict) -> str:
     app_name = config.get("productName") or "Tony Na Engine Editor"
     app_id = (config.get("windows") or {}).get("appId") or config.get("bundleIdentifier") or "com.tonyna.engine.editor"
     publisher = (config.get("windows") or {}).get("publisher") or config.get("companyName") or "Tony Na Engine Project"
-    website = config.get("website") or "https://example.com"
-    support_url = config.get("website") or website
-    support_email = config.get("supportEmail") or "support@example.com"
+    website = config.get("website") or config.get("supportUrl") or "https://github.com/TonyNa-code/tony-na-engine"
+    support_url = config.get("supportUrl") or website
+    support_contact = config.get("supportEmail") or support_url
     output_base_name = build_editor_windows_installer_base_name(config)
     return f"""; Tony Na Engine Editor Windows 安装包脚本（Inno Setup）
 ; 用法：在 Windows 上安装 Inno Setup 后，直接编译这份 .iss。
@@ -4674,7 +4677,7 @@ UninstallDisplayIcon={{app}}\\app_icon.ico
 SetupIconFile=app_icon.ico
 LicenseFile=
 InfoBeforeFile=README_编辑器包先看这里.txt
-AppContact={support_email}
+AppContact={support_contact}
 
 [Files]
 Source: "editor_bundle\\*"; DestDir: "{{app}}\\editor_bundle"; Flags: recursesubdirs createallsubdirs ignoreversion
@@ -5181,6 +5184,7 @@ def build_editor_package_manifest(
             "publisherName": distribution_config.get("publisherName"),
             "companyName": distribution_config.get("companyName"),
             "website": distribution_config.get("website"),
+            "supportUrl": distribution_config.get("supportUrl"),
             "supportEmail": distribution_config.get("supportEmail"),
         },
         "editorPackage": {
@@ -5441,6 +5445,7 @@ def build_editor_suite_manifest(build_id: str, packages: list[dict], distributio
             "publisherName": distribution_config.get("publisherName"),
             "companyName": distribution_config.get("companyName"),
             "website": distribution_config.get("website"),
+            "supportUrl": distribution_config.get("supportUrl"),
             "supportEmail": distribution_config.get("supportEmail"),
         },
         "packages": packages,

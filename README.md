@@ -35,9 +35,9 @@ Tony Na Engine 当前更适合这样理解：
 
 当前版本已经具备较完整的编辑器能力、导出能力和自动化测试基础，但仍然保留以下发布边界：
 
-- 自动化测试已经比较完整
-- 但完整人工逐按钮长流程点测还没有全部做完
-- 因此当前更适合作为**源码可见预览版**使用，而不是完全稳定的正式商业版
+- 已接入后端 smoke、浏览器 Playwright smoke 和发布前自检脚本
+- 适合做小型项目试制、导出链验证、功能体验和问题反馈
+- 仍按 **Preview / Early Access** 口径发布；正式商业稳定版会在签名、公证、安装器和长流程点测进一步完成后单独标记
 
 ## 当前已经有的核心能力
 
@@ -117,8 +117,9 @@ python run_editor.py
 
 - `编辑器本体`
   - 可在 GitHub Releases 下载：
-    - 编辑器桌面包
-    - 三系统编辑器套装
+    - `macos.tar.gz`
+    - `windows.zip`
+    - `linux.tar.gz`
   - 当前支持：
     - Windows
     - macOS
@@ -142,6 +143,7 @@ python run_editor.py
 - `Windows / macOS / Linux 桌面包` 当前主要走 NW.js 桌面 Runtime
 - `原生 Runtime 包` 是正在推进中的新路线，当前已经覆盖标题页主菜单、基础剧情主链、正式存档/读档、系统菜单设置项、玩家档案/自动续玩、基础粒子与镜头演出、视频卡片系统播放器桥接，以及第一批资料馆和详情查看能力；导出包内会附带发布前自检报告、崩溃日志能力和 PyInstaller 脚本，可在 macOS / Windows / Linux 目标系统继续打成 Preview App
 - `手机端 Runtime` 目前处于实验规划阶段，不走 PyInstaller；更适合先用 WebView / 网页 Runtime 验证触控和音频策略，再决定是否做 Android / iOS 独立原生壳
+- Release 附件应优先使用发布工具生成的清单校验；维护者可运行 `python3 tools/release/prepare_preview_release.py --release-tag v0.1.0-preview` 检查 GitHub Release 页面是否漏传或混入旧包
 - 发布前建议按 [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md) 做一次 Preview 发布体检
 - 最后发布闸门可参考 [`RELEASE_P0.md`](RELEASE_P0.md)，GitHub Release 正文草稿可参考 [`docs/github/preview-release-draft.md`](docs/github/preview-release-draft.md)
 

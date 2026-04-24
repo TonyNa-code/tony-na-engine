@@ -3,7 +3,8 @@
   "bundleIdentifier": "com.tonyna.engine.editor",
   "publisherName": "Tony Na",
   "companyName": "Tony Na Engine Project",
-  "website": "",
+  "website": "https://github.com/TonyNa-code/tony-na-engine",
+  "supportUrl": "https://github.com/TonyNa-code/tony-na-engine/issues",
   "supportEmail": "",
   "copyright": "Copyright (c) 2026 Tony Na Engine Contributors",
   "macOS": {
