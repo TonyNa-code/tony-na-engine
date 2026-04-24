@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/github/tn-engine-hero.svg" alt="Tony Na Engine hero" width="100%" />
+  <img src="docs/github/tn-engine-hero.png" alt="Tony Na Engine hero" width="100%" />
 </p>
 
 <h1 align="center">Tony Na Engine</h1>
