@@ -48,15 +48,18 @@
         },
         {
           "id": "block_003",
-          "type": "sfx_play",
-          "assetId": "sfx_school_bell"
-        },
-        {
-          "id": "block_004",
           "type": "character_show",
           "characterId": "char_linruoxi",
           "expressionId": "expr_smile",
           "position": "left",
+          "transition": "fade"
+        },
+        {
+          "id": "block_004",
+          "type": "character_show",
+          "characterId": "char_player",
+          "expressionId": "expr_default",
+          "position": "center",
           "transition": "fade"
         },
         {

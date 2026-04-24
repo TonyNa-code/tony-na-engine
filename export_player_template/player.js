@@ -12,6 +12,13 @@ const refs = {
   fadeLayer: document.getElementById("fadeLayer"),
   flashLayer: document.getElementById("flashLayer"),
   spriteLayer: document.getElementById("spriteLayer"),
+  videoOverlay: document.getElementById("videoOverlay"),
+  runtimeVideo: document.getElementById("runtimeVideo"),
+  videoOverlayTitle: document.getElementById("videoOverlayTitle"),
+  videoSkipButton: document.getElementById("videoSkipButton"),
+  creditsOverlay: document.getElementById("creditsOverlay"),
+  creditsRoll: document.getElementById("creditsRoll"),
+  creditsSkipButton: document.getElementById("creditsSkipButton"),
   sceneChip: document.getElementById("sceneChip"),
   musicChip: document.getElementById("musicChip"),
   backgroundLabel: document.getElementById("backgroundLabel"),
@@ -212,6 +219,10 @@ const state = {
   typingActive: false,
   voiceAudio: null,
   currentVoiceStepKey: null,
+  videoPlaybackStepKey: null,
+  videoPlaybackCleanup: null,
+  creditsPlaybackStepKey: null,
+  creditsPlaybackTimer: null,
   autoAdvanceTimer: null,
   autoAdvanceStepKey: null,
   dialogHidden: false,
@@ -1140,6 +1151,18 @@ const DEPTH_BLUR_STRENGTH_LABELS = {
   strong: "更明显",
 };
 
+const VIDEO_FIT_LABELS = {
+  contain: "完整显示",
+  cover: "铺满裁切",
+  fill: "拉伸填满",
+};
+
+const CREDITS_BACKGROUND_LABELS = {
+  dark: "深色电影片尾",
+  light: "浅色清爽片尾",
+  transparent: "叠在当前画面上",
+};
+
 const TEXT_SPEED_LABELS = {
   slow: "慢一点",
   normal: "正常",
@@ -1148,9 +1171,11 @@ const TEXT_SPEED_LABELS = {
 };
 
 const DIALOG_THEME_LABELS = {
+  project: "项目样式",
   warm: "暖光标准",
   moonlight: "夜色月光",
   paper: "纸页回忆",
+  transparent: "透明无框",
 };
 
 const UI_THEME_MODE_LABELS = {
@@ -1161,7 +1186,7 @@ const UI_THEME_MODE_LABELS = {
 
 const PLAYBACK_DEFAULTS = {
   textSpeed: "normal",
-  dialogTheme: "warm",
+  dialogTheme: "project",
   uiThemeMode: "auto",
   autoPlay: false,
   skipRead: false,
@@ -1172,8 +1197,286 @@ const PLAYBACK_DEFAULTS = {
 };
 
 const SAVE_SHORTCUT_COUNT = 3;
-const FORMAL_SAVE_SLOT_COUNT = 24;
 const SAVE_DIALOG_PAGE_SIZE = 6;
+const DEFAULT_PROJECT_RUNTIME_SETTINGS = {
+  formalSaveSlotCount: 24,
+};
+const DEFAULT_PROJECT_DIALOG_BOX_CONFIG = {
+  preset: "moonlight",
+  shape: "rounded",
+  widthPercent: 76,
+  minHeight: 148,
+  paddingX: 18,
+  paddingY: 14,
+  backgroundColor: "#0c1422",
+  backgroundOpacity: 92,
+  borderColor: "#79dcff",
+  borderOpacity: 18,
+  textColor: "#f3f6ff",
+  speakerColor: "#ffffff",
+  hintColor: "#c8d6ea",
+  blurStrength: 10,
+  borderWidth: 1,
+  shadowStrength: 30,
+  panelAssetId: "",
+  panelAssetOpacity: 0,
+  panelAssetFit: "cover",
+  anchor: "bottom",
+  offsetXPercent: 0,
+  offsetYPercent: 0,
+};
+const DEFAULT_PROJECT_GAME_UI_CONFIG = {
+  preset: "stellar",
+  layoutPreset: "balanced",
+  titleLayout: "center",
+  fontStyle: "modern",
+  surfaceStyle: "glass",
+  brandMode: "project",
+  sidePanelMode: "full",
+  sidePanelPosition: "right",
+  topbarPosition: "top",
+  hudPosition: "top",
+  titleCardAnchor: "center",
+  titleCardOffsetXPercent: 0,
+  titleCardOffsetYPercent: 0,
+  layoutGap: 20,
+  sidePanelWidth: 320,
+  backgroundColor: "#071120",
+  backgroundAccentColor: "#6bd5ff",
+  panelColor: "#0c1422",
+  panelOpacity: 88,
+  textColor: "#f3f7ff",
+  mutedTextColor: "#bacce4",
+  accentColor: "#79dcff",
+  accentAltColor: "#7b7cff",
+  buttonTextColor: "#f8fcff",
+  borderColor: "#79dcff",
+  borderOpacity: 18,
+  cornerRadius: 22,
+  backdropBlur: 14,
+  stageVignette: 42,
+  motionIntensity: 70,
+  titleBackgroundAssetId: "",
+  titleBackgroundFit: "cover",
+  titleBackgroundOpacity: 42,
+  titleLogoAssetId: "",
+  panelFrameAssetId: "",
+  panelFrameOpacity: 18,
+  buttonFrameAssetId: "",
+  buttonFrameOpacity: 24,
+  saveSlotFrameAssetId: "",
+  systemPanelFrameAssetId: "",
+  uiOverlayAssetId: "",
+  uiOverlayOpacity: 8,
+};
+const PROJECT_GAME_UI_PRESETS = {
+  stellar: DEFAULT_PROJECT_GAME_UI_CONFIG,
+  warm: {
+    preset: "warm",
+    layoutPreset: "balanced",
+    titleLayout: "center",
+    fontStyle: "rounded",
+    surfaceStyle: "glass",
+    brandMode: "project",
+    sidePanelMode: "full",
+    sidePanelPosition: "right",
+    topbarPosition: "top",
+    hudPosition: "top",
+    titleCardAnchor: "center",
+    titleCardOffsetXPercent: 0,
+    titleCardOffsetYPercent: 0,
+    layoutGap: 20,
+    sidePanelWidth: 320,
+    backgroundColor: "#fff4e8",
+    backgroundAccentColor: "#f0a35f",
+    panelColor: "#fff8ef",
+    panelOpacity: 92,
+    textColor: "#3d2a1f",
+    mutedTextColor: "#7a6252",
+    accentColor: "#d67245",
+    accentAltColor: "#f0b35d",
+    buttonTextColor: "#fffaf4",
+    borderColor: "#d67245",
+    borderOpacity: 20,
+    cornerRadius: 24,
+    backdropBlur: 10,
+    stageVignette: 28,
+    motionIntensity: 45,
+    titleBackgroundOpacity: 36,
+    titleBackgroundFit: "cover",
+    panelFrameOpacity: 14,
+    buttonFrameOpacity: 18,
+    uiOverlayOpacity: 5,
+  },
+  paper: {
+    preset: "paper",
+    layoutPreset: "compact",
+    titleLayout: "left",
+    fontStyle: "serif",
+    surfaceStyle: "solid",
+    brandMode: "project",
+    sidePanelMode: "compact",
+    sidePanelPosition: "left",
+    topbarPosition: "top",
+    hudPosition: "bottom-left",
+    titleCardAnchor: "left",
+    titleCardOffsetXPercent: 0,
+    titleCardOffsetYPercent: 0,
+    layoutGap: 16,
+    sidePanelWidth: 280,
+    backgroundColor: "#f7efe0",
+    backgroundAccentColor: "#b98a5d",
+    panelColor: "#fff9ed",
+    panelOpacity: 96,
+    textColor: "#3d2a1d",
+    mutedTextColor: "#806b57",
+    accentColor: "#9a683d",
+    accentAltColor: "#c09a64",
+    buttonTextColor: "#fffaf1",
+    borderColor: "#a5794e",
+    borderOpacity: 28,
+    cornerRadius: 12,
+    backdropBlur: 4,
+    stageVignette: 35,
+    motionIntensity: 25,
+    titleBackgroundOpacity: 28,
+    titleBackgroundFit: "cover",
+    panelFrameOpacity: 22,
+    buttonFrameOpacity: 12,
+    uiOverlayOpacity: 10,
+  },
+  minimal: {
+    preset: "minimal",
+    layoutPreset: "minimal",
+    titleLayout: "poster",
+    fontStyle: "modern",
+    surfaceStyle: "minimal",
+    brandMode: "hidden",
+    sidePanelMode: "hidden",
+    sidePanelPosition: "right",
+    topbarPosition: "hidden",
+    hudPosition: "hidden",
+    titleCardAnchor: "bottom",
+    titleCardOffsetXPercent: 0,
+    titleCardOffsetYPercent: -6,
+    layoutGap: 14,
+    sidePanelWidth: 260,
+    backgroundColor: "#05070c",
+    backgroundAccentColor: "#ffffff",
+    panelColor: "#05070c",
+    panelOpacity: 48,
+    textColor: "#f7f7f7",
+    mutedTextColor: "#c6c8cf",
+    accentColor: "#ffffff",
+    accentAltColor: "#aeb5c6",
+    buttonTextColor: "#101216",
+    borderColor: "#ffffff",
+    borderOpacity: 16,
+    cornerRadius: 10,
+    backdropBlur: 2,
+    stageVignette: 20,
+    motionIntensity: 10,
+    titleBackgroundOpacity: 24,
+    titleBackgroundFit: "cover",
+    panelFrameOpacity: 0,
+    buttonFrameOpacity: 0,
+    uiOverlayOpacity: 0,
+  },
+};
+const PROJECT_DIALOG_BOX_PRESETS = {
+  moonlight: {
+    preset: "moonlight",
+    shape: "rounded",
+    widthPercent: 76,
+    minHeight: 148,
+    paddingX: 18,
+    paddingY: 14,
+    backgroundColor: "#0c1422",
+    backgroundOpacity: 92,
+    borderColor: "#79dcff",
+    borderOpacity: 18,
+    textColor: "#f3f6ff",
+    speakerColor: "#ffffff",
+    hintColor: "#c8d6ea",
+    blurStrength: 10,
+    borderWidth: 1,
+    shadowStrength: 30,
+    panelAssetOpacity: 0,
+    panelAssetFit: "cover",
+    anchor: "bottom",
+    offsetXPercent: 0,
+    offsetYPercent: 0,
+  },
+  warm: {
+    preset: "warm",
+    shape: "rounded",
+    widthPercent: 76,
+    minHeight: 148,
+    paddingX: 16,
+    paddingY: 14,
+    backgroundColor: "#fffaf5",
+    backgroundOpacity: 92,
+    borderColor: "#8f6548",
+    borderOpacity: 18,
+    textColor: "#332117",
+    speakerColor: "#7f5438",
+    hintColor: "#6d5b4f",
+    blurStrength: 8,
+    borderWidth: 1,
+    shadowStrength: 18,
+    panelAssetOpacity: 0,
+    panelAssetFit: "cover",
+    anchor: "bottom",
+    offsetXPercent: 0,
+    offsetYPercent: 0,
+  },
+  paper: {
+    preset: "paper",
+    shape: "square",
+    widthPercent: 76,
+    minHeight: 156,
+    paddingX: 18,
+    paddingY: 16,
+    backgroundColor: "#fff7e8",
+    backgroundOpacity: 95,
+    borderColor: "#b08659",
+    borderOpacity: 28,
+    textColor: "#4a2f1d",
+    speakerColor: "#7f5438",
+    hintColor: "#7f6a54",
+    blurStrength: 4,
+    borderWidth: 1,
+    shadowStrength: 16,
+    panelAssetOpacity: 0,
+    panelAssetFit: "cover",
+    anchor: "bottom",
+    offsetXPercent: 0,
+    offsetYPercent: 0,
+  },
+  transparent: {
+    preset: "transparent",
+    shape: "capsule",
+    widthPercent: 88,
+    minHeight: 132,
+    paddingX: 14,
+    paddingY: 10,
+    backgroundColor: "#08111b",
+    backgroundOpacity: 0,
+    borderColor: "#7fe6ff",
+    borderOpacity: 0,
+    textColor: "#f4f8ff",
+    speakerColor: "#ffffff",
+    hintColor: "#d0daf0",
+    blurStrength: 0,
+    borderWidth: 0,
+    shadowStrength: 0,
+    panelAssetOpacity: 0,
+    panelAssetFit: "cover",
+    anchor: "bottom",
+    offsetXPercent: 0,
+    offsetYPercent: 0,
+  },
+};
 let musicRoomAudio = null;
 let voiceReplayAudio = null;
 let runtimeUiThemeAutoRefreshTimer = null;
@@ -1184,6 +1487,7 @@ function init() {
   applyProjectResolutionStyles();
   state.playback = loadStoredPlaybackSettings();
   applyRuntimeUiTheme(state.playback.uiThemeMode);
+  applyProjectGameUiSkin();
   state.autoResume = loadStoredAutoResume();
   state.readHistory = loadStoredReadHistory();
   state.saveSlots = loadStoredSaveSlots();
@@ -1204,6 +1508,8 @@ function init() {
   refs.gameMeta.textContent = buildMetaSummary();
   renderStartArtwork();
   refs.continueButton.addEventListener("click", handleContinue);
+  refs.videoSkipButton?.addEventListener("click", () => finishVideoPlayback({ skipped: true }));
+  refs.creditsSkipButton?.addEventListener("click", () => finishCreditsPlayback({ skipped: true }));
   refs.restartButton.addEventListener("click", startGame);
   refs.startButton.addEventListener("click", startGame);
   refs.startContinueButton?.addEventListener("click", continueLastSession);
@@ -1720,6 +2026,8 @@ function renderBeforeStart() {
   stopVoicePlayback();
   stopMusicRoomPreview();
   stopVoiceReplayPreview({ rerender: false });
+  stopVideoPlayback();
+  stopCreditsPlayback();
   state.dialogHidden = false;
   state.saveDialogPage = 0;
   state.systemMenuOpen = false;
@@ -1787,6 +2095,8 @@ function startGameFromScene(sceneId = getEntrySceneId()) {
   stopVoicePlayback();
   stopMusicRoomPreview();
   stopVoiceReplayPreview({ rerender: false });
+  stopVideoPlayback();
+  stopCreditsPlayback();
   state.dialogHidden = false;
   state.saveDialogOpen = false;
   state.saveDialogPage = 0;
@@ -1846,6 +2156,8 @@ function continueLastSession() {
   stopVoicePlayback();
   stopMusicRoomPreview();
   stopVoiceReplayPreview({ rerender: false });
+  stopVideoPlayback();
+  stopCreditsPlayback();
   state.dialogHidden = false;
   state.saveDialogOpen = false;
   state.saveDialogPage = 0;
@@ -1901,6 +2213,20 @@ function handleContinue() {
 
   if (snapshot.completed) {
     startGame();
+    return;
+  }
+
+  if (snapshot.blockType === "video_play") {
+    if (isMediaSnapshotSkippable(snapshot)) {
+      finishVideoPlayback({ skipped: true });
+    }
+    return;
+  }
+
+  if (snapshot.blockType === "credits_roll") {
+    if (isMediaSnapshotSkippable(snapshot)) {
+      finishCreditsPlayback({ skipped: true });
+    }
     return;
   }
 
@@ -4330,8 +4656,421 @@ function getTextSpeedLabel(speed) {
   return TEXT_SPEED_LABELS[getSafeTextSpeed(speed)];
 }
 
+function getSafeProjectFormalSaveSlotCount(value) {
+  return clamp(
+    Math.round(getSafeNumber(value, DEFAULT_PROJECT_RUNTIME_SETTINGS.formalSaveSlotCount)),
+    3,
+    120
+  );
+}
+
+function getProjectRuntimeSettings(project = data.project) {
+  const runtimeSettings = project?.runtimeSettings ?? {};
+  return {
+    formalSaveSlotCount: getSafeProjectFormalSaveSlotCount(runtimeSettings.formalSaveSlotCount),
+  };
+}
+
+function getProjectFormalSaveSlotCount(project = data.project) {
+  return getProjectRuntimeSettings(project).formalSaveSlotCount;
+}
+
+function getSafeProjectDialogBoxPreset(value) {
+  return value === "custom" || Object.hasOwn(PROJECT_DIALOG_BOX_PRESETS, value)
+    ? value
+    : DEFAULT_PROJECT_DIALOG_BOX_CONFIG.preset;
+}
+
+function getSafeProjectDialogBoxShape(value) {
+  return value === "square" || value === "capsule" || value === "rounded"
+    ? value
+    : DEFAULT_PROJECT_DIALOG_BOX_CONFIG.shape;
+}
+
+function getSafeProjectDialogBoxAnchor(value) {
+  return ["bottom", "center", "top", "free"].includes(value) ? value : DEFAULT_PROJECT_DIALOG_BOX_CONFIG.anchor;
+}
+
+function getProjectDialogBoxPresetConfig(preset) {
+  const safePreset = getSafeProjectDialogBoxPreset(preset);
+  return {
+    ...DEFAULT_PROJECT_DIALOG_BOX_CONFIG,
+    ...(PROJECT_DIALOG_BOX_PRESETS[safePreset] ?? {}),
+    preset: safePreset,
+  };
+}
+
+function getProjectDialogBoxConfig(project = data.project) {
+  const source = project?.dialogBoxConfig ?? {};
+  const base = getProjectDialogBoxPresetConfig(source.preset);
+  return {
+    ...base,
+    preset: getSafeProjectDialogBoxPreset(source.preset ?? base.preset),
+    shape: getSafeProjectDialogBoxShape(source.shape ?? base.shape),
+    widthPercent: clamp(getSafeNumber(source.widthPercent, base.widthPercent), 55, 100),
+    minHeight: clamp(getSafeNumber(source.minHeight, base.minHeight), 96, 320),
+    paddingX: clamp(getSafeNumber(source.paddingX, base.paddingX), 8, 72),
+    paddingY: clamp(getSafeNumber(source.paddingY, base.paddingY), 6, 48),
+    backgroundColor: getSafeParticleColor(source.backgroundColor, base.backgroundColor),
+    backgroundOpacity: clamp(getSafeNumber(source.backgroundOpacity, base.backgroundOpacity), 0, 100),
+    borderColor: getSafeParticleColor(source.borderColor, base.borderColor),
+    borderOpacity: clamp(getSafeNumber(source.borderOpacity, base.borderOpacity), 0, 100),
+    textColor: getSafeParticleColor(source.textColor, base.textColor),
+    speakerColor: getSafeParticleColor(source.speakerColor, base.speakerColor),
+    hintColor: getSafeParticleColor(source.hintColor, base.hintColor),
+    blurStrength: clamp(getSafeNumber(source.blurStrength, base.blurStrength), 0, 24),
+    borderWidth: clamp(getSafeNumber(source.borderWidth, base.borderWidth), 0, 4),
+    shadowStrength: clamp(getSafeNumber(source.shadowStrength, base.shadowStrength), 0, 48),
+    panelAssetId: String(source.panelAssetId ?? "").trim(),
+    panelAssetOpacity: clamp(getSafeNumber(source.panelAssetOpacity, base.panelAssetOpacity), 0, 100),
+    panelAssetFit: source.panelAssetFit === "contain" ? "contain" : "cover",
+    anchor: getSafeProjectDialogBoxAnchor(source.anchor ?? base.anchor),
+    offsetXPercent: clamp(getSafeNumber(source.offsetXPercent, base.offsetXPercent), -35, 35),
+    offsetYPercent: clamp(getSafeNumber(source.offsetYPercent, base.offsetYPercent), -35, 35),
+  };
+}
+
+function getSafeProjectGameUiPreset(value) {
+  return value === "custom" || Object.hasOwn(PROJECT_GAME_UI_PRESETS, value)
+    ? value
+    : DEFAULT_PROJECT_GAME_UI_CONFIG.preset;
+}
+
+function getSafeProjectGameUiLayoutPreset(value) {
+  return ["balanced", "cinematic", "compact", "minimal", "custom"].includes(value)
+    ? value
+    : DEFAULT_PROJECT_GAME_UI_CONFIG.layoutPreset;
+}
+
+function getSafeProjectGameUiTitleLayout(value) {
+  return ["center", "left", "poster"].includes(value) ? value : DEFAULT_PROJECT_GAME_UI_CONFIG.titleLayout;
+}
+
+function getSafeProjectGameUiFontStyle(value) {
+  return ["modern", "serif", "rounded"].includes(value) ? value : DEFAULT_PROJECT_GAME_UI_CONFIG.fontStyle;
+}
+
+function getSafeProjectGameUiSurfaceStyle(value) {
+  return ["glass", "solid", "minimal"].includes(value) ? value : DEFAULT_PROJECT_GAME_UI_CONFIG.surfaceStyle;
+}
+
+function getSafeProjectGameUiBrandMode(value) {
+  return ["project", "engine", "hidden"].includes(value) ? value : DEFAULT_PROJECT_GAME_UI_CONFIG.brandMode;
+}
+
+function getSafeProjectGameUiSidePanelMode(value) {
+  return ["full", "compact", "hidden"].includes(value) ? value : DEFAULT_PROJECT_GAME_UI_CONFIG.sidePanelMode;
+}
+
+function getSafeProjectGameUiSidePanelPosition(value) {
+  return ["right", "left"].includes(value) ? value : DEFAULT_PROJECT_GAME_UI_CONFIG.sidePanelPosition;
+}
+
+function getSafeProjectGameUiTopbarPosition(value) {
+  return ["top", "bottom", "hidden"].includes(value) ? value : DEFAULT_PROJECT_GAME_UI_CONFIG.topbarPosition;
+}
+
+function getSafeProjectGameUiHudPosition(value) {
+  return ["top", "top-left", "top-right", "bottom-left", "bottom-right", "hidden"].includes(value)
+    ? value
+    : DEFAULT_PROJECT_GAME_UI_CONFIG.hudPosition;
+}
+
+function getSafeProjectGameUiTitleCardAnchor(value) {
+  return ["center", "left", "right", "top", "bottom", "free"].includes(value)
+    ? value
+    : DEFAULT_PROJECT_GAME_UI_CONFIG.titleCardAnchor;
+}
+
+function getProjectGameUiPresetConfig(preset) {
+  const safePreset = getSafeProjectGameUiPreset(preset);
+  return {
+    ...DEFAULT_PROJECT_GAME_UI_CONFIG,
+    ...(PROJECT_GAME_UI_PRESETS[safePreset] ?? {}),
+    preset: safePreset,
+  };
+}
+
+function getProjectGameUiConfig(project = data.project) {
+  const source = project?.gameUiConfig ?? {};
+  const base = getProjectGameUiPresetConfig(source.preset);
+  return {
+    ...base,
+    preset: getSafeProjectGameUiPreset(source.preset ?? base.preset),
+    layoutPreset: getSafeProjectGameUiLayoutPreset(source.layoutPreset ?? base.layoutPreset),
+    titleLayout: getSafeProjectGameUiTitleLayout(source.titleLayout ?? base.titleLayout),
+    fontStyle: getSafeProjectGameUiFontStyle(source.fontStyle ?? base.fontStyle),
+    surfaceStyle: getSafeProjectGameUiSurfaceStyle(source.surfaceStyle ?? base.surfaceStyle),
+    brandMode: getSafeProjectGameUiBrandMode(source.brandMode ?? base.brandMode),
+    sidePanelMode: getSafeProjectGameUiSidePanelMode(source.sidePanelMode ?? base.sidePanelMode),
+    sidePanelPosition: getSafeProjectGameUiSidePanelPosition(source.sidePanelPosition ?? base.sidePanelPosition),
+    topbarPosition: getSafeProjectGameUiTopbarPosition(source.topbarPosition ?? base.topbarPosition),
+    hudPosition: getSafeProjectGameUiHudPosition(source.hudPosition ?? base.hudPosition),
+    titleCardAnchor: getSafeProjectGameUiTitleCardAnchor(source.titleCardAnchor ?? base.titleCardAnchor),
+    titleCardOffsetXPercent: clamp(getSafeNumber(source.titleCardOffsetXPercent, base.titleCardOffsetXPercent), -35, 35),
+    titleCardOffsetYPercent: clamp(getSafeNumber(source.titleCardOffsetYPercent, base.titleCardOffsetYPercent), -35, 35),
+    layoutGap: clamp(getSafeNumber(source.layoutGap, base.layoutGap), 8, 48),
+    sidePanelWidth: clamp(getSafeNumber(source.sidePanelWidth, base.sidePanelWidth), 240, 460),
+    backgroundColor: getSafeParticleColor(source.backgroundColor, base.backgroundColor),
+    backgroundAccentColor: getSafeParticleColor(source.backgroundAccentColor, base.backgroundAccentColor),
+    panelColor: getSafeParticleColor(source.panelColor, base.panelColor),
+    panelOpacity: clamp(getSafeNumber(source.panelOpacity, base.panelOpacity), 35, 100),
+    textColor: getSafeParticleColor(source.textColor, base.textColor),
+    mutedTextColor: getSafeParticleColor(source.mutedTextColor, base.mutedTextColor),
+    accentColor: getSafeParticleColor(source.accentColor, base.accentColor),
+    accentAltColor: getSafeParticleColor(source.accentAltColor, base.accentAltColor),
+    buttonTextColor: getSafeParticleColor(source.buttonTextColor, base.buttonTextColor),
+    borderColor: getSafeParticleColor(source.borderColor, base.borderColor),
+    borderOpacity: clamp(getSafeNumber(source.borderOpacity, base.borderOpacity), 0, 100),
+    cornerRadius: clamp(getSafeNumber(source.cornerRadius, base.cornerRadius), 4, 42),
+    backdropBlur: clamp(getSafeNumber(source.backdropBlur, base.backdropBlur), 0, 28),
+    stageVignette: clamp(getSafeNumber(source.stageVignette, base.stageVignette), 0, 80),
+    motionIntensity: clamp(getSafeNumber(source.motionIntensity, base.motionIntensity), 0, 100),
+    titleBackgroundAssetId: String(source.titleBackgroundAssetId ?? "").trim(),
+    titleBackgroundFit: source.titleBackgroundFit === "contain" ? "contain" : "cover",
+    titleBackgroundOpacity: clamp(getSafeNumber(source.titleBackgroundOpacity, base.titleBackgroundOpacity), 0, 100),
+    titleLogoAssetId: String(source.titleLogoAssetId ?? "").trim(),
+    panelFrameAssetId: String(source.panelFrameAssetId ?? "").trim(),
+    panelFrameOpacity: clamp(getSafeNumber(source.panelFrameOpacity, base.panelFrameOpacity), 0, 100),
+    buttonFrameAssetId: String(source.buttonFrameAssetId ?? "").trim(),
+    buttonFrameOpacity: clamp(getSafeNumber(source.buttonFrameOpacity, base.buttonFrameOpacity), 0, 100),
+    saveSlotFrameAssetId: String(source.saveSlotFrameAssetId ?? "").trim(),
+    systemPanelFrameAssetId: String(source.systemPanelFrameAssetId ?? "").trim(),
+    uiOverlayAssetId: String(source.uiOverlayAssetId ?? "").trim(),
+    uiOverlayOpacity: clamp(getSafeNumber(source.uiOverlayOpacity, base.uiOverlayOpacity), 0, 100),
+  };
+}
+
+function cssUrlFromAssetId(assetId) {
+  const assetUrl = getAssetUrl(assetId);
+  return assetUrl ? `url("${assetUrl.replace(/"/g, "%22")}")` : "none";
+}
+
+function applyProjectGameUiSkin(project = data.project) {
+  const config = getProjectGameUiConfig(project);
+  const root = document.documentElement;
+  const panel = toRgbaString(config.panelColor, config.panelOpacity);
+  const panelStrong = toRgbaString(config.panelColor, Math.min(100, config.panelOpacity + 8));
+  const border = toRgbaString(config.borderColor, config.borderOpacity);
+  const lowMotion = config.motionIntensity <= 15 ? "0" : "1";
+
+  root.dataset.gameUiPreset = config.preset;
+  root.dataset.gameUiLayout = config.layoutPreset;
+  root.dataset.gameUiTitleLayout = config.titleLayout;
+  root.dataset.gameUiFont = config.fontStyle;
+  root.dataset.gameUiSurface = config.surfaceStyle;
+  root.dataset.gameUiBrand = config.brandMode;
+  root.dataset.gameUiSidePanel = config.sidePanelMode;
+  root.dataset.gameUiSidePosition = config.sidePanelPosition;
+  root.dataset.gameUiTopbarPosition = config.topbarPosition;
+  root.dataset.gameUiHudPosition = config.hudPosition;
+  root.dataset.gameUiTitleAnchor = config.titleCardAnchor;
+  root.dataset.gameUiMotion = lowMotion === "0" ? "low" : "normal";
+  root.style.setProperty("--bg", config.backgroundColor);
+  root.style.setProperty("--panel", panel);
+  root.style.setProperty("--panel-strong", panelStrong);
+  root.style.setProperty("--line", border);
+  root.style.setProperty("--ink", config.textColor);
+  root.style.setProperty("--muted", config.mutedTextColor);
+  root.style.setProperty("--brand", config.accentColor);
+  root.style.setProperty("--brand-deep", config.accentAltColor);
+  root.style.setProperty("--accent", toRgbaString(config.accentColor, 18));
+  root.style.setProperty("--game-ui-bg", config.backgroundColor);
+  root.style.setProperty("--game-ui-bg-accent", config.backgroundAccentColor);
+  root.style.setProperty("--game-ui-panel", panel);
+  root.style.setProperty("--game-ui-panel-strong", panelStrong);
+  root.style.setProperty("--game-ui-line", border);
+  root.style.setProperty("--game-ui-text", config.textColor);
+  root.style.setProperty("--game-ui-muted", config.mutedTextColor);
+  root.style.setProperty("--game-ui-accent", config.accentColor);
+  root.style.setProperty("--game-ui-accent-alt", config.accentAltColor);
+  root.style.setProperty("--game-ui-button-text", config.buttonTextColor);
+  root.style.setProperty("--game-ui-radius", `${config.cornerRadius}px`);
+  root.style.setProperty("--game-ui-radius-large", `${Math.min(42, config.cornerRadius + 10)}px`);
+  root.style.setProperty("--game-ui-blur", `${config.backdropBlur}px`);
+  root.style.setProperty("--game-ui-stage-vignette", (config.stageVignette / 100).toFixed(2));
+  root.style.setProperty("--game-ui-motion-enabled", lowMotion);
+  root.style.setProperty("--game-ui-layout-gap", `${config.layoutGap}px`);
+  root.style.setProperty("--game-ui-side-panel-width", `${config.sidePanelWidth}px`);
+  root.style.setProperty("--game-ui-title-card-offset-x", `${config.titleCardOffsetXPercent}%`);
+  root.style.setProperty("--game-ui-title-card-offset-y", `${config.titleCardOffsetYPercent}%`);
+  root.style.setProperty("--game-ui-title-bg-image", cssUrlFromAssetId(config.titleBackgroundAssetId));
+  root.style.setProperty("--game-ui-title-bg-fit", config.titleBackgroundFit);
+  root.style.setProperty("--game-ui-title-bg-opacity", (config.titleBackgroundOpacity / 100).toFixed(2));
+  root.style.setProperty("--game-ui-panel-frame-image", cssUrlFromAssetId(config.panelFrameAssetId));
+  root.style.setProperty("--game-ui-panel-frame-opacity", (config.panelFrameOpacity / 100).toFixed(2));
+  root.style.setProperty("--game-ui-button-frame-image", cssUrlFromAssetId(config.buttonFrameAssetId));
+  root.style.setProperty("--game-ui-button-frame-opacity", (config.buttonFrameOpacity / 100).toFixed(2));
+  root.style.setProperty("--game-ui-save-slot-frame-image", cssUrlFromAssetId(config.saveSlotFrameAssetId));
+  root.style.setProperty("--game-ui-system-panel-frame-image", cssUrlFromAssetId(config.systemPanelFrameAssetId));
+  root.style.setProperty("--game-ui-overlay-image", cssUrlFromAssetId(config.uiOverlayAssetId));
+  root.style.setProperty("--game-ui-overlay-opacity", (config.uiOverlayOpacity / 100).toFixed(2));
+
+  const projectTitle = data.project?.title ?? "Tony Na Engine";
+  const topEyebrow = document.querySelector(".player-brand-copy .eyebrow");
+  const startEyebrow = document.querySelector(".start-card > .eyebrow");
+  const startBrandTitle = document.querySelector(".start-brand-copy strong");
+  const startBrandSubtitle = document.querySelector(".start-brand-copy span");
+  const logoUrl = getAssetUrl(config.titleLogoAssetId);
+  document.querySelectorAll(".player-brand-logo, .start-brand-logo-image").forEach((image) => {
+    if (logoUrl) {
+      image.src = logoUrl;
+    }
+  });
+
+  if (config.brandMode === "project") {
+    if (topEyebrow) {
+      topEyebrow.textContent = `${projectTitle} · Runtime`;
+    }
+    if (startEyebrow) {
+      startEyebrow.textContent = `${projectTitle} 导出试玩包`;
+    }
+    if (startBrandTitle) {
+      startBrandTitle.textContent = projectTitle;
+    }
+    if (startBrandSubtitle) {
+      startBrandSubtitle.textContent = "Visual Novel Runtime";
+    }
+  }
+}
+
+function getDialogThemeBaseColors(theme) {
+  if (theme === "moonlight") {
+    return {
+      backgroundColor: "#17233a",
+      backgroundOpacity: 92,
+      borderColor: "#a2c1ff",
+      borderOpacity: 24,
+      textColor: "#f4f7ff",
+      speakerColor: "#ffffff",
+      hintColor: "#d7e3ff",
+    };
+  }
+  if (theme === "paper") {
+    return {
+      backgroundColor: "#fff7e8",
+      backgroundOpacity: 95,
+      borderColor: "#b08659",
+      borderOpacity: 28,
+      textColor: "#4a2f1d",
+      speakerColor: "#7f5438",
+      hintColor: "#7f6a54",
+    };
+  }
+  if (theme === "transparent") {
+    return {
+      backgroundColor: "#08111b",
+      backgroundOpacity: 0,
+      borderColor: "#7fe6ff",
+      borderOpacity: 0,
+      textColor: "#f4f8ff",
+      speakerColor: "#ffffff",
+      hintColor: "#d0daf0",
+    };
+  }
+  return {
+    backgroundColor: "#fffaf5",
+    backgroundOpacity: 92,
+    borderColor: "#8f6548",
+    borderOpacity: 18,
+    textColor: "#332117",
+    speakerColor: "#7f5438",
+    hintColor: "#6d5b4f",
+  };
+}
+
+function toRgbaString(hexColor, opacityPercent) {
+  const safeHex = getSafeParticleColor(hexColor, "#ffffff").slice(1);
+  const red = Number.parseInt(safeHex.slice(0, 2), 16);
+  const green = Number.parseInt(safeHex.slice(2, 4), 16);
+  const blue = Number.parseInt(safeHex.slice(4, 6), 16);
+  const alpha = clamp(getSafeNumber(opacityPercent, 100), 0, 100) / 100;
+  return `rgba(${red}, ${green}, ${blue}, ${alpha.toFixed(2)})`;
+}
+
+function getDialogShapeRadius(shape, fallbackRadius = 18) {
+  const safeShape = getSafeProjectDialogBoxShape(shape);
+  if (safeShape === "square") {
+    return 6;
+  }
+  if (safeShape === "capsule") {
+    return 999;
+  }
+  return clamp(getSafeNumber(fallbackRadius, 18), 8, 42);
+}
+
+function getDialogPanelAssetUrl(assetId) {
+  const safeId = String(assetId ?? "").trim();
+  if (!safeId) {
+    return "";
+  }
+  const assetUrl = getAssetUrl(safeId);
+  return typeof assetUrl === "string" ? assetUrl : "";
+}
+
+function buildDialogBoxPresentation(theme, project = data.project) {
+  const safeTheme = getSafeDialogTheme(theme);
+  if (safeTheme !== "project") {
+    const base = getDialogThemeBaseColors(safeTheme);
+    const blurStrength = safeTheme === "paper" ? 4 : safeTheme === "transparent" ? 0 : 10;
+    const borderWidth = safeTheme === "transparent" ? 0 : 1;
+    const shadowStrength = safeTheme === "transparent" ? 0 : safeTheme === "moonlight" ? 32 : 18;
+    return {
+      theme: safeTheme,
+      assetUrl: "",
+      style: [
+        `--dialog-box-width: 76%;`,
+        `--dialog-box-min-height: 148px;`,
+        `--dialog-box-padding-x: 18px;`,
+        `--dialog-box-padding-y: 14px;`,
+        `--dialog-box-radius: ${getDialogShapeRadius("rounded", 18)}px;`,
+        `--dialog-box-bg: ${toRgbaString(base.backgroundColor, base.backgroundOpacity)};`,
+        `--dialog-box-border: ${toRgbaString(base.borderColor, base.borderOpacity)};`,
+        `--dialog-box-border-width: ${borderWidth}px;`,
+        `--dialog-box-text: ${base.textColor};`,
+        `--dialog-box-speaker: ${base.speakerColor};`,
+        `--dialog-box-hint: ${base.hintColor};`,
+        `--dialog-box-blur: ${blurStrength}px;`,
+        `--dialog-box-shadow-strength: ${shadowStrength};`,
+        `--dialog-box-art-opacity: 0;`,
+        `--dialog-box-art-fit: cover;`,
+        `--dialog-box-art-image: none;`,
+        `--dialog-box-offset-x: 0%;`,
+        `--dialog-box-offset-y: 0%;`,
+      ].join(" "),
+    };
+  }
+
+  const config = getProjectDialogBoxConfig(project);
+  const assetUrl = getDialogPanelAssetUrl(config.panelAssetId);
+  return {
+    theme: "project",
+    assetUrl,
+    style: [
+      `--dialog-box-width: ${config.widthPercent}%;`,
+      `--dialog-box-min-height: ${config.minHeight}px;`,
+      `--dialog-box-padding-x: ${config.paddingX}px;`,
+      `--dialog-box-padding-y: ${config.paddingY}px;`,
+      `--dialog-box-radius: ${getDialogShapeRadius(config.shape, config.shape === "rounded" ? 22 : 18)}px;`,
+      `--dialog-box-bg: ${toRgbaString(config.backgroundColor, config.backgroundOpacity)};`,
+      `--dialog-box-border: ${toRgbaString(config.borderColor, config.borderOpacity)};`,
+      `--dialog-box-border-width: ${config.borderWidth}px;`,
+      `--dialog-box-text: ${config.textColor};`,
+      `--dialog-box-speaker: ${config.speakerColor};`,
+      `--dialog-box-hint: ${config.hintColor};`,
+      `--dialog-box-blur: ${config.blurStrength}px;`,
+      `--dialog-box-shadow-strength: ${config.shadowStrength};`,
+      `--dialog-box-art-opacity: ${(config.panelAssetOpacity / 100).toFixed(2)};`,
+      `--dialog-box-art-fit: ${config.panelAssetFit};`,
+      `--dialog-box-offset-x: ${config.offsetXPercent}%;`,
+      `--dialog-box-offset-y: ${config.offsetYPercent}%;`,
+      assetUrl ? `--dialog-box-art-image: url("${assetUrl.replace(/"/g, "%22")}");` : `--dialog-box-art-image: none;`,
+    ].join(" "),
+  };
+}
+
 function getSafeDialogTheme(theme) {
-  return Object.hasOwn(DIALOG_THEME_LABELS, theme) ? theme : "warm";
+  return Object.hasOwn(DIALOG_THEME_LABELS, theme) ? theme : "project";
 }
 
 function getDialogThemeLabel(theme) {
@@ -5434,7 +6173,7 @@ function unlockExtraAsset(type, assetId) {
   return true;
 }
 function createEmptySaveSlots() {
-  return Array.from({ length: FORMAL_SAVE_SLOT_COUNT }, () => null);
+  return Array.from({ length: getProjectFormalSaveSlotCount() }, () => null);
 }
 
 function deepCloneRuntimeData(value) {
@@ -5537,6 +6276,7 @@ function loadStoredAutoResume() {
 
 function loadStoredSaveSlots() {
   const storage = getBrowserStorage();
+  const slotCount = getProjectFormalSaveSlotCount();
 
   if (!storage) {
     return createEmptySaveSlots();
@@ -5552,7 +6292,7 @@ function loadStoredSaveSlots() {
     const parsed = JSON.parse(raw);
     const sourceSlots = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.slots) ? parsed.slots : [];
 
-    return Array.from({ length: FORMAL_SAVE_SLOT_COUNT }, (_, index) => sanitizeStoredSaveSlot(sourceSlots[index]));
+    return Array.from({ length: slotCount }, (_, index) => sanitizeStoredSaveSlot(sourceSlots[index]));
   } catch (error) {
     return createEmptySaveSlots();
   }
@@ -5965,14 +6705,20 @@ function updateRuntimeAudioVolumes() {
 }
 
 function applyDialogTheme() {
-  const theme = getSafeDialogTheme(state.playback.dialogTheme);
+  const presentation = buildDialogBoxPresentation(state.playback.dialogTheme, data.project);
 
   if (refs.dialogPanel) {
-    refs.dialogPanel.dataset.dialogTheme = theme;
+    refs.dialogPanel.dataset.dialogTheme = presentation.theme;
+    refs.dialogPanel.setAttribute("style", presentation.style);
+    const artNode = refs.dialogPanel.querySelector(".dialog-panel-art");
+    if (artNode) {
+      artNode.classList.toggle("has-image", Boolean(presentation.assetUrl));
+    }
   }
 
   if (refs.stageFrame) {
-    refs.stageFrame.dataset.dialogTheme = theme;
+    refs.stageFrame.dataset.dialogTheme = presentation.theme;
+    refs.stageFrame.dataset.dialogAnchor = presentation.theme === "project" ? getProjectDialogBoxConfig(data.project).anchor : "bottom";
   }
 }
 
@@ -5996,6 +6742,7 @@ function scheduleRuntimeAutoAdvance(snapshot, options = {}) {
     (!autoPlayActive && !skipActive) ||
     !snapshot ||
     snapshot.completed ||
+    isBlockingMediaSnapshot(snapshot) ||
     snapshot.choiceOptions.length > 0
   ) {
     return;
@@ -6772,11 +7519,11 @@ function getSafeSaveSlotIndex(rawIndex) {
   }
 
   const nextIndex = numeric - 1;
-  return nextIndex >= 0 && nextIndex < FORMAL_SAVE_SLOT_COUNT ? nextIndex : null;
+  return nextIndex >= 0 && nextIndex < getProjectFormalSaveSlotCount() ? nextIndex : null;
 }
 
 function getSaveDialogPageCount() {
-  return Math.max(1, Math.ceil(FORMAL_SAVE_SLOT_COUNT / SAVE_DIALOG_PAGE_SIZE));
+  return Math.max(1, Math.ceil(getProjectFormalSaveSlotCount() / SAVE_DIALOG_PAGE_SIZE));
 }
 
 function getSafeSaveDialogPage(rawPage) {
@@ -7541,7 +8288,7 @@ function renderSaveDialogPager() {
       <div class="save-dialog-page-list">
         ${Array.from({ length: pageCount }, (_, index) => {
           const start = index * SAVE_DIALOG_PAGE_SIZE + 1;
-          const end = Math.min(FORMAL_SAVE_SLOT_COUNT, start + SAVE_DIALOG_PAGE_SIZE - 1);
+          const end = Math.min(getProjectFormalSaveSlotCount(), start + SAVE_DIALOG_PAGE_SIZE - 1);
           return `
             <button
               class="pill-button ${index === currentPage ? "" : "is-secondary"}"
@@ -8088,6 +8835,20 @@ function applyBlockToPreviewState(block, visualState, variables) {
       visualState.speakerName = "音乐";
       visualState.dialogueText = "背景音乐停止了。";
       return null;
+    case "video_play": {
+      const asset = data.assetsById.get(block.assetId);
+      visualState.speakerName = "视频播放";
+      visualState.dialogueText = `${block.title || asset?.name || block.assetId || "未选择视频"} 会以 ${getVideoFitLabel(
+        block.fit
+      )} 方式播放。`;
+      return null;
+    }
+    case "credits_roll":
+      visualState.speakerName = "片尾字幕";
+      visualState.dialogueText = `${block.title || "STAFF"} / ${getCreditsLines(block.lines).length} 行 / ${getSafeCreditsDuration(
+        block.durationSeconds
+      )} 秒。`;
+      return null;
     case "particle_effect": {
       const action = getSafeParticleAction(block.action);
       if (action === "stop") {
@@ -8443,17 +9204,28 @@ function renderRuntime() {
   refs.historyPanel.innerHTML = renderHistory(session);
   syncRuntimeDialoguePresentation(snapshot);
   refs.hintText.textContent = getPreviewHint(snapshot);
+  const isBlockingMedia = isBlockingMediaSnapshot(snapshot);
   refs.continueButton.textContent = snapshot.completed
     ? "重新开始"
+    : isBlockingMedia
+      ? isMediaSnapshotSkippable(snapshot)
+        ? snapshot.blockType === "credits_roll"
+          ? "跳过片尾"
+          : "跳过视频"
+        : "播放中"
     : isRuntimeTypewriterActive()
       ? "显示整句"
       : "继续";
-  refs.continueButton.disabled = !isRuntimeTypewriterActive() && snapshot.choiceOptions.length > 0;
+  refs.continueButton.disabled =
+    (isBlockingMedia && !isMediaSnapshotSkippable(snapshot)) ||
+    (!isRuntimeTypewriterActive() && snapshot.choiceOptions.length > 0);
   renderPlaybackControls(snapshot);
   renderStageVisual(snapshot);
   syncAudio(snapshot);
   syncVoice(snapshot);
   syncOneShotAudio(snapshot);
+  syncVideoPlayback(snapshot);
+  syncCreditsPlayback(snapshot);
   scheduleRuntimeAutoAdvance(snapshot);
 }
 
@@ -8692,6 +9464,196 @@ function syncOneShotAudio(snapshot) {
   audio.play().catch(cleanup);
 }
 
+function syncVideoPlayback(snapshot) {
+  if (snapshot?.blockType !== "video_play") {
+    stopVideoPlayback();
+    return;
+  }
+
+  const stepKey = getCurrentStepKey(snapshot);
+  if (state.videoPlaybackStepKey === stepKey) {
+    return;
+  }
+
+  stopVideoPlayback();
+  stopCreditsPlayback();
+
+  const block = snapshot.block ?? {};
+  const asset = data.assetsById.get(block.assetId);
+  const videoUrl = getAssetUrl(block.assetId);
+  const title = block.title || asset?.name || "视频播放";
+  const startTimeSeconds = getSafeVideoTime(block.startTimeSeconds, 0);
+  const endTimeSeconds = getSafeVideoTime(block.endTimeSeconds, 0);
+
+  state.videoPlaybackStepKey = stepKey;
+  refs.videoOverlay.hidden = false;
+  refs.videoOverlay.dataset.fit = getSafeVideoFit(block.fit);
+  refs.videoOverlayTitle.textContent = title;
+  refs.videoSkipButton.hidden = block.skippable === false;
+  refs.runtimeVideo.controls = true;
+  refs.runtimeVideo.volume = getSafeVideoVolume(block.volume) / 100;
+
+  const finish = () => {
+    if (state.videoPlaybackStepKey === stepKey) {
+      finishVideoPlayback();
+    }
+  };
+  const handleTimeUpdate = () => {
+    if (endTimeSeconds > 0 && refs.runtimeVideo.currentTime >= endTimeSeconds) {
+      finish();
+    }
+  };
+  const handleLoadedMetadata = () => {
+    if (startTimeSeconds > 0 && Number.isFinite(refs.runtimeVideo.duration)) {
+      refs.runtimeVideo.currentTime = Math.min(startTimeSeconds, Math.max(refs.runtimeVideo.duration - 0.08, 0));
+    }
+  };
+
+  refs.runtimeVideo.addEventListener("ended", finish);
+  refs.runtimeVideo.addEventListener("error", finish);
+  refs.runtimeVideo.addEventListener("loadedmetadata", handleLoadedMetadata);
+  refs.runtimeVideo.addEventListener("timeupdate", handleTimeUpdate);
+  state.videoPlaybackCleanup = () => {
+    refs.runtimeVideo.removeEventListener("ended", finish);
+    refs.runtimeVideo.removeEventListener("error", finish);
+    refs.runtimeVideo.removeEventListener("loadedmetadata", handleLoadedMetadata);
+    refs.runtimeVideo.removeEventListener("timeupdate", handleTimeUpdate);
+  };
+
+  if (!videoUrl) {
+    refs.videoOverlayTitle.textContent = `${title}（视频文件缺失）`;
+    refs.videoSkipButton.hidden = false;
+    refs.runtimeVideo.removeAttribute("src");
+    refs.runtimeVideo.load();
+    const missingVideoTimer = window.setTimeout(finish, 1600);
+    const cleanup = state.videoPlaybackCleanup;
+    state.videoPlaybackCleanup = () => {
+      if (typeof cleanup === "function") {
+        cleanup();
+      }
+      window.clearTimeout(missingVideoTimer);
+    };
+    return;
+  }
+
+  refs.runtimeVideo.src = encodeURI(videoUrl);
+  refs.runtimeVideo.load();
+  refs.runtimeVideo.play().catch(() => {
+    refs.videoOverlayTitle.textContent = `${title} · 点击视频画面播放`;
+  });
+}
+
+function stopVideoPlayback() {
+  if (typeof state.videoPlaybackCleanup === "function") {
+    state.videoPlaybackCleanup();
+  }
+
+  state.videoPlaybackCleanup = null;
+  state.videoPlaybackStepKey = null;
+
+  if (refs.runtimeVideo) {
+    refs.runtimeVideo.pause();
+    refs.runtimeVideo.removeAttribute("src");
+    refs.runtimeVideo.load();
+  }
+
+  if (refs.videoOverlay) {
+    refs.videoOverlay.hidden = true;
+  }
+}
+
+function finishVideoPlayback({ skipped = false } = {}) {
+  const snapshot = getCurrentSnapshot();
+  if (snapshot?.blockType !== "video_play") {
+    stopVideoPlayback();
+    return;
+  }
+
+  if (skipped && !isMediaSnapshotSkippable(snapshot)) {
+    return;
+  }
+
+  stopVideoPlayback();
+  movePreviewForward();
+  renderRuntime();
+}
+
+function syncCreditsPlayback(snapshot) {
+  if (snapshot?.blockType !== "credits_roll") {
+    stopCreditsPlayback();
+    return;
+  }
+
+  const stepKey = getCurrentStepKey(snapshot);
+  if (state.creditsPlaybackStepKey === stepKey) {
+    return;
+  }
+
+  stopCreditsPlayback();
+  stopVideoPlayback();
+
+  const block = snapshot.block ?? {};
+  const durationSeconds = getSafeCreditsDuration(block.durationSeconds);
+  const lines = getCreditsLines(block.lines);
+  state.creditsPlaybackStepKey = stepKey;
+  refs.creditsOverlay.hidden = false;
+  refs.creditsOverlay.dataset.background = getSafeCreditsBackground(block.background);
+  refs.creditsOverlay.style.setProperty("--credits-duration", `${durationSeconds}s`);
+  refs.creditsSkipButton.hidden = block.skippable === false;
+  refs.creditsRoll.innerHTML = `
+    <div class="credits-roll-inner">
+      <div class="credits-roll-kicker">Tony Na Engine</div>
+      <h2>${escapeHtml(block.title || "STAFF")}</h2>
+      ${block.subtitle ? `<p class="credits-roll-subtitle">${escapeHtml(block.subtitle)}</p>` : ""}
+      <div class="credits-roll-lines">
+        ${
+          lines.length > 0
+            ? lines.map((line) => `<p>${escapeHtml(line)}</p>`).join("")
+            : "<p>感谢游玩。</p>"
+        }
+      </div>
+    </div>
+  `;
+  state.creditsPlaybackTimer = window.setTimeout(() => {
+    if (state.creditsPlaybackStepKey === stepKey) {
+      finishCreditsPlayback();
+    }
+  }, durationSeconds * 1000);
+}
+
+function stopCreditsPlayback() {
+  if (state.creditsPlaybackTimer) {
+    window.clearTimeout(state.creditsPlaybackTimer);
+  }
+
+  state.creditsPlaybackTimer = null;
+  state.creditsPlaybackStepKey = null;
+
+  if (refs.creditsOverlay) {
+    refs.creditsOverlay.hidden = true;
+  }
+
+  if (refs.creditsRoll) {
+    refs.creditsRoll.innerHTML = "";
+  }
+}
+
+function finishCreditsPlayback({ skipped = false } = {}) {
+  const snapshot = getCurrentSnapshot();
+  if (snapshot?.blockType !== "credits_roll") {
+    stopCreditsPlayback();
+    return;
+  }
+
+  if (skipped && !isMediaSnapshotSkippable(snapshot)) {
+    return;
+  }
+
+  stopCreditsPlayback();
+  movePreviewForward();
+  renderRuntime();
+}
+
 function stopMusic() {
   if (state.bgmAudio) {
     state.bgmAudio.pause();
@@ -8720,6 +9682,14 @@ function getPreviewHint(snapshot) {
 
   if (snapshot.choiceOptions.length > 0) {
     return "需要先选择一个选项，剧情才会继续。";
+  }
+
+  if (snapshot.blockType === "video_play") {
+    return snapshot.block?.skippable === false ? "视频播放完后会自动继续。" : "视频播放完会自动继续，也可以跳过视频。";
+  }
+
+  if (snapshot.blockType === "credits_roll") {
+    return snapshot.block?.skippable === false ? "片尾字幕滚完后会自动继续。" : "片尾字幕滚完会自动继续，也可以跳过片尾。";
   }
 
   if (snapshot.completed) {
@@ -8844,6 +9814,8 @@ function getBlockLabel(type) {
     music_play: "播放音乐",
     music_stop: "停止音乐",
     sfx_play: "播放音效",
+    video_play: "播放视频",
+    credits_roll: "片尾字幕",
     particle_effect: "粒子特效",
     screen_shake: "屏幕震动",
     screen_flash: "闪屏",
@@ -8861,6 +9833,64 @@ function getBlockLabel(type) {
   };
 
   return labels[type] ?? type ?? "步骤";
+}
+
+function getSafeVideoFit(value) {
+  return Object.hasOwn(VIDEO_FIT_LABELS, value) ? value : "contain";
+}
+
+function getVideoFitLabel(value) {
+  return VIDEO_FIT_LABELS[getSafeVideoFit(value)] ?? VIDEO_FIT_LABELS.contain;
+}
+
+function getSafeVideoVolume(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) {
+    return 100;
+  }
+  return Math.round(clamp(number, 0, 100));
+}
+
+function getSafeVideoTime(value, fallback = 0) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 0) {
+    return fallback;
+  }
+  return number;
+}
+
+function getSafeCreditsDuration(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) {
+    return 18;
+  }
+  return Math.round(clamp(number, 4, 180));
+}
+
+function getSafeCreditsBackground(value) {
+  return Object.hasOwn(CREDITS_BACKGROUND_LABELS, value) ? value : "dark";
+}
+
+function getCreditsBackgroundLabel(value) {
+  return CREDITS_BACKGROUND_LABELS[getSafeCreditsBackground(value)] ?? CREDITS_BACKGROUND_LABELS.dark;
+}
+
+function getCreditsLines(lines) {
+  if (Array.isArray(lines)) {
+    return lines.map((line) => String(line ?? "").trim()).filter(Boolean);
+  }
+  return String(lines ?? "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function isBlockingMediaSnapshot(snapshot) {
+  return snapshot?.blockType === "video_play" || snapshot?.blockType === "credits_roll";
+}
+
+function isMediaSnapshotSkippable(snapshot) {
+  return snapshot?.block?.skippable !== false;
 }
 
 function getSafeParticleAction(action) {

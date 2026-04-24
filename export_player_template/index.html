@@ -61,7 +61,24 @@
           <div id="backgroundLabel" class="background-caption"></div>
           <div id="dialogHiddenHint" class="dialog-hidden-hint" hidden>对话框已隐藏，点画面、按 H 或右键恢复。</div>
 
+          <div id="videoOverlay" class="video-overlay" hidden>
+            <video id="runtimeVideo" class="runtime-video" playsinline preload="metadata"></video>
+            <div class="video-overlay-ui">
+              <span id="videoOverlayTitle">视频播放</span>
+              <button id="videoSkipButton" class="pill-button is-secondary" type="button">跳过视频</button>
+            </div>
+          </div>
+
+          <div id="creditsOverlay" class="credits-overlay" hidden>
+            <div class="credits-overlay-atmosphere" aria-hidden="true"></div>
+            <div id="creditsRoll" class="credits-roll"></div>
+            <button id="creditsSkipButton" class="pill-button is-secondary credits-skip-button" type="button">
+              跳过片尾
+            </button>
+          </div>
+
           <section class="dialog-panel">
+            <div class="dialog-panel-art" aria-hidden="true"></div>
             <div class="speaker-row">
               <span id="speakerName" class="speaker-name">Tony Na Engine</span>
               <span id="lineTypeTag" class="line-type-tag">准备</span>
@@ -137,9 +154,11 @@
                 <label class="playback-setting">
                   <span>对话框主题</span>
                   <select id="dialogThemeSelect">
-                    <option value="warm" selected>暖光标准</option>
+                    <option value="project" selected>项目样式</option>
+                    <option value="warm">暖光标准</option>
                     <option value="moonlight">夜色月光</option>
                     <option value="paper">纸页回忆</option>
+                    <option value="transparent">透明无框</option>
                   </select>
                 </label>
                 <label class="playback-setting">
@@ -393,9 +412,11 @@
               <label class="playback-setting">
                 <span>对话框主题</span>
                 <select id="menuDialogThemeSelect">
+                  <option value="project">项目样式</option>
                   <option value="warm">暖光标准</option>
                   <option value="moonlight">夜色月光</option>
                   <option value="paper">纸页回忆</option>
+                  <option value="transparent">透明无框</option>
                 </select>
               </label>
               <label class="playback-setting">

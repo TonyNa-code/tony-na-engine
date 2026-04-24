@@ -7593,3 +7593,91 @@ html[data-ui-theme="light"] .ui-theme-mode-button {
     height: 6px;
   }
 }
+
+/* === Project Dialog Box Designer === */
+
+.preview-stage .dialog-box {
+  position: absolute;
+  left: calc(50% + var(--dialog-box-offset-x, 0%));
+  right: auto;
+  top: auto;
+  bottom: 16px;
+  z-index: 5;
+  width: min(100%, var(--dialog-box-width, 76%));
+  min-height: var(--dialog-box-min-height, 148px);
+  padding: var(--dialog-box-padding-y, 14px) var(--dialog-box-padding-x, 18px);
+  border-radius: var(--dialog-box-radius, 18px);
+  background: var(--dialog-box-bg, rgba(12, 20, 34, 0.94));
+  border: var(--dialog-box-border-width, 1px) solid var(--dialog-box-border, rgba(121, 220, 255, 0.14));
+  backdrop-filter: blur(var(--dialog-box-blur, 10px));
+  box-shadow: 0 18px 42px rgba(3, 8, 18, calc(var(--dialog-box-shadow-strength, 18) / 100));
+  justify-self: center;
+  overflow: hidden;
+  isolation: isolate;
+  transform: translateX(-50%) translateY(var(--dialog-box-offset-y, 0%));
+}
+
+.stage-overlay[data-dialog-anchor="top"] .dialog-box {
+  top: 16px;
+  bottom: auto;
+}
+
+.stage-overlay[data-dialog-anchor="center"] .dialog-box,
+.stage-overlay[data-dialog-anchor="free"] .dialog-box {
+  top: calc(50% + var(--dialog-box-offset-y, 0%));
+  bottom: auto;
+  transform: translate(-50%, -50%);
+}
+
+.stage-overlay[data-dialog-anchor="bottom"] .dialog-box {
+  bottom: calc(16px - var(--dialog-box-offset-y, 0%));
+  transform: translateX(-50%);
+}
+
+.preview-stage .dialog-box > * {
+  position: relative;
+  z-index: 1;
+}
+
+.preview-stage .dialog-box .dialog-box-art {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  background-image: var(--dialog-box-art-image, none);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: var(--dialog-box-art-fit, cover);
+  opacity: var(--dialog-box-art-opacity, 0);
+  pointer-events: none;
+  mix-blend-mode: screen;
+}
+
+.preview-stage .dialog-box .dialog-box-art:not(.has-image) {
+  opacity: 0;
+}
+
+.preview-stage .dialog-box .dialog-speaker {
+  color: var(--dialog-box-speaker, inherit);
+}
+
+.preview-stage .dialog-box .dialog-text {
+  color: var(--dialog-box-text, inherit);
+}
+
+.preview-stage .dialog-box .preview-hint,
+.preview-stage .dialog-box .preview-choice-button span {
+  color: var(--dialog-box-hint, inherit);
+}
+
+.preview-stage .dialog-box .preview-choice-button {
+  border-color: var(--dialog-box-border, rgba(255, 255, 255, 0.18));
+}
+
+.preview-stage .dialog-box[data-dialog-theme="transparent"] {
+  box-shadow: none;
+}
+
+.preview-stage .dialog-box[data-dialog-theme="transparent"]::before {
+  opacity: 0;
+}

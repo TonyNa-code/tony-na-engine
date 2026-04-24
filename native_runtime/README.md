@@ -1,0 +1,226 @@
+# 原生 Runtime 包
+
+这是 Tony Na Engine 在“先原生化 Runtime，编辑器先保留网页技术”路线上的第一阶段预览。
+
+当前目标不是一次性替换现有网页播放器，而是先把最核心的剧情播放主链迁到真正不依赖 HTML 的桌面运行时里。
+
+## 当前已覆盖
+
+- 背景切换
+- 角色显示 / 隐藏
+- 台词 / 旁白
+- 选项
+- 跳转 / 条件分支
+- 基础变量修改
+- BGM / SFX / 语音播放
+- 第一版正式存档 / 快速存档
+- 可视化存档 / 读档面板
+- 基础系统菜单
+- 主题 / 显示模式 / 文字速度 / 四路音量设置
+- 玩家档案 / 自动续玩记录
+- 多馆标签页资料馆
+- 章节回放 / 音乐鉴赏 / CG 回想
+- 地点图鉴 / 角色图鉴 / 结局回放 / 成就馆
+- CG / 地点 / 角色 / 旁白 / 关系 / 成就详情查看页
+- 项目级正式存档位数量
+- 项目级文本框样式基础同步
+- 项目级成品 UI 皮肤颜色基础同步
+- 基础粒子特效表现
+- 基础镜头 / 闪屏 / 淡入淡出 / 滤镜 / 景深演出
+- PyInstaller 独立 App 打包脚手架
+
+## 当前还没完整平移
+
+- 粒子高级表现与更复杂的组合层
+- 系统菜单里的更多高级功能与细分设置
+- 资料馆里的高级筛选、排序和更多专属演出
+- 网页 Runtime 里的全部高级演出细节
+
+## 启动要求
+
+- Python 3.10+
+- `pygame-ce`
+
+安装命令：
+
+```bash
+python3 -m pip install -r requirements.txt
+```
+
+如果是在编辑器导出的原生 Runtime 包里运行，依赖文件会被改名为：
+
+```bash
+python3 -m pip install -r requirements-native-runtime.txt
+```
+
+## 快速验证
+
+```bash
+python3 runtime_player.py --validate-bundle .
+```
+
+## 发布前自检
+
+不启动窗口，输出发布前诊断报告。这个检查会覆盖入口场景、缺失素材、素材格式风险、大文件风险、存档位数量等：
+
+```bash
+python3 runtime_player.py --release-check .
+```
+
+## 快速启动
+
+```bash
+python3 runtime_player.py game_data.json
+```
+
+## 打包成独立 App
+
+导出的原生 Runtime 包已经包含 PyInstaller 打包入口。创作者在目标系统上执行对应脚本，就可以把 `runtime_player.py + game_data.json + 素材` 打进 `native_app_dist/`，同时生成 `native_app_package_manifest.json` 和一个用于上传到 Release 的 Preview zip：
+
+- macOS：双击 `打包原生Runtime应用.command`
+- Linux：运行 `./build_native_runtime_app.sh`
+- Windows：双击 `build_native_runtime_app.bat`
+
+也可以手动执行：
+
+```bash
+python3 -m pip install -r requirements.txt -r requirements-build.txt
+python3 build_native_runtime_app.py --mode onedir .
+```
+
+在编辑器导出的原生 Runtime 包中，对应命令是：
+
+```bash
+python3 -m pip install -r requirements-native-runtime.txt -r requirements-native-runtime-build.txt
+python3 build_native_runtime_app.py --mode onedir .
+```
+
+打包脚本默认会先运行 `python3 runtime_player.py --release-check .`。如果自检发现错误，会先停止打包，避免把明显缺素材或入口错误的版本发出去。
+
+如果想生成单文件可执行程序：
+
+```bash
+python3 build_native_runtime_app.py --mode onefile .
+```
+
+如果想覆盖应用名和 macOS Bundle Identifier：
+
+```bash
+python3 build_native_runtime_app.py --mode onedir --app-name YourGame --bundle-id com.tonyna.yourgame .
+```
+
+macOS 的 `onedir` 模式会在 `native_app_dist/` 下生成 `.app` 和一个同名运行目录。优先把 `.app` 作为本机测试对象；正式分发前再做签名、公证和完整点测。
+
+## 三系统分发状态
+
+PyInstaller 通常需要在目标系统本机打包，不建议期待从 macOS 直接交叉编译 Windows / Linux：
+
+- macOS：生成 `.app`，未签名/未公证时可作为 Preview 下载测试，正式公开分发需要 Developer ID 签名和 notarization。
+- Windows：在 Windows 上运行 `build_native_runtime_app.bat`，会生成 `.exe` 或 onedir 目录；未签名时 SmartScreen 可能提示未知发布者。
+- Linux：在 Linux 上运行 `./build_native_runtime_app.sh`，会生成 Linux 可执行目录；后续可继续封装 AppImage、deb/rpm 或 Flatpak。
+
+## 手机端状态
+
+手机端不走 PyInstaller，当前不能直接由这个脚本生成 Android APK 或 iOS IPA。可行路线分三档：
+
+- 近期可试：继续使用网页 Runtime / WebView 包装，先验证手机触控、横竖屏、音频策略和存档。
+- 中期路线：做独立 Android Runtime，把 `game_data.json` 映射到 Kivy / Python-for-Android 或 Godot 这类移动壳。
+- 长期路线：做 iOS / Android 双端原生 Runtime，共用项目格式，但渲染、音频、存档和商店发布链要单独实现。
+
+因此手机端现在应标记为实验规划，不建议和桌面原生 Runtime 混在同一个发布承诺里。
+
+Runtime 启动失败时，会在用户目录写入错误日志：
+
+```text
+~/.tony-na-engine/native-runtime-logs/
+```
+
+打包脚本不会替你做平台签名、公证或杀毒误报处理；正式公开发布前，仍建议在对应系统上做一次完整人工点测。
+
+## 第一版存档 / 读档
+
+当前已经支持：
+
+- `F5`：快速存档
+- `F8 / F9`：读入快速存档
+- `F6`：打开正式存档面板
+- `F7`：打开读档面板
+- `F11`：切换窗口 / 全屏
+- `F1 / Tab`：打开系统菜单
+- 系统菜单里的 `体验设置`：主题 / 显示模式 / 文字速度 / 四路音量
+- 系统菜单里的 `玩家档案`：本地游玩次数、累计时长、续玩次数
+- 系统菜单里的 `续玩记录`：读取或清除自动续玩位置
+- 系统菜单里的 `资料馆`：支持章节 / 音乐 / CG / 地点 / 角色 / 结局 / 成就标签切换
+- 资料馆里 `← / →`：切换馆页
+- `Ctrl + 1 / 2 / 3`：写入前 3 个正式存档位
+- `Ctrl + Shift + 1 / 2 / 3`：读入前 3 个正式存档位
+- `Esc`：关闭面板 / 退出预览
+
+存档文件会写到用户目录下：
+
+```text
+~/.tony-na-engine/native-runtime-saves/
+```
+
+玩家档案和续玩记录也会写到用户目录下：
+
+```text
+~/.tony-na-engine/native-runtime-profiles/
+~/.tony-na-engine/native-runtime-autoresume/
+```
+
+## 存档自检
+
+不启动窗口，只验证存档写入和读回：
+
+```bash
+python3 runtime_player.py --exercise-save-load .
+```
+
+## 存档面板摘要自检
+
+不启动窗口，输出当前项目的正式存档分页摘要：
+
+```bash
+python3 runtime_player.py --describe-save-dialog .
+```
+
+## 设置自检
+
+不启动窗口，验证主题 / 显示模式 / 文字速度 / 音量设置的写入与读回：
+
+```bash
+python3 runtime_player.py --exercise-settings .
+```
+
+## 资料馆进度自检
+
+不启动窗口，验证章节 / 音乐 / CG / 地点 / 角色 / 结局资料馆进度的写入与读回：
+
+```bash
+python3 runtime_player.py --exercise-archives .
+```
+
+## 粒子自检
+
+不启动窗口，验证当前项目里的粒子卡能否生成原生 Runtime 可播放条目：
+
+```bash
+python3 runtime_player.py --exercise-particles .
+```
+
+## 高级演出自检
+
+不启动窗口，验证镜头 / 闪屏 / 淡入淡出 / 滤镜 / 景深这类演出卡能否被原生 Runtime 规范化：
+
+```bash
+python3 runtime_player.py --exercise-visual-effects .
+```
+
+## 玩家档案自检
+
+不启动窗口，验证玩家档案和自动续玩记录的写入、读回与清除：
+
+```bash
+python3 runtime_player.py --exercise-profile .
+```

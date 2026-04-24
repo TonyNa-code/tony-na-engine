@@ -47,6 +47,7 @@ Tony Na Engine 当前更适合这样理解：
 - 角色、素材、台词台本、配音工作流
 - 项目巡检、一键发布前修复顺序、自动回归试玩路线测试
 - 正式存档 / 读档、系统菜单
+- 项目级成品 UI 皮肤、UI Kit 部件绑定、布局位置微调与视觉小说文本框设计
 - EXTRA 回想馆、图鉴馆、成就馆、章节回放、结局回放、语音回听
 - 高级粒子系统、项目级粒子预设库
 - 网页试玩包、Windows 桌面包、编辑器桌面包、三系统编辑器套装
@@ -91,6 +92,39 @@ git clone https://github.com/<your-github-account>/tony-na-engine.git
 cd tony-na-engine
 python3 run_editor.py
 ```
+
+## 下载成 App 形式
+
+如果只是想直接下载可运行包，而不是从源码启动：
+
+- `编辑器本体`
+  - 可在 GitHub Releases 下载：
+    - 编辑器桌面包
+    - 三系统编辑器套装
+  - 当前支持：
+    - Windows
+    - macOS
+    - Linux
+
+- `做完游戏后的成品`
+  - 可在编辑器的 `预览导出` 页直接导出：
+    - 网页试玩包
+    - Windows 桌面包
+    - macOS 桌面包
+    - Linux 桌面包
+    - 原生 Runtime 包（含独立 App 打包脚手架）
+
+当前说明可以简单理解成：
+
+- 想下载“引擎本体 App”，看 Releases 里的编辑器包
+- 想下载“游戏成品 App”，在项目里用导出功能生成
+
+说明：
+
+- `Windows / macOS / Linux 桌面包` 当前主要走 NW.js 桌面 Runtime
+- `原生 Runtime 包` 是正在推进中的新路线，当前已经覆盖基础剧情主链、正式存档/读档、系统菜单设置项、玩家档案/自动续玩、基础粒子与镜头演出，以及第一批资料馆和详情查看能力；导出包内会附带发布前自检报告、崩溃日志能力和 PyInstaller 脚本，可在 macOS / Windows / Linux 目标系统继续打成 Preview App
+- `手机端 Runtime` 目前处于实验规划阶段，不走 PyInstaller；更适合先用 WebView / 网页 Runtime 验证触控和音频策略，再决定是否做 Android / iOS 独立原生壳
+- 发布前建议按 [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md) 做一次 Preview 发布体检
 
 ## 测试
 
@@ -150,7 +184,7 @@ python3 -m unittest discover -s tests -p 'test_browser_playwright_smoke.py' -v
 
 - 源码可直接在本地启动与修改
 - 自动化测试已经接通
-- GitHub Releases 可用于提供编辑器预览包
+- GitHub Releases 可用于提供编辑器可运行包
 - 导出链和桌面打包链已经具备原型级完整度
 
 维护者相关的发布与签名资料已经挪到 `docs/maintainers/release` 与 `tools/release`，不再作为公开首页的主要内容展示。

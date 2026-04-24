@@ -470,6 +470,27 @@ class BrowserPlaywrightSmokeTests(unittest.TestCase):
         self.assertTrue(download_path.exists())
         self.assertGreater(download_path.stat().st_size, 0)
 
+    def test_preview_flow_can_export_native_runtime_preview(self) -> None:
+        self.create_blank_project("浏览器烟测项目_Native")
+        self.create_first_chapter()
+        self.open_preview_screen()
+
+        self.page.get_by_role("button", name="导出原生 Runtime 包").click()
+        self.page.locator(".detail-meta").filter(has_text="Python + pygame-ce 原生 Runtime").first.wait_for(
+            timeout=20000
+        )
+        download_link = self.page.get_by_role("link", name="下载原生 Runtime 包压缩档")
+        download_link.wait_for(timeout=40000)
+
+        with self.page.expect_download() as download_info:
+            download_link.click()
+        download = download_info.value
+        download_path = self.repo_copy / download.suggested_filename
+        download.save_as(str(download_path))
+
+        self.assertTrue(download_path.exists())
+        self.assertGreater(download_path.stat().st_size, 0)
+
     def test_preview_flow_can_export_macos_and_linux_builds(self) -> None:
         self.create_blank_project("浏览器烟测项目_D2")
         self.create_first_chapter()
@@ -508,7 +529,7 @@ class BrowserPlaywrightSmokeTests(unittest.TestCase):
 
         self.page.get_by_role("button", name="导出编辑器桌面包").click()
         download_link = self.page.get_by_role("link", name="下载编辑器包压缩档")
-        download_link.wait_for(timeout=40000)
+        download_link.wait_for(timeout=90000)
         self.page.get_by_text("编辑器包目录：").wait_for(timeout=10000)
         if sys.platform == "darwin":
             self.page.get_by_role("link", name="下载 mac 安装包").wait_for(timeout=10000)

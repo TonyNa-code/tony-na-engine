@@ -36,50 +36,6 @@
       "favorite": false
     },
     {
-      "id": "sprite_linruoxi_default",
-      "type": "sprite",
-      "name": "林若曦 默认",
-      "path": "assets/sprites/linruoxi_default.png",
-      "tags": [
-        "林若曦",
-        "默认"
-      ],
-      "favorite": false
-    },
-    {
-      "id": "sprite_linruoxi_smile",
-      "type": "sprite",
-      "name": "林若曦 微笑",
-      "path": "assets/sprites/linruoxi_smile.png",
-      "tags": [
-        "林若曦",
-        "微笑"
-      ],
-      "favorite": false
-    },
-    {
-      "id": "sprite_linruoxi_shy",
-      "type": "sprite",
-      "name": "林若曦 害羞",
-      "path": "assets/sprites/linruoxi_shy.png",
-      "tags": [
-        "林若曦",
-        "害羞"
-      ],
-      "favorite": false
-    },
-    {
-      "id": "sprite_player_default",
-      "type": "sprite",
-      "name": "顾言 默认",
-      "path": "assets/sprites/player_default.png",
-      "tags": [
-        "顾言",
-        "默认"
-      ],
-      "favorite": false
-    },
-    {
       "id": "bgm_after_school",
       "type": "bgm",
       "name": "放学路上",
@@ -87,17 +43,6 @@
       "tags": [
         "日常",
         "温柔"
-      ],
-      "favorite": false
-    },
-    {
-      "id": "sfx_school_bell",
-      "type": "sfx",
-      "name": "下课铃声",
-      "path": "assets/sfx/school_bell.wav",
-      "tags": [
-        "校园",
-        "环境音"
       ],
       "favorite": false
     },
@@ -138,20 +83,12 @@
       "id": "cg_twilight_memory",
       "type": "cg",
       "name": "黄昏回想",
-      "path": "assets/cg/twilight_memory.svg",
+      "path": "assets/cg/twilight_memory.png",
       "tags": [
         "回想",
         "黄昏",
         "林若曦"
       ],
-      "favorite": false
-    },
-    {
-      "id": "bg_masterpiece_best_quality_very_aesthetic_ultra_detailed_a_s_1465470723_upscayl_4x_upscayl_standard_4x",
-      "type": "background",
-      "name": "{{{masterpiece}}}, {{{best quality}}}, {{{very aesthetic}}}, {ultra detailed}, a s 1465470723 upscayl 4x upscayl standard 4x",
-      "path": "assets/backgrounds/masterpiece_best_quality_very_aesthetic_ultra-detailed_a_s-1465470723_upscayl_4x_upscayl-standard-4x.png",
-      "tags": [],
       "favorite": false
     }
   ]

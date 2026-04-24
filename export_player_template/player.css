@@ -278,6 +278,161 @@ button {
   font-size: 12px;
 }
 
+.video-overlay,
+.credits-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 12;
+  overflow: hidden;
+  border-radius: inherit;
+}
+
+.video-overlay[hidden],
+.credits-overlay[hidden] {
+  display: none;
+}
+
+.video-overlay {
+  display: grid;
+  place-items: center;
+  background: #030712;
+}
+
+.runtime-video {
+  width: 100%;
+  height: 100%;
+  background: #030712;
+  object-fit: contain;
+}
+
+.video-overlay[data-fit="cover"] .runtime-video {
+  object-fit: cover;
+}
+
+.video-overlay[data-fit="fill"] .runtime-video {
+  object-fit: fill;
+}
+
+.video-overlay-ui {
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  bottom: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: rgba(255, 255, 255, 0.94);
+  pointer-events: none;
+}
+
+.video-overlay-ui span {
+  max-width: min(560px, 70%);
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: rgba(5, 9, 20, 0.64);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.24);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.video-overlay-ui button {
+  pointer-events: auto;
+}
+
+.credits-overlay {
+  display: grid;
+  place-items: center;
+  padding: 42px;
+  color: rgba(255, 255, 255, 0.94);
+  background:
+    radial-gradient(circle at 50% 18%, rgba(95, 154, 255, 0.24), transparent 38%),
+    linear-gradient(180deg, rgba(4, 8, 20, 0.98), rgba(0, 0, 0, 0.98));
+}
+
+.credits-overlay[data-background="light"] {
+  color: rgba(31, 38, 56, 0.94);
+  background:
+    radial-gradient(circle at 50% 18%, rgba(119, 167, 255, 0.24), transparent 38%),
+    linear-gradient(180deg, rgba(248, 251, 255, 0.98), rgba(222, 231, 247, 0.98));
+}
+
+.credits-overlay[data-background="transparent"] {
+  background: rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(10px);
+}
+
+.credits-overlay-atmosphere {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.08), transparent),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.04) 0 1px, transparent 1px 96px);
+  opacity: 0.42;
+  animation: player-credits-glow 7s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+
+.credits-roll {
+  position: relative;
+  width: min(680px, 86%);
+  height: 78%;
+  overflow: hidden;
+  text-align: center;
+  mask-image: linear-gradient(180deg, transparent 0%, #000 18%, #000 78%, transparent 100%);
+}
+
+.credits-roll-inner {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  display: grid;
+  gap: 16px;
+  animation: player-credits-roll var(--credits-duration, 18s) linear forwards;
+}
+
+.credits-roll-kicker {
+  text-transform: uppercase;
+  letter-spacing: 0.32em;
+  font-size: 12px;
+  opacity: 0.62;
+}
+
+.credits-roll h2 {
+  margin: 0;
+  font-size: clamp(34px, 6vw, 76px);
+  letter-spacing: 0.08em;
+}
+
+.credits-roll-subtitle {
+  margin: 0;
+  font-size: clamp(16px, 2.2vw, 24px);
+  opacity: 0.72;
+}
+
+.credits-roll-lines {
+  display: grid;
+  gap: 10px;
+  margin-top: 20px;
+  font-size: clamp(15px, 2vw, 23px);
+  line-height: 1.7;
+}
+
+.credits-roll-lines p {
+  margin: 0;
+}
+
+.credits-skip-button {
+  position: absolute;
+  right: 18px;
+  bottom: 18px;
+  z-index: 2;
+}
+
 .sprite-layer {
   position: absolute;
   left: 20px;
@@ -609,6 +764,26 @@ button {
   }
   100% {
     transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes player-credits-roll {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(0, calc(-100% - 120vh), 0);
+  }
+}
+
+@keyframes player-credits-glow {
+  from {
+    opacity: 0.24;
+    transform: translate3d(-2%, 0, 0);
+  }
+  to {
+    opacity: 0.56;
+    transform: translate3d(2%, 0, 0);
   }
 }
 
@@ -3941,4 +4116,606 @@ html[data-ui-theme="light"] .player-theme-button {
   .player-theme-switch {
     width: 100%;
   }
+}
+
+/* === Project Dialog Box Designer === */
+
+.dialog-panel {
+  position: absolute;
+  left: calc(50% + var(--dialog-box-offset-x, 0%));
+  right: auto;
+  top: auto;
+  bottom: 18px;
+  z-index: 7;
+  width: min(100%, var(--dialog-box-width, 76%));
+  min-height: var(--dialog-box-min-height, 148px);
+  padding: var(--dialog-box-padding-y, 14px) var(--dialog-box-padding-x, 18px);
+  border-radius: var(--dialog-box-radius, 18px);
+  background: var(--dialog-box-bg, rgba(12, 20, 34, 0.94));
+  border: var(--dialog-box-border-width, 1px) solid var(--dialog-box-border, rgba(121, 220, 255, 0.14));
+  backdrop-filter: blur(var(--dialog-box-blur, 10px));
+  box-shadow: 0 18px 42px rgba(3, 8, 18, calc(var(--dialog-box-shadow-strength, 18) / 100));
+  overflow: hidden;
+  isolation: isolate;
+  transform: translateX(-50%) translateY(var(--dialog-box-offset-y, 0%));
+}
+
+.stage-frame[data-dialog-anchor="top"] .dialog-panel {
+  top: 18px;
+  bottom: auto;
+}
+
+.stage-frame[data-dialog-anchor="center"] .dialog-panel,
+.stage-frame[data-dialog-anchor="free"] .dialog-panel {
+  top: calc(50% + var(--dialog-box-offset-y, 0%));
+  bottom: auto;
+  transform: translate(-50%, -50%);
+}
+
+.stage-frame[data-dialog-anchor="bottom"] .dialog-panel {
+  bottom: calc(18px - var(--dialog-box-offset-y, 0%));
+  transform: translateX(-50%);
+}
+
+.dialog-panel > * {
+  position: relative;
+  z-index: 1;
+}
+
+.dialog-panel .dialog-panel-art {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  background-image: var(--dialog-box-art-image, none);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: var(--dialog-box-art-fit, cover);
+  opacity: var(--dialog-box-art-opacity, 0);
+  pointer-events: none;
+  mix-blend-mode: screen;
+}
+
+.dialog-panel .dialog-panel-art:not(.has-image) {
+  opacity: 0;
+}
+
+.dialog-panel .speaker-name {
+  color: var(--dialog-box-speaker, inherit);
+}
+
+.dialog-panel .message-text {
+  color: var(--dialog-box-text, inherit);
+}
+
+.dialog-panel .hint-text,
+.dialog-panel .choice-button span,
+.dialog-panel .line-type-tag {
+  color: var(--dialog-box-hint, inherit);
+}
+
+.dialog-panel .choice-button {
+  border-color: var(--dialog-box-border, rgba(255, 255, 255, 0.18));
+}
+
+.dialog-panel[data-dialog-theme="transparent"] {
+  box-shadow: none;
+}
+
+.dialog-panel[data-dialog-theme="transparent"]::before,
+.dialog-panel[data-dialog-theme="transparent"]::after {
+  opacity: 0;
+}
+
+/* === Project Game UI Skin === */
+
+body {
+  color: var(--game-ui-text, var(--ink));
+  background:
+    radial-gradient(circle at 18% 12%, color-mix(in srgb, var(--game-ui-bg-accent, #6bd5ff) 20%, transparent), transparent 28%),
+    radial-gradient(circle at 86% 8%, color-mix(in srgb, var(--game-ui-accent-alt, #7b7cff) 18%, transparent), transparent 24%),
+    linear-gradient(180deg, var(--game-ui-bg, var(--bg)) 0%, color-mix(in srgb, var(--game-ui-bg, #071120) 82%, #000 18%) 100%) !important;
+}
+
+.player-topbar h1,
+.start-card h2,
+.save-dialog-head h2,
+.side-card h2 {
+  color: var(--game-ui-text, var(--ink));
+}
+
+.player-brand-copy p,
+.player-brand-meta,
+.start-card p,
+.side-card p,
+.save-dialog-summary,
+.side-note,
+.info-row label,
+.summary-row label,
+.history-row .meta,
+.save-slot-time,
+.save-slot-meta p,
+.extra-gallery-card span,
+.ending-room-card p,
+.ending-room-meta {
+  color: var(--game-ui-muted, var(--muted)) !important;
+}
+
+.eyebrow,
+.save-slot-scene,
+.save-slot-block,
+.line-type-tag,
+.hud-chip {
+  color: var(--game-ui-accent, var(--brand));
+}
+
+.stage-frame,
+.side-card,
+.start-card,
+.save-dialog,
+.save-dialog-system-settings,
+.save-slot-card,
+.extra-hero-panel,
+.extra-gallery-card,
+.music-room-card,
+.ending-room-card,
+.character-expression-chip,
+.info-row,
+.history-row,
+.summary-row,
+.empty-note,
+.player-theme-switch {
+  border-radius: var(--game-ui-radius, 22px);
+  background:
+    linear-gradient(180deg, var(--game-ui-panel-strong, var(--panel-strong)), var(--game-ui-panel, var(--panel))),
+    radial-gradient(circle at top right, color-mix(in srgb, var(--game-ui-accent, #79dcff) 14%, transparent), transparent 44%) !important;
+  border-color: var(--game-ui-line, var(--line)) !important;
+  color: var(--game-ui-text, var(--ink));
+  backdrop-filter: blur(var(--game-ui-blur, 14px));
+}
+
+.stage-frame,
+.start-card,
+.save-dialog,
+.side-card {
+  border-radius: var(--game-ui-radius-large, 32px);
+}
+
+.pill-button,
+.continue-button,
+.choice-button {
+  color: var(--game-ui-button-text, #f8fcff);
+  border-color: var(--game-ui-line, rgba(121, 220, 255, 0.18));
+}
+
+.pill-button,
+.continue-button {
+  background:
+    linear-gradient(135deg, var(--game-ui-accent, var(--brand)), var(--game-ui-accent-alt, var(--brand-deep))),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.18), transparent) !important;
+}
+
+.pill-button.is-secondary,
+.choice-button {
+  color: var(--game-ui-text, var(--ink));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--game-ui-panel-strong, #0c1422) 92%, transparent), color-mix(in srgb, var(--game-ui-panel, #0c1422) 88%, transparent)),
+    radial-gradient(circle at top right, color-mix(in srgb, var(--game-ui-accent, #79dcff) 8%, transparent), transparent 42%) !important;
+}
+
+.stage-shade {
+  background:
+    linear-gradient(
+      180deg,
+      rgba(2, 6, 11, calc(var(--game-ui-stage-vignette, 0.42) * 0.28)) 0%,
+      rgba(2, 6, 11, 0.05) 28%,
+      rgba(2, 6, 11, var(--game-ui-stage-vignette, 0.42)) 100%
+    ) !important;
+}
+
+html[data-game-ui-font="serif"] body,
+html[data-game-ui-font="serif"] button {
+  font-family: "Songti SC", "STSong", "Noto Serif CJK SC", "Georgia", serif;
+}
+
+html[data-game-ui-font="rounded"] body,
+html[data-game-ui-font="rounded"] button {
+  font-family: "Avenir Next Rounded", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+html[data-game-ui-surface="solid"] .stage-frame,
+html[data-game-ui-surface="solid"] .side-card,
+html[data-game-ui-surface="solid"] .start-card,
+html[data-game-ui-surface="solid"] .save-dialog {
+  backdrop-filter: none;
+}
+
+html[data-game-ui-surface="minimal"] .stage-frame,
+html[data-game-ui-surface="minimal"] .side-card,
+html[data-game-ui-surface="minimal"] .start-card,
+html[data-game-ui-surface="minimal"] .save-dialog,
+html[data-game-ui-surface="minimal"] .save-slot-card,
+html[data-game-ui-surface="minimal"] .extra-hero-panel,
+html[data-game-ui-surface="minimal"] .ending-room-card,
+html[data-game-ui-surface="minimal"] .extra-gallery-card {
+  box-shadow: none !important;
+  backdrop-filter: none;
+}
+
+html[data-game-ui-brand="hidden"] .player-brand-logo,
+html[data-game-ui-brand="hidden"] .player-brand-meta,
+html[data-game-ui-brand="hidden"] .player-brand-copy .eyebrow,
+html[data-game-ui-brand="hidden"] .start-brand-banner,
+html[data-game-ui-brand="hidden"] .start-card > .eyebrow {
+  display: none !important;
+}
+
+html[data-game-ui-side-panel="compact"] .player-layout {
+  grid-template-columns: minmax(0, 2.8fr) minmax(260px, 0.72fr);
+}
+
+html[data-game-ui-side-panel="compact"] .side-card {
+  padding: 12px;
+}
+
+html[data-game-ui-side-panel="hidden"] .player-layout {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+html[data-game-ui-side-panel="hidden"] .side-panel {
+  display: none;
+}
+
+html[data-game-ui-motion="low"] *,
+html[data-game-ui-motion="low"] *::before,
+html[data-game-ui-motion="low"] *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+}
+
+/* === Project Layout Positioning === */
+
+.player-shell {
+  display: flex;
+  flex-direction: column;
+}
+
+.player-layout {
+  width: 100%;
+  gap: var(--game-ui-layout-gap, 20px);
+  grid-template-columns: minmax(0, 2.4fr) minmax(var(--game-ui-side-panel-width, 320px), 0.95fr);
+}
+
+html[data-game-ui-layout="compact"] .player-layout {
+  grid-template-columns: minmax(0, 2.9fr) minmax(var(--game-ui-side-panel-width, 248px), 0.68fr);
+}
+
+html[data-game-ui-side-position="left"] .stage-frame {
+  order: 2;
+}
+
+html[data-game-ui-side-position="left"] .side-panel {
+  order: 1;
+}
+
+html[data-game-ui-side-position="right"] .stage-frame {
+  order: 1;
+}
+
+html[data-game-ui-side-position="right"] .side-panel {
+  order: 2;
+}
+
+html[data-game-ui-topbar-position="bottom"] .player-topbar {
+  order: 2;
+  padding: 22px 4px 8px;
+}
+
+html[data-game-ui-topbar-position="bottom"] .player-layout {
+  order: 1;
+}
+
+html[data-game-ui-topbar-position="hidden"] .player-topbar {
+  display: none;
+}
+
+html[data-game-ui-hud-position="hidden"] .stage-hud {
+  display: none;
+}
+
+html[data-game-ui-hud-position="top-left"] .stage-hud,
+html[data-game-ui-hud-position="top-right"] .stage-hud,
+html[data-game-ui-hud-position="bottom-left"] .stage-hud,
+html[data-game-ui-hud-position="bottom-right"] .stage-hud {
+  right: auto;
+  width: min(460px, calc(100% - 36px));
+  flex-direction: column;
+}
+
+html[data-game-ui-hud-position="top-left"] .stage-hud,
+html[data-game-ui-hud-position="top-right"] .stage-hud {
+  top: 18px;
+  bottom: auto;
+}
+
+html[data-game-ui-hud-position="bottom-left"] .stage-hud,
+html[data-game-ui-hud-position="bottom-right"] .stage-hud {
+  top: auto;
+  bottom: 18px;
+}
+
+html[data-game-ui-hud-position="top-left"] .stage-hud,
+html[data-game-ui-hud-position="bottom-left"] .stage-hud {
+  left: 18px;
+  align-items: flex-start;
+}
+
+html[data-game-ui-hud-position="top-right"] .stage-hud,
+html[data-game-ui-hud-position="bottom-right"] .stage-hud {
+  left: auto;
+  right: 18px;
+  align-items: flex-end;
+}
+
+.start-card {
+  transform: translate(var(--game-ui-title-card-offset-x, 0%), var(--game-ui-title-card-offset-y, 0%));
+}
+
+html[data-game-ui-title-anchor="left"] .start-overlay {
+  place-items: center start;
+  padding-left: clamp(20px, 6vw, 92px);
+}
+
+html[data-game-ui-title-anchor="right"] .start-overlay {
+  place-items: center end;
+  padding-right: clamp(20px, 6vw, 92px);
+}
+
+html[data-game-ui-title-anchor="top"] .start-overlay {
+  place-items: start center;
+  padding-top: clamp(20px, 6vh, 72px);
+}
+
+html[data-game-ui-title-anchor="bottom"] .start-overlay {
+  place-items: end center;
+  padding-bottom: clamp(20px, 6vh, 72px);
+}
+
+html[data-game-ui-title-anchor="free"] .start-overlay,
+html[data-game-ui-title-anchor="center"] .start-overlay {
+  place-items: center;
+}
+
+/* === Commercial-Style UI Parts === */
+
+body::before {
+  background-image:
+    var(--game-ui-overlay-image, none),
+    linear-gradient(rgba(117, 154, 204, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(117, 154, 204, 0.06) 1px, transparent 1px);
+  background-size: cover, 120px 120px, 120px 120px;
+  background-position: center, center, center;
+  opacity: var(--game-ui-overlay-opacity, 0.08);
+}
+
+.start-overlay {
+  overflow: hidden;
+}
+
+.start-overlay::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: var(--game-ui-title-bg-image, none);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: var(--game-ui-title-bg-fit, cover);
+  opacity: var(--game-ui-title-bg-opacity, 0);
+  filter: saturate(1.05) contrast(1.04);
+}
+
+.start-overlay > * {
+  position: relative;
+  z-index: 1;
+}
+
+.stage-frame,
+.side-card,
+.start-card,
+.save-dialog,
+.save-dialog-system-settings,
+.extra-hero-panel,
+.extra-gallery-card,
+.music-room-card,
+.ending-room-card,
+.character-expression-chip,
+.info-row,
+.history-row,
+.summary-row,
+.empty-note {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  background:
+    linear-gradient(180deg, var(--game-ui-panel-strong, var(--panel-strong)), var(--game-ui-panel, var(--panel))),
+    radial-gradient(circle at top right, color-mix(in srgb, var(--game-ui-accent, #79dcff) 14%, transparent), transparent 44%) !important;
+}
+
+.stage-frame > *,
+.side-card > *,
+.start-card > *,
+.save-dialog > *,
+.save-dialog-system-settings > *,
+.extra-hero-panel > *,
+.extra-gallery-card > *,
+.music-room-card > *,
+.ending-room-card > *,
+.character-expression-chip > *,
+.info-row > *,
+.history-row > *,
+.summary-row > *,
+.empty-note > * {
+  position: relative;
+  z-index: 1;
+}
+
+.stage-frame::before,
+.side-card::before,
+.start-card::before,
+.save-dialog::before,
+.save-dialog-system-settings::before,
+.extra-hero-panel::before,
+.extra-gallery-card::before,
+.music-room-card::before,
+.ending-room-card::before,
+.character-expression-chip::before,
+.info-row::before,
+.history-row::before,
+.summary-row::before,
+.empty-note::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background-image: var(--game-ui-panel-frame-image, none);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  opacity: var(--game-ui-panel-frame-opacity, 0);
+  mix-blend-mode: screen;
+}
+
+.pill-button,
+.continue-button,
+.choice-button {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.pill-button::before,
+.continue-button::before,
+.choice-button::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  border-radius: inherit;
+  background-image: var(--game-ui-button-frame-image, none);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  opacity: var(--game-ui-button-frame-opacity, 0);
+  mix-blend-mode: screen;
+}
+
+.save-slot-card {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.save-slot-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background-image:
+    var(--game-ui-save-slot-frame-image, none),
+    var(--game-ui-panel-frame-image, none);
+  background-size: cover, cover;
+  background-position: center, center;
+  background-repeat: no-repeat, no-repeat;
+  opacity: var(--game-ui-panel-frame-opacity, 0);
+  mix-blend-mode: screen;
+}
+
+.save-dialog::before,
+.save-dialog-system-settings::before {
+  background-image:
+    var(--game-ui-system-panel-frame-image, none),
+    var(--game-ui-panel-frame-image, none);
+  background-size: cover, cover;
+  background-position: center, center;
+  background-repeat: no-repeat, no-repeat;
+}
+
+html[data-game-ui-layout="cinematic"] .player-layout,
+html[data-game-ui-layout="minimal"] .player-layout {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+html[data-game-ui-layout="cinematic"] .side-panel,
+html[data-game-ui-layout="minimal"] .side-panel {
+  display: none;
+}
+
+html[data-game-ui-layout="compact"] .player-layout {
+  grid-template-columns: minmax(0, 2.9fr) minmax(var(--game-ui-side-panel-width, 248px), 0.68fr);
+}
+
+html[data-game-ui-layout="compact"] .side-card {
+  padding: 12px;
+}
+
+html[data-game-ui-title-layout="left"] .start-overlay {
+  place-items: center start;
+  padding-left: clamp(20px, 6vw, 92px);
+}
+
+html[data-game-ui-title-layout="left"] .start-card {
+  margin-left: 0;
+  text-align: left;
+}
+
+html[data-game-ui-title-layout="poster"] .start-card {
+  width: min(720px, calc(100% - 36px));
+  min-height: min(76%, 720px);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+html[data-game-ui-title-layout="poster"] .start-card h2 {
+  max-width: 16ch;
+  font-size: clamp(40px, 6vw, 76px);
+}
+
+/* Position controls intentionally live at the end so user layout choices win over visual presets. */
+
+html[data-game-ui-title-anchor="left"] .start-overlay {
+  place-items: center start;
+  padding-left: clamp(20px, 6vw, 92px);
+  padding-right: 0;
+}
+
+html[data-game-ui-title-anchor="right"] .start-overlay {
+  place-items: center end;
+  padding-left: 0;
+  padding-right: clamp(20px, 6vw, 92px);
+}
+
+html[data-game-ui-title-anchor="top"] .start-overlay {
+  place-items: start center;
+  padding-top: clamp(20px, 6vh, 72px);
+  padding-bottom: 0;
+}
+
+html[data-game-ui-title-anchor="bottom"] .start-overlay {
+  place-items: end center;
+  padding-top: 0;
+  padding-bottom: clamp(20px, 6vh, 72px);
+}
+
+html[data-game-ui-title-anchor="center"] .start-overlay,
+html[data-game-ui-title-anchor="free"] .start-overlay {
+  place-items: center;
 }

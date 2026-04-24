@@ -45,6 +45,8 @@ const BLOCK_LABELS = {
   music_play: "播放音乐",
   music_stop: "停止音乐",
   sfx_play: "播放音效",
+  video_play: "播放视频",
+  credits_roll: "片尾字幕",
   particle_effect: "粒子特效",
   screen_shake: "屏幕震动",
   screen_flash: "闪屏",
@@ -1292,6 +1294,26 @@ const DEPTH_BLUR_STRENGTH_LABELS = {
   strong: "更明显",
 };
 
+const VIDEO_FIT_LABELS = {
+  contain: "完整显示",
+  cover: "铺满裁切",
+  fill: "拉伸填满",
+};
+
+const VIDEO_VOLUME_LABELS = {
+  0: "静音",
+  25: "25%",
+  50: "50%",
+  75: "75%",
+  100: "100%",
+};
+
+const CREDITS_BACKGROUND_LABELS = {
+  dark: "深色电影片尾",
+  light: "浅色清爽片尾",
+  transparent: "叠在当前画面上",
+};
+
 const POSITION_LABELS = {
   left: "左侧",
   center: "中间",
@@ -1311,9 +1333,432 @@ const TEXT_SPEED_LABELS = {
 };
 
 const DIALOG_THEME_LABELS = {
+  project: "项目样式",
   warm: "暖光标准",
   moonlight: "夜色月光",
   paper: "纸页回忆",
+  transparent: "透明无框",
+};
+
+const PROJECT_DIALOG_BOX_PRESET_LABELS = {
+  moonlight: "夜色玻璃",
+  warm: "暖光标准",
+  paper: "纸页回忆",
+  transparent: "透明无框",
+  custom: "自定义样式",
+};
+
+const PROJECT_DIALOG_BOX_SHAPE_LABELS = {
+  rounded: "圆角框",
+  square: "方角框",
+  capsule: "胶囊框",
+};
+
+const PROJECT_DIALOG_BOX_ANCHOR_LABELS = {
+  bottom: "底部对话框",
+  center: "居中对话框",
+  top: "顶部字幕框",
+  free: "自由偏移",
+};
+
+const PROJECT_GAME_UI_PRESET_LABELS = {
+  stellar: "神秘科技",
+  warm: "暖色轻小说",
+  paper: "纸页回忆",
+  minimal: "极简透明",
+  custom: "自定义皮肤",
+};
+
+const PROJECT_GAME_UI_LAYOUT_LABELS = {
+  balanced: "标准工作台",
+  cinematic: "电影标题页",
+  compact: "紧凑信息栏",
+  minimal: "沉浸无侧栏",
+  custom: "自定义布局",
+};
+
+const PROJECT_GAME_UI_TITLE_LAYOUT_LABELS = {
+  center: "居中标题",
+  left: "左侧标题",
+  poster: "海报标题",
+};
+
+const PROJECT_GAME_UI_FONT_LABELS = {
+  modern: "现代无衬线",
+  serif: "文学衬线",
+  rounded: "圆润轻快",
+};
+
+const PROJECT_GAME_UI_SURFACE_LABELS = {
+  glass: "玻璃面板",
+  solid: "实色面板",
+  minimal: "轻量线框",
+};
+
+const PROJECT_GAME_UI_BRAND_LABELS = {
+  project: "显示项目名",
+  engine: "显示引擎标识",
+  hidden: "隐藏品牌露出",
+};
+
+const PROJECT_GAME_UI_SIDE_PANEL_LABELS = {
+  full: "完整侧栏",
+  compact: "紧凑侧栏",
+  hidden: "隐藏侧栏",
+};
+
+const PROJECT_GAME_UI_SIDE_POSITION_LABELS = {
+  right: "侧栏在右",
+  left: "侧栏在左",
+};
+
+const PROJECT_GAME_UI_TOPBAR_POSITION_LABELS = {
+  top: "顶部栏在上",
+  bottom: "顶部栏在下",
+  hidden: "隐藏顶部栏",
+};
+
+const PROJECT_GAME_UI_HUD_POSITION_LABELS = {
+  top: "顶部两端",
+  "top-left": "左上角",
+  "top-right": "右上角",
+  "bottom-left": "左下角",
+  "bottom-right": "右下角",
+  hidden: "隐藏 HUD",
+};
+
+const PROJECT_GAME_UI_TITLE_CARD_ANCHOR_LABELS = {
+  center: "标题居中",
+  left: "标题靠左",
+  right: "标题靠右",
+  top: "标题靠上",
+  bottom: "标题靠下",
+  free: "自由偏移",
+};
+
+const PROJECT_SAVE_SLOT_COUNT_LIMITS = {
+  min: 3,
+  max: 120,
+};
+
+const DEFAULT_PROJECT_RUNTIME_SETTINGS = {
+  formalSaveSlotCount: 24,
+};
+
+const DEFAULT_PROJECT_DIALOG_BOX_CONFIG = {
+  preset: "moonlight",
+  shape: "rounded",
+  widthPercent: 76,
+  minHeight: 148,
+  paddingX: 18,
+  paddingY: 14,
+  backgroundColor: "#0c1422",
+  backgroundOpacity: 92,
+  borderColor: "#79dcff",
+  borderOpacity: 18,
+  textColor: "#f3f6ff",
+  speakerColor: "#ffffff",
+  hintColor: "#c8d6ea",
+  blurStrength: 10,
+  borderWidth: 1,
+  shadowStrength: 30,
+  panelAssetId: "",
+  panelAssetOpacity: 0,
+  panelAssetFit: "cover",
+  anchor: "bottom",
+  offsetXPercent: 0,
+  offsetYPercent: 0,
+};
+
+const DEFAULT_PROJECT_GAME_UI_CONFIG = {
+  preset: "stellar",
+  layoutPreset: "balanced",
+  titleLayout: "center",
+  fontStyle: "modern",
+  surfaceStyle: "glass",
+  brandMode: "project",
+  sidePanelMode: "full",
+  sidePanelPosition: "right",
+  topbarPosition: "top",
+  hudPosition: "top",
+  titleCardAnchor: "center",
+  titleCardOffsetXPercent: 0,
+  titleCardOffsetYPercent: 0,
+  layoutGap: 20,
+  sidePanelWidth: 320,
+  backgroundColor: "#071120",
+  backgroundAccentColor: "#6bd5ff",
+  panelColor: "#0c1422",
+  panelOpacity: 88,
+  textColor: "#f3f7ff",
+  mutedTextColor: "#bacce4",
+  accentColor: "#79dcff",
+  accentAltColor: "#7b7cff",
+  buttonTextColor: "#f8fcff",
+  borderColor: "#79dcff",
+  borderOpacity: 18,
+  cornerRadius: 22,
+  backdropBlur: 14,
+  stageVignette: 42,
+  motionIntensity: 70,
+  titleBackgroundAssetId: "",
+  titleBackgroundFit: "cover",
+  titleBackgroundOpacity: 42,
+  titleLogoAssetId: "",
+  panelFrameAssetId: "",
+  panelFrameOpacity: 18,
+  buttonFrameAssetId: "",
+  buttonFrameOpacity: 24,
+  saveSlotFrameAssetId: "",
+  systemPanelFrameAssetId: "",
+  uiOverlayAssetId: "",
+  uiOverlayOpacity: 8,
+};
+
+const PROJECT_GAME_UI_PRESETS = {
+  stellar: {
+    preset: "stellar",
+    layoutPreset: "balanced",
+    titleLayout: "center",
+    fontStyle: "modern",
+    surfaceStyle: "glass",
+    brandMode: "project",
+    sidePanelMode: "full",
+    sidePanelPosition: "right",
+    topbarPosition: "top",
+    hudPosition: "top",
+    titleCardAnchor: "center",
+    titleCardOffsetXPercent: 0,
+    titleCardOffsetYPercent: 0,
+    layoutGap: 20,
+    sidePanelWidth: 320,
+    backgroundColor: "#071120",
+    backgroundAccentColor: "#6bd5ff",
+    panelColor: "#0c1422",
+    panelOpacity: 88,
+    textColor: "#f3f7ff",
+    mutedTextColor: "#bacce4",
+    accentColor: "#79dcff",
+    accentAltColor: "#7b7cff",
+    buttonTextColor: "#f8fcff",
+    borderColor: "#79dcff",
+    borderOpacity: 18,
+    cornerRadius: 22,
+    backdropBlur: 14,
+    stageVignette: 42,
+    motionIntensity: 70,
+    titleBackgroundOpacity: 42,
+    titleBackgroundFit: "cover",
+    panelFrameOpacity: 18,
+    buttonFrameOpacity: 24,
+    uiOverlayOpacity: 8,
+  },
+  warm: {
+    preset: "warm",
+    layoutPreset: "balanced",
+    titleLayout: "center",
+    fontStyle: "rounded",
+    surfaceStyle: "glass",
+    brandMode: "project",
+    sidePanelMode: "full",
+    sidePanelPosition: "right",
+    topbarPosition: "top",
+    hudPosition: "top",
+    titleCardAnchor: "center",
+    titleCardOffsetXPercent: 0,
+    titleCardOffsetYPercent: 0,
+    layoutGap: 20,
+    sidePanelWidth: 320,
+    backgroundColor: "#fff4e8",
+    backgroundAccentColor: "#f0a35f",
+    panelColor: "#fff8ef",
+    panelOpacity: 92,
+    textColor: "#3d2a1f",
+    mutedTextColor: "#7a6252",
+    accentColor: "#d67245",
+    accentAltColor: "#f0b35d",
+    buttonTextColor: "#fffaf4",
+    borderColor: "#d67245",
+    borderOpacity: 20,
+    cornerRadius: 24,
+    backdropBlur: 10,
+    stageVignette: 28,
+    motionIntensity: 45,
+    titleBackgroundOpacity: 36,
+    titleBackgroundFit: "cover",
+    panelFrameOpacity: 14,
+    buttonFrameOpacity: 18,
+    uiOverlayOpacity: 5,
+  },
+  paper: {
+    preset: "paper",
+    layoutPreset: "compact",
+    titleLayout: "left",
+    fontStyle: "serif",
+    surfaceStyle: "solid",
+    brandMode: "project",
+    sidePanelMode: "compact",
+    sidePanelPosition: "left",
+    topbarPosition: "top",
+    hudPosition: "bottom-left",
+    titleCardAnchor: "left",
+    titleCardOffsetXPercent: 0,
+    titleCardOffsetYPercent: 0,
+    layoutGap: 16,
+    sidePanelWidth: 280,
+    backgroundColor: "#f7efe0",
+    backgroundAccentColor: "#b98a5d",
+    panelColor: "#fff9ed",
+    panelOpacity: 96,
+    textColor: "#3d2a1d",
+    mutedTextColor: "#806b57",
+    accentColor: "#9a683d",
+    accentAltColor: "#c09a64",
+    buttonTextColor: "#fffaf1",
+    borderColor: "#a5794e",
+    borderOpacity: 28,
+    cornerRadius: 12,
+    backdropBlur: 4,
+    stageVignette: 35,
+    motionIntensity: 25,
+    titleBackgroundOpacity: 28,
+    titleBackgroundFit: "cover",
+    panelFrameOpacity: 22,
+    buttonFrameOpacity: 12,
+    uiOverlayOpacity: 10,
+  },
+  minimal: {
+    preset: "minimal",
+    layoutPreset: "minimal",
+    titleLayout: "poster",
+    fontStyle: "modern",
+    surfaceStyle: "minimal",
+    brandMode: "hidden",
+    sidePanelMode: "hidden",
+    sidePanelPosition: "right",
+    topbarPosition: "hidden",
+    hudPosition: "hidden",
+    titleCardAnchor: "bottom",
+    titleCardOffsetXPercent: 0,
+    titleCardOffsetYPercent: -6,
+    layoutGap: 14,
+    sidePanelWidth: 260,
+    backgroundColor: "#05070c",
+    backgroundAccentColor: "#ffffff",
+    panelColor: "#05070c",
+    panelOpacity: 48,
+    textColor: "#f7f7f7",
+    mutedTextColor: "#c6c8cf",
+    accentColor: "#ffffff",
+    accentAltColor: "#aeb5c6",
+    buttonTextColor: "#101216",
+    borderColor: "#ffffff",
+    borderOpacity: 16,
+    cornerRadius: 10,
+    backdropBlur: 2,
+    stageVignette: 20,
+    motionIntensity: 10,
+    titleBackgroundOpacity: 24,
+    titleBackgroundFit: "cover",
+    panelFrameOpacity: 0,
+    buttonFrameOpacity: 0,
+    uiOverlayOpacity: 0,
+  },
+};
+
+const PROJECT_DIALOG_BOX_PRESETS = {
+  moonlight: {
+    preset: "moonlight",
+    shape: "rounded",
+    widthPercent: 76,
+    minHeight: 148,
+    paddingX: 18,
+    paddingY: 14,
+    backgroundColor: "#0c1422",
+    backgroundOpacity: 92,
+    borderColor: "#79dcff",
+    borderOpacity: 18,
+    textColor: "#f3f6ff",
+    speakerColor: "#ffffff",
+    hintColor: "#c8d6ea",
+    blurStrength: 10,
+    borderWidth: 1,
+    shadowStrength: 30,
+    panelAssetOpacity: 0,
+    panelAssetFit: "cover",
+    anchor: "bottom",
+    offsetXPercent: 0,
+    offsetYPercent: 0,
+  },
+  warm: {
+    preset: "warm",
+    shape: "rounded",
+    widthPercent: 76,
+    minHeight: 148,
+    paddingX: 16,
+    paddingY: 14,
+    backgroundColor: "#fffaf5",
+    backgroundOpacity: 92,
+    borderColor: "#8f6548",
+    borderOpacity: 18,
+    textColor: "#332117",
+    speakerColor: "#7f5438",
+    hintColor: "#6d5b4f",
+    blurStrength: 8,
+    borderWidth: 1,
+    shadowStrength: 18,
+    panelAssetOpacity: 0,
+    panelAssetFit: "cover",
+    anchor: "bottom",
+    offsetXPercent: 0,
+    offsetYPercent: 0,
+  },
+  paper: {
+    preset: "paper",
+    shape: "square",
+    widthPercent: 76,
+    minHeight: 156,
+    paddingX: 18,
+    paddingY: 16,
+    backgroundColor: "#fff7e8",
+    backgroundOpacity: 95,
+    borderColor: "#b08659",
+    borderOpacity: 28,
+    textColor: "#4a2f1d",
+    speakerColor: "#7f5438",
+    hintColor: "#7f6a54",
+    blurStrength: 4,
+    borderWidth: 1,
+    shadowStrength: 16,
+    panelAssetOpacity: 0,
+    panelAssetFit: "cover",
+    anchor: "bottom",
+    offsetXPercent: 0,
+    offsetYPercent: 0,
+  },
+  transparent: {
+    preset: "transparent",
+    shape: "rounded",
+    widthPercent: 78,
+    minHeight: 132,
+    paddingX: 18,
+    paddingY: 12,
+    backgroundColor: "#08111b",
+    backgroundOpacity: 0,
+    borderColor: "#7fe6ff",
+    borderOpacity: 0,
+    textColor: "#f4f8ff",
+    speakerColor: "#ffffff",
+    hintColor: "#d0daf0",
+    blurStrength: 0,
+    borderWidth: 0,
+    shadowStrength: 0,
+    panelAssetOpacity: 0,
+    panelAssetFit: "cover",
+    anchor: "bottom",
+    offsetXPercent: 0,
+    offsetYPercent: 0,
+  },
 };
 
 const UI_THEME_MODE_LABELS = {
@@ -1400,6 +1845,7 @@ const BEGINNER_STORY_TOOLBAR_ACTIONS = new Set([
   "add-background",
   "add-character-show",
   "add-music-play",
+  "add-video-play",
   "add-jump",
 ]);
 
@@ -1413,6 +1859,7 @@ const STORY_BLOCK_TYPE_FILTER_LABELS = {
   story: "只看正文",
   effect: "只看演出",
   logic: "只看逻辑",
+  video: "只看视频",
   dialogue: "只看台词",
   choice: "只看选项",
 };
@@ -1499,7 +1946,7 @@ const SCRIPT_ISSUE_FILTER_LABELS = {
 
 const PREVIEW_PLAYBACK_DEFAULTS = {
   textSpeed: "normal",
-  dialogTheme: "warm",
+  dialogTheme: "project",
   uiThemeMode: "auto",
   autoPlay: false,
   skipRead: false,
@@ -1510,7 +1957,6 @@ const PREVIEW_PLAYBACK_DEFAULTS = {
 };
 
 const PREVIEW_SAVE_SHORTCUT_COUNT = 3;
-const PREVIEW_FORMAL_SAVE_SLOT_COUNT = 24;
 const PREVIEW_SAVE_DIALOG_PAGE_SIZE = 6;
 const PREVIEW_REGRESSION_MAX_CASES = 12;
 const PREVIEW_REGRESSION_MAX_STEPS = 80;
@@ -4245,6 +4691,40 @@ async function handleClick(event) {
     return;
   }
 
+  if (action === "save-project-save-slot-count") {
+    void saveProjectFormalSaveSlotCount();
+    return;
+  }
+
+  if (action === "save-project-dialog-box-config") {
+    void saveProjectDialogBoxConfig();
+    return;
+  }
+
+  if (action === "apply-project-dialog-box-preset") {
+    applyProjectDialogBoxPreset(actionTarget.dataset.dialogPreset);
+    return;
+  }
+
+  if (action === "save-project-game-ui-config") {
+    void saveProjectGameUiConfig();
+    return;
+  }
+
+  if (action === "apply-project-game-ui-preset") {
+    applyProjectGameUiPreset(actionTarget.dataset.gameUiPreset);
+    return;
+  }
+
+  if (action === "set-preview-dialog-theme-project") {
+    state.previewPlayback.dialogTheme = "project";
+    persistPreviewPlaybackSettings();
+    renderPreviewScreen();
+    setSaveStatus("试玩对话框已切到项目样式");
+    showToast("试玩对话框：已切到项目样式");
+    return;
+  }
+
   if (action === "apply-release-version-preset") {
     applyReleaseVersionPreset(actionTarget.dataset.releasePreset);
     return;
@@ -4302,6 +4782,16 @@ async function handleClick(event) {
 
   if (action === "add-sfx-play") {
     void addBlock("sfx_play");
+    return;
+  }
+
+  if (action === "add-video-play") {
+    void addBlock("video_play");
+    return;
+  }
+
+  if (action === "add-credits-roll") {
+    void addBlock("credits_roll");
     return;
   }
 
@@ -5605,17 +6095,18 @@ async function replayPreviewHistoryVoice(rawIndex) {
 
 function getSafePreviewSaveSlotIndex(rawIndex) {
   const numeric = Number(rawIndex);
+  const slotCount = getProjectFormalSaveSlotCount();
 
   if (!Number.isInteger(numeric)) {
     return null;
   }
 
   const nextIndex = numeric - 1;
-  return nextIndex >= 0 && nextIndex < PREVIEW_FORMAL_SAVE_SLOT_COUNT ? nextIndex : null;
+  return nextIndex >= 0 && nextIndex < slotCount ? nextIndex : null;
 }
 
 function getPreviewSaveDialogPageCount() {
-  return Math.max(1, Math.ceil(PREVIEW_FORMAL_SAVE_SLOT_COUNT / PREVIEW_SAVE_DIALOG_PAGE_SIZE));
+  return Math.max(1, Math.ceil(getProjectFormalSaveSlotCount() / PREVIEW_SAVE_DIALOG_PAGE_SIZE));
 }
 
 function getSafePreviewSaveDialogPage(rawPage) {
@@ -6431,7 +6922,7 @@ function renderPreviewSaveDialogPager() {
       <div class="formal-save-dialog-page-list">
         ${Array.from({ length: pageCount }, (_, index) => {
           const start = index * PREVIEW_SAVE_DIALOG_PAGE_SIZE + 1;
-          const end = Math.min(PREVIEW_FORMAL_SAVE_SLOT_COUNT, start + PREVIEW_SAVE_DIALOG_PAGE_SIZE - 1);
+          const end = Math.min(getProjectFormalSaveSlotCount(), start + PREVIEW_SAVE_DIALOG_PAGE_SIZE - 1);
           return `
             <button
               class="toolbar-button ${index === currentPage ? "toolbar-button-primary" : ""}"
@@ -8504,6 +8995,318 @@ function getProjectResolution(project = state.data?.project) {
   return {
     width: Number.isFinite(width) ? width : 1280,
     height: Number.isFinite(height) ? height : 720,
+  };
+}
+
+function getSafeProjectFormalSaveSlotCount(value) {
+  return clamp(
+    Math.round(getSafeNumber(value, DEFAULT_PROJECT_RUNTIME_SETTINGS.formalSaveSlotCount)),
+    PROJECT_SAVE_SLOT_COUNT_LIMITS.min,
+    PROJECT_SAVE_SLOT_COUNT_LIMITS.max
+  );
+}
+
+function getProjectRuntimeSettings(project = state.data?.project) {
+  const runtimeSettings = project?.runtimeSettings ?? {};
+  return {
+    formalSaveSlotCount: getSafeProjectFormalSaveSlotCount(runtimeSettings.formalSaveSlotCount),
+  };
+}
+
+function getProjectFormalSaveSlotCount(project = state.data?.project) {
+  return getProjectRuntimeSettings(project).formalSaveSlotCount;
+}
+
+function getSafeProjectDialogBoxPreset(value) {
+  return Object.hasOwn(PROJECT_DIALOG_BOX_PRESET_LABELS, value) ? value : DEFAULT_PROJECT_DIALOG_BOX_CONFIG.preset;
+}
+
+function getSafeProjectDialogBoxShape(value) {
+  return Object.hasOwn(PROJECT_DIALOG_BOX_SHAPE_LABELS, value) ? value : DEFAULT_PROJECT_DIALOG_BOX_CONFIG.shape;
+}
+
+function getSafeProjectDialogBoxAnchor(value) {
+  return Object.hasOwn(PROJECT_DIALOG_BOX_ANCHOR_LABELS, value) ? value : DEFAULT_PROJECT_DIALOG_BOX_CONFIG.anchor;
+}
+
+function getProjectDialogBoxPresetConfig(preset) {
+  const safePreset = getSafeProjectDialogBoxPreset(preset);
+  return {
+    ...DEFAULT_PROJECT_DIALOG_BOX_CONFIG,
+    ...(PROJECT_DIALOG_BOX_PRESETS[safePreset] ?? {}),
+    preset: safePreset,
+  };
+}
+
+function getProjectDialogBoxConfig(project = state.data?.project) {
+  const source = project?.dialogBoxConfig ?? {};
+  const base = getProjectDialogBoxPresetConfig(source.preset);
+  return {
+    ...base,
+    preset: getSafeProjectDialogBoxPreset(source.preset ?? base.preset),
+    shape: getSafeProjectDialogBoxShape(source.shape ?? base.shape),
+    widthPercent: clamp(getSafeNumber(source.widthPercent, base.widthPercent), 55, 100),
+    minHeight: clamp(getSafeNumber(source.minHeight, base.minHeight), 96, 320),
+    paddingX: clamp(getSafeNumber(source.paddingX, base.paddingX), 8, 72),
+    paddingY: clamp(getSafeNumber(source.paddingY, base.paddingY), 6, 48),
+    backgroundColor: getSafeParticleColor(source.backgroundColor, base.backgroundColor),
+    backgroundOpacity: clamp(getSafeNumber(source.backgroundOpacity, base.backgroundOpacity), 0, 100),
+    borderColor: getSafeParticleColor(source.borderColor, base.borderColor),
+    borderOpacity: clamp(getSafeNumber(source.borderOpacity, base.borderOpacity), 0, 100),
+    textColor: getSafeParticleColor(source.textColor, base.textColor),
+    speakerColor: getSafeParticleColor(source.speakerColor, base.speakerColor),
+    hintColor: getSafeParticleColor(source.hintColor, base.hintColor),
+    blurStrength: clamp(getSafeNumber(source.blurStrength, base.blurStrength), 0, 24),
+    borderWidth: clamp(getSafeNumber(source.borderWidth, base.borderWidth), 0, 4),
+    shadowStrength: clamp(getSafeNumber(source.shadowStrength, base.shadowStrength), 0, 48),
+    panelAssetId: String(source.panelAssetId ?? "").trim(),
+    panelAssetOpacity: clamp(getSafeNumber(source.panelAssetOpacity, base.panelAssetOpacity), 0, 100),
+    panelAssetFit: source.panelAssetFit === "contain" ? "contain" : "cover",
+    anchor: getSafeProjectDialogBoxAnchor(source.anchor ?? base.anchor),
+    offsetXPercent: clamp(getSafeNumber(source.offsetXPercent, base.offsetXPercent), -35, 35),
+    offsetYPercent: clamp(getSafeNumber(source.offsetYPercent, base.offsetYPercent), -35, 35),
+  };
+}
+
+function getSafeProjectGameUiPreset(value) {
+  return Object.hasOwn(PROJECT_GAME_UI_PRESET_LABELS, value) ? value : DEFAULT_PROJECT_GAME_UI_CONFIG.preset;
+}
+
+function getSafeProjectGameUiLayoutPreset(value) {
+  return Object.hasOwn(PROJECT_GAME_UI_LAYOUT_LABELS, value) ? value : DEFAULT_PROJECT_GAME_UI_CONFIG.layoutPreset;
+}
+
+function getSafeProjectGameUiTitleLayout(value) {
+  return Object.hasOwn(PROJECT_GAME_UI_TITLE_LAYOUT_LABELS, value) ? value : DEFAULT_PROJECT_GAME_UI_CONFIG.titleLayout;
+}
+
+function getSafeProjectGameUiFontStyle(value) {
+  return Object.hasOwn(PROJECT_GAME_UI_FONT_LABELS, value) ? value : DEFAULT_PROJECT_GAME_UI_CONFIG.fontStyle;
+}
+
+function getSafeProjectGameUiSurfaceStyle(value) {
+  return Object.hasOwn(PROJECT_GAME_UI_SURFACE_LABELS, value) ? value : DEFAULT_PROJECT_GAME_UI_CONFIG.surfaceStyle;
+}
+
+function getSafeProjectGameUiBrandMode(value) {
+  return Object.hasOwn(PROJECT_GAME_UI_BRAND_LABELS, value) ? value : DEFAULT_PROJECT_GAME_UI_CONFIG.brandMode;
+}
+
+function getSafeProjectGameUiSidePanelMode(value) {
+  return Object.hasOwn(PROJECT_GAME_UI_SIDE_PANEL_LABELS, value) ? value : DEFAULT_PROJECT_GAME_UI_CONFIG.sidePanelMode;
+}
+
+function getSafeProjectGameUiSidePanelPosition(value) {
+  return Object.hasOwn(PROJECT_GAME_UI_SIDE_POSITION_LABELS, value) ? value : DEFAULT_PROJECT_GAME_UI_CONFIG.sidePanelPosition;
+}
+
+function getSafeProjectGameUiTopbarPosition(value) {
+  return Object.hasOwn(PROJECT_GAME_UI_TOPBAR_POSITION_LABELS, value) ? value : DEFAULT_PROJECT_GAME_UI_CONFIG.topbarPosition;
+}
+
+function getSafeProjectGameUiHudPosition(value) {
+  return Object.hasOwn(PROJECT_GAME_UI_HUD_POSITION_LABELS, value) ? value : DEFAULT_PROJECT_GAME_UI_CONFIG.hudPosition;
+}
+
+function getSafeProjectGameUiTitleCardAnchor(value) {
+  return Object.hasOwn(PROJECT_GAME_UI_TITLE_CARD_ANCHOR_LABELS, value)
+    ? value
+    : DEFAULT_PROJECT_GAME_UI_CONFIG.titleCardAnchor;
+}
+
+function getProjectGameUiPresetConfig(preset) {
+  const safePreset = getSafeProjectGameUiPreset(preset);
+  return {
+    ...DEFAULT_PROJECT_GAME_UI_CONFIG,
+    ...(PROJECT_GAME_UI_PRESETS[safePreset] ?? {}),
+    preset: safePreset,
+  };
+}
+
+function getProjectGameUiConfig(project = state.data?.project) {
+  const source = project?.gameUiConfig ?? {};
+  const base = getProjectGameUiPresetConfig(source.preset);
+  return {
+    ...base,
+    preset: getSafeProjectGameUiPreset(source.preset ?? base.preset),
+    layoutPreset: getSafeProjectGameUiLayoutPreset(source.layoutPreset ?? base.layoutPreset),
+    titleLayout: getSafeProjectGameUiTitleLayout(source.titleLayout ?? base.titleLayout),
+    fontStyle: getSafeProjectGameUiFontStyle(source.fontStyle ?? base.fontStyle),
+    surfaceStyle: getSafeProjectGameUiSurfaceStyle(source.surfaceStyle ?? base.surfaceStyle),
+    brandMode: getSafeProjectGameUiBrandMode(source.brandMode ?? base.brandMode),
+    sidePanelMode: getSafeProjectGameUiSidePanelMode(source.sidePanelMode ?? base.sidePanelMode),
+    sidePanelPosition: getSafeProjectGameUiSidePanelPosition(source.sidePanelPosition ?? base.sidePanelPosition),
+    topbarPosition: getSafeProjectGameUiTopbarPosition(source.topbarPosition ?? base.topbarPosition),
+    hudPosition: getSafeProjectGameUiHudPosition(source.hudPosition ?? base.hudPosition),
+    titleCardAnchor: getSafeProjectGameUiTitleCardAnchor(source.titleCardAnchor ?? base.titleCardAnchor),
+    titleCardOffsetXPercent: clamp(getSafeNumber(source.titleCardOffsetXPercent, base.titleCardOffsetXPercent), -35, 35),
+    titleCardOffsetYPercent: clamp(getSafeNumber(source.titleCardOffsetYPercent, base.titleCardOffsetYPercent), -35, 35),
+    layoutGap: clamp(getSafeNumber(source.layoutGap, base.layoutGap), 8, 48),
+    sidePanelWidth: clamp(getSafeNumber(source.sidePanelWidth, base.sidePanelWidth), 240, 460),
+    backgroundColor: getSafeParticleColor(source.backgroundColor, base.backgroundColor),
+    backgroundAccentColor: getSafeParticleColor(source.backgroundAccentColor, base.backgroundAccentColor),
+    panelColor: getSafeParticleColor(source.panelColor, base.panelColor),
+    panelOpacity: clamp(getSafeNumber(source.panelOpacity, base.panelOpacity), 35, 100),
+    textColor: getSafeParticleColor(source.textColor, base.textColor),
+    mutedTextColor: getSafeParticleColor(source.mutedTextColor, base.mutedTextColor),
+    accentColor: getSafeParticleColor(source.accentColor, base.accentColor),
+    accentAltColor: getSafeParticleColor(source.accentAltColor, base.accentAltColor),
+    buttonTextColor: getSafeParticleColor(source.buttonTextColor, base.buttonTextColor),
+    borderColor: getSafeParticleColor(source.borderColor, base.borderColor),
+    borderOpacity: clamp(getSafeNumber(source.borderOpacity, base.borderOpacity), 0, 100),
+    cornerRadius: clamp(getSafeNumber(source.cornerRadius, base.cornerRadius), 4, 42),
+    backdropBlur: clamp(getSafeNumber(source.backdropBlur, base.backdropBlur), 0, 28),
+    stageVignette: clamp(getSafeNumber(source.stageVignette, base.stageVignette), 0, 80),
+    motionIntensity: clamp(getSafeNumber(source.motionIntensity, base.motionIntensity), 0, 100),
+    titleBackgroundAssetId: String(source.titleBackgroundAssetId ?? "").trim(),
+    titleBackgroundFit: source.titleBackgroundFit === "contain" ? "contain" : "cover",
+    titleBackgroundOpacity: clamp(getSafeNumber(source.titleBackgroundOpacity, base.titleBackgroundOpacity), 0, 100),
+    titleLogoAssetId: String(source.titleLogoAssetId ?? "").trim(),
+    panelFrameAssetId: String(source.panelFrameAssetId ?? "").trim(),
+    panelFrameOpacity: clamp(getSafeNumber(source.panelFrameOpacity, base.panelFrameOpacity), 0, 100),
+    buttonFrameAssetId: String(source.buttonFrameAssetId ?? "").trim(),
+    buttonFrameOpacity: clamp(getSafeNumber(source.buttonFrameOpacity, base.buttonFrameOpacity), 0, 100),
+    saveSlotFrameAssetId: String(source.saveSlotFrameAssetId ?? "").trim(),
+    systemPanelFrameAssetId: String(source.systemPanelFrameAssetId ?? "").trim(),
+    uiOverlayAssetId: String(source.uiOverlayAssetId ?? "").trim(),
+    uiOverlayOpacity: clamp(getSafeNumber(source.uiOverlayOpacity, base.uiOverlayOpacity), 0, 100),
+  };
+}
+
+function getDialogThemeBaseColors(theme) {
+  if (theme === "moonlight") {
+    return {
+      backgroundColor: "#17233a",
+      backgroundOpacity: 92,
+      borderColor: "#a2c1ff",
+      borderOpacity: 24,
+      textColor: "#f4f7ff",
+      speakerColor: "#ffffff",
+      hintColor: "#d7e3ff",
+    };
+  }
+  if (theme === "paper") {
+    return {
+      backgroundColor: "#fff7e8",
+      backgroundOpacity: 95,
+      borderColor: "#b08659",
+      borderOpacity: 28,
+      textColor: "#4a2f1d",
+      speakerColor: "#7f5438",
+      hintColor: "#7f6a54",
+    };
+  }
+  if (theme === "transparent") {
+    return {
+      backgroundColor: "#08111b",
+      backgroundOpacity: 0,
+      borderColor: "#7fe6ff",
+      borderOpacity: 0,
+      textColor: "#f4f8ff",
+      speakerColor: "#ffffff",
+      hintColor: "#d0daf0",
+    };
+  }
+  return {
+    backgroundColor: "#fffaf5",
+    backgroundOpacity: 92,
+    borderColor: "#8f6548",
+    borderOpacity: 18,
+    textColor: "#332117",
+    speakerColor: "#7f5438",
+    hintColor: "#6d5b4f",
+  };
+}
+
+function toRgbaString(hexColor, opacityPercent) {
+  const safeHex = getSafeParticleColor(hexColor, "#ffffff").slice(1);
+  const red = Number.parseInt(safeHex.slice(0, 2), 16);
+  const green = Number.parseInt(safeHex.slice(2, 4), 16);
+  const blue = Number.parseInt(safeHex.slice(4, 6), 16);
+  const alpha = clamp(getSafeNumber(opacityPercent, 100), 0, 100) / 100;
+  return `rgba(${red}, ${green}, ${blue}, ${alpha.toFixed(2)})`;
+}
+
+function getDialogShapeRadius(shape, fallbackRadius = 18) {
+  const safeShape = getSafeProjectDialogBoxShape(shape);
+  if (safeShape === "square") {
+    return 6;
+  }
+  if (safeShape === "capsule") {
+    return 999;
+  }
+  return clamp(getSafeNumber(fallbackRadius, 18), 8, 42);
+}
+
+function getDialogPanelAssetUrl(assetId, assetMap = state.data?.assetsById) {
+  const safeId = String(assetId ?? "").trim();
+  if (!safeId || !assetMap?.has(safeId)) {
+    return "";
+  }
+  const asset = assetMap.get(safeId);
+  const publicUrl = getAssetPublicUrl(asset);
+  return asset?.fileExists && publicUrl ? publicUrl : "";
+}
+
+function buildDialogBoxPresentation(theme, project = state.data?.project, assetMap = state.data?.assetsById) {
+  const safeTheme = getSafeDialogTheme(theme);
+  if (safeTheme !== "project") {
+    const base = getDialogThemeBaseColors(safeTheme);
+    const blurStrength = safeTheme === "paper" ? 4 : safeTheme === "transparent" ? 0 : 10;
+    const borderWidth = safeTheme === "transparent" ? 0 : 1;
+    const shadowStrength = safeTheme === "transparent" ? 0 : safeTheme === "moonlight" ? 32 : 18;
+    return {
+      theme: safeTheme,
+      anchor: "bottom",
+      assetUrl: "",
+      style: [
+        `--dialog-box-width: 76%;`,
+        `--dialog-box-min-height: 148px;`,
+        `--dialog-box-padding-x: 18px;`,
+        `--dialog-box-padding-y: 14px;`,
+        `--dialog-box-radius: ${getDialogShapeRadius("rounded", 18)}px;`,
+        `--dialog-box-bg: ${toRgbaString(base.backgroundColor, base.backgroundOpacity)};`,
+        `--dialog-box-border: ${toRgbaString(base.borderColor, base.borderOpacity)};`,
+        `--dialog-box-border-width: ${borderWidth}px;`,
+        `--dialog-box-text: ${base.textColor};`,
+        `--dialog-box-speaker: ${base.speakerColor};`,
+        `--dialog-box-hint: ${base.hintColor};`,
+        `--dialog-box-blur: ${blurStrength}px;`,
+        `--dialog-box-shadow-strength: ${shadowStrength};`,
+        `--dialog-box-art-opacity: 0;`,
+        `--dialog-box-art-fit: cover;`,
+        `--dialog-box-offset-x: 0%;`,
+        `--dialog-box-offset-y: 0%;`,
+      ].join(" "),
+    };
+  }
+
+  const config = getProjectDialogBoxConfig(project);
+  const assetUrl = getDialogPanelAssetUrl(config.panelAssetId, assetMap);
+  return {
+    theme: "project",
+    anchor: config.anchor,
+    assetUrl,
+    style: [
+      `--dialog-box-width: ${config.widthPercent}%;`,
+      `--dialog-box-min-height: ${config.minHeight}px;`,
+      `--dialog-box-padding-x: ${config.paddingX}px;`,
+      `--dialog-box-padding-y: ${config.paddingY}px;`,
+      `--dialog-box-radius: ${getDialogShapeRadius(config.shape, config.shape === "rounded" ? 22 : 18)}px;`,
+      `--dialog-box-bg: ${toRgbaString(config.backgroundColor, config.backgroundOpacity)};`,
+      `--dialog-box-border: ${toRgbaString(config.borderColor, config.borderOpacity)};`,
+      `--dialog-box-border-width: ${config.borderWidth}px;`,
+      `--dialog-box-text: ${config.textColor};`,
+      `--dialog-box-speaker: ${config.speakerColor};`,
+      `--dialog-box-hint: ${config.hintColor};`,
+      `--dialog-box-blur: ${config.blurStrength}px;`,
+      `--dialog-box-shadow-strength: ${config.shadowStrength};`,
+      `--dialog-box-art-opacity: ${(config.panelAssetOpacity / 100).toFixed(2)};`,
+      `--dialog-box-art-fit: ${config.panelAssetFit};`,
+      `--dialog-box-offset-x: ${config.offsetXPercent}%;`,
+      `--dialog-box-offset-y: ${config.offsetYPercent}%;`,
+      assetUrl ? `--dialog-box-art-image: url("${assetUrl.replace(/"/g, "%22")}");` : `--dialog-box-art-image: none;`,
+    ].join(" "),
   };
 }
 
@@ -11282,7 +12085,7 @@ function getStoryBlockIssueItems(block) {
   }
 
   const assetIdsToCheck = [];
-  if (["background", "music_play", "sfx_play"].includes(block.type)) {
+  if (["background", "music_play", "sfx_play", "video_play"].includes(block.type)) {
     assetIdsToCheck.push(block.assetId);
   }
   if (block.type === "particle_effect" && getSafeParticleAction(block.action) !== "stop" && block.assetId) {
@@ -11563,6 +12366,17 @@ function buildStoryBlockSearchText(block, scene) {
     );
   }
 
+  if (block.type === "video_play") {
+    parts.push(block.title);
+    parts.push(state.data.assetsById.get(block.assetId)?.name ?? block.assetId);
+  }
+
+  if (block.type === "credits_roll") {
+    parts.push(block.title);
+    parts.push(block.subtitle);
+    parts.push(getCreditsLines(block.lines).join(" "));
+  }
+
   if (block.type === "jump") {
     parts.push(state.data.scenesById.get(block.targetSceneId)?.name ?? block.targetSceneId);
   }
@@ -11607,7 +12421,17 @@ function getFilteredStoryBlocks(scene) {
       return false;
     }
 
-    if (typeFilter !== "all" && typeFilter !== "dialogue" && typeFilter !== "choice" && group !== typeFilter) {
+    if (typeFilter === "video" && block.type !== "video_play") {
+      return false;
+    }
+
+    if (
+      typeFilter !== "all" &&
+      typeFilter !== "dialogue" &&
+      typeFilter !== "choice" &&
+      typeFilter !== "video" &&
+      group !== typeFilter
+    ) {
       return false;
     }
 
@@ -17213,7 +18037,7 @@ function getTextSpeedLabel(speed) {
 }
 
 function getSafeDialogTheme(theme) {
-  return Object.hasOwn(DIALOG_THEME_LABELS, theme) ? theme : "warm";
+  return Object.hasOwn(DIALOG_THEME_LABELS, theme) ? theme : "project";
 }
 
 function getDialogThemeLabel(theme) {
@@ -17362,7 +18186,7 @@ function getPreviewQuickSaveStorageKey(project = state.data?.project) {
 }
 
 function createEmptyPreviewSaveSlots() {
-  return Array.from({ length: PREVIEW_FORMAL_SAVE_SLOT_COUNT }, () => null);
+  return Array.from({ length: getProjectFormalSaveSlotCount() }, () => null);
 }
 
 function deepClonePreviewData(value) {
@@ -17469,26 +18293,27 @@ function loadStoredPreviewAutoResume(project = state.data?.project) {
 
 function loadStoredPreviewSaveSlots(project = state.data?.project) {
   const storage = getBrowserStorage();
+  const slotCount = getProjectFormalSaveSlotCount(project);
 
   if (!storage) {
-    return createEmptyPreviewSaveSlots();
+    return Array.from({ length: slotCount }, () => null);
   }
 
   try {
     const raw = storage.getItem(getPreviewSaveSlotStorageKey(project));
 
     if (!raw) {
-      return createEmptyPreviewSaveSlots();
+      return Array.from({ length: slotCount }, () => null);
     }
 
     const parsed = JSON.parse(raw);
     const sourceSlots = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.slots) ? parsed.slots : [];
 
-    return Array.from({ length: PREVIEW_FORMAL_SAVE_SLOT_COUNT }, (_, index) =>
+    return Array.from({ length: slotCount }, (_, index) =>
       sanitizeStoredPreviewSaveSlot(sourceSlots[index])
     );
   } catch (error) {
-    return createEmptyPreviewSaveSlots();
+    return Array.from({ length: slotCount }, () => null);
   }
 }
 
@@ -20224,7 +21049,7 @@ function renderMiniStage(scene, blockIndex) {
 
 function renderStage(visualState, large, options = {}) {
   const backdrop = `${getBackdropStyle(visualState.backgroundAssetId)}; ${getDepthBlurBackdropStyle(visualState.depthBlur)}`;
-  const dialogTheme = getSafeDialogTheme(options.dialogTheme);
+  const dialogPresentation = buildDialogBoxPresentation(options.dialogTheme, state.data?.project, state.data?.assetsById);
   const particleMarkup = renderParticleEffectLayer(
     visualState.particleEffect,
     large,
@@ -20311,7 +21136,7 @@ function renderStage(visualState, large, options = {}) {
       </div>
       ${filterMarkup}
       ${fadeMarkup}
-      <div class="stage-overlay ${large ? "stage-overlay-large" : ""}">
+      <div class="stage-overlay ${large ? "stage-overlay-large" : ""}" data-dialog-anchor="${dialogPresentation.anchor}">
         <div class="stage-topline">
           <span class="stage-token">背景：${escapeHtml(visualState.backgroundName)}</span>
           <span class="stage-token">音乐：${escapeHtml(visualState.musicName)}</span>
@@ -20325,7 +21150,12 @@ function renderStage(visualState, large, options = {}) {
           ${stageEffectTokens}
         </div>
         ${dialogHiddenHintMarkup}
-        <div class="dialog-box ${options.dialogHidden ? "is-hidden" : ""}" data-dialog-theme="${dialogTheme}">
+        <div
+          class="dialog-box ${options.dialogHidden ? "is-hidden" : ""}"
+          data-dialog-theme="${dialogPresentation.theme}"
+          style="${dialogPresentation.style}"
+        >
+          <div class="dialog-box-art ${dialogPresentation.assetUrl ? "has-image" : ""}"></div>
           <div class="dialog-speaker">${escapeHtml(visualState.speakerName)}</div>
           <div class="dialog-text ${options.isTyping ? "is-typing" : ""}">${escapeHtml(dialogueText)}</div>
           ${choiceMarkup}
@@ -21612,6 +22442,7 @@ function renderPreviewSidebar(session) {
         ${renderResolutionButtons()}
       </div>
     </article>
+    ${renderProjectRuntimeSettingsPanel()}
     ${renderProjectValidationSummary()}
   `;
 }
@@ -22916,9 +23747,12 @@ function renderProjectValidationSummary() {
     }
     <article class="detail-card">
       <strong>正式导出</strong>
-      <p>现在已经支持五种导出：网页试玩包适合先试跑，Windows / macOS / Linux 桌面包适合正式交付，而编辑器桌面包适合把整套创作工具发给别的创作者继续做。</p>
+      <p>现在已经支持六种导出：网页试玩包适合先试跑，原生 Runtime 包适合验证脱离 HTML 的播放主链并继续打成 App，Windows / macOS / Linux 桌面包适合正式交付，而编辑器桌面包适合把整套创作工具发给别的创作者继续做。</p>
       <div class="detail-actions">
         <button class="toolbar-button" data-action="export-build" data-export-target="web">导出试玩包</button>
+        <button class="toolbar-button" data-action="export-build" data-export-target="native_runtime">
+          导出原生 Runtime 包
+        </button>
         <button class="toolbar-button toolbar-button-primary" data-action="export-build" data-export-target="windows_nwjs">
           导出 Windows 桌面包
         </button>
@@ -22949,7 +23783,7 @@ function renderProjectValidationSummary() {
             : ""
         }
         ${
-          ["windows_nwjs", "macos_nwjs", "linux_nwjs"].includes(exportResult?.target) && exportResult?.archivePublicUrl
+          ["native_runtime", "windows_nwjs", "macos_nwjs", "linux_nwjs"].includes(exportResult?.target) && exportResult?.archivePublicUrl
             ? `
               <a
                 class="toolbar-button"
@@ -22957,7 +23791,7 @@ function renderProjectValidationSummary() {
                 target="_blank"
                 rel="noreferrer"
               >
-                下载桌面包压缩档
+                下载${escapeHtml(exportResult.target === "native_runtime" ? "原生 Runtime 包" : "桌面包")}压缩档
               </a>
             `
             : ""
@@ -23052,6 +23886,76 @@ function renderProjectValidationSummary() {
             : ""
         }
         ${
+          exportResult?.target === "native_runtime" && exportResult?.readmePublicUrl
+            ? `
+              <a
+                class="toolbar-button"
+                href="${escapeHtml(exportResult.readmePublicUrl)}"
+                target="_blank"
+                rel="noreferrer"
+              >
+                打开原生 Runtime 说明
+              </a>
+            `
+            : ""
+        }
+        ${
+          exportResult?.target === "native_runtime" && exportResult?.requirementsPublicUrl
+            ? `
+              <a
+                class="toolbar-button"
+                href="${escapeHtml(exportResult.requirementsPublicUrl)}"
+                target="_blank"
+                rel="noreferrer"
+              >
+                打开 Runtime requirements
+              </a>
+            `
+            : ""
+        }
+        ${
+          exportResult?.target === "native_runtime" && exportResult?.buildRequirementsPublicUrl
+            ? `
+              <a
+                class="toolbar-button"
+                href="${escapeHtml(exportResult.buildRequirementsPublicUrl)}"
+                target="_blank"
+                rel="noreferrer"
+              >
+                打开 App 打包 requirements
+              </a>
+            `
+            : ""
+        }
+        ${
+          exportResult?.target === "native_runtime" && exportResult?.appBuilderPublicUrl
+            ? `
+              <a
+                class="toolbar-button"
+                href="${escapeHtml(exportResult.appBuilderPublicUrl)}"
+                target="_blank"
+                rel="noreferrer"
+              >
+                打开原生 App 打包脚本
+              </a>
+            `
+            : ""
+        }
+        ${
+          exportResult?.target === "native_runtime" && exportResult?.releaseCheckPublicUrl
+            ? `
+              <a
+                class="toolbar-button"
+                href="${escapeHtml(exportResult.releaseCheckPublicUrl)}"
+                target="_blank"
+                rel="noreferrer"
+              >
+                打开原生发布自检报告
+              </a>
+            `
+            : ""
+        }
+        ${
           exportResult?.signingGuidePublicUrl
             ? `
               <a
@@ -23111,7 +24015,49 @@ function renderProjectValidationSummary() {
       <div class="detail-meta">
         ${
           exportResult
-            ? ["windows_nwjs", "macos_nwjs", "linux_nwjs"].includes(exportResult.target)
+            ? exportResult.target === "native_runtime"
+              ? `最近一次导出：${escapeHtml(exportResult.buildPath)}<br />发布版本：${escapeHtml(
+                  exportResult.buildInfo?.releaseVersion ?? exportResult.releaseVersion ?? "1.0.0-preview"
+                )}<br />播放器脚本：${escapeHtml(
+                  exportResult.playerScriptPath ?? "未生成"
+                )}<br />游戏数据：${escapeHtml(
+                  exportResult.gameDataPath ?? "未生成"
+                )}<br />requirements：${escapeHtml(
+                  exportResult.requirementsPath ?? "未生成"
+                )}<br />App 打包 requirements：${escapeHtml(
+                  exportResult.buildRequirementsPath ?? "未生成"
+                )}<br />App 打包脚本：${escapeHtml(
+                  exportResult.appBuilderPath ?? "未生成"
+                )}<br />发布自检报告：${escapeHtml(
+                  exportResult.releaseCheckPath ?? "未生成"
+                )}<br />mac 启动器：${escapeHtml(
+                  exportResult.macLauncherName ?? "未生成"
+                )}<br />Linux 启动器：${escapeHtml(
+                  exportResult.linuxLauncherName ?? "未生成"
+                )}<br />Windows 启动器：${escapeHtml(
+                  exportResult.windowsLauncherName ?? "未生成"
+                )}<br />mac App 打包入口：${escapeHtml(
+                  exportResult.macAppBuilderName ?? "未生成"
+                )}<br />Linux App 打包入口：${escapeHtml(
+                  exportResult.linuxAppBuilderName ?? "未生成"
+                )}<br />Windows App 打包入口：${escapeHtml(
+                  exportResult.windowsAppBuilderName ?? "未生成"
+                )}<br />压缩档：${escapeHtml(
+                  exportResult.archivePath ?? "未生成"
+                )}<br />发布清单：${escapeHtml(
+                  exportResult.manifestPath ?? "未生成"
+                )}<br />桌面模式：${escapeHtml(
+                  exportResult.runtimeModeLabel ?? "Python + pygame-ce 原生 Runtime"
+                )}<br />已复制 ${exportResult.copiedAssets ?? 0} 个素材，缺失 ${exportResult.missingAssets ?? 0} 个素材。${
+                  exportResult.readmePath
+                    ? `<br />说明文档：${escapeHtml(exportResult.readmePath)}`
+                    : ""
+                }${
+                  exportResult.missingAssetNames?.length
+                    ? `<br />未找到：${escapeHtml(exportResult.missingAssetNames.join(" / "))}`
+                    : ""
+                }`
+              : ["windows_nwjs", "macos_nwjs", "linux_nwjs"].includes(exportResult.target)
               ? `最近一次导出：${escapeHtml(exportResult.buildPath)}<br />发布版本：${escapeHtml(
                   exportResult.releaseVersion ?? "1.0.0-preview"
                 )}<br />启动文件：${escapeHtml(
@@ -24855,6 +25801,10 @@ function renderBlockPanel(block, scene, selectedIndex) {
     editorMarkup = renderMusicStopEditor(block);
   } else if (block.type === "sfx_play") {
     editorMarkup = renderSfxPlayEditor(block);
+  } else if (block.type === "video_play") {
+    editorMarkup = renderVideoPlayEditor(block);
+  } else if (block.type === "credits_roll") {
+    editorMarkup = renderCreditsRollEditor(block);
   } else if (block.type === "particle_effect") {
     editorMarkup = renderParticleEffectEditor(block);
   } else if (block.type === "screen_shake") {
@@ -24965,6 +25915,10 @@ function getStorySceneHighlightCandidate(block, scene, index, blocks) {
       getSafeParticleAction(block.action) === "stop" ? "这里会收掉当前粒子气氛" : "这里会明显抬高画面氛围",
       getSafeParticleAction(block.action) === "stop" ? 10 : 16
     );
+  } else if (block.type === "video_play") {
+    pushReason("这里会播放 OP、ED 或过场视频", 18);
+  } else if (block.type === "credits_roll") {
+    pushReason("这里会进入片尾演职人员表", 16);
   } else if (block.type === "background") {
     pushReason("这里会切换画面空间", 11);
   } else if (["music_play", "music_stop", "sfx_play"].includes(block.type)) {
@@ -25890,6 +26844,163 @@ function renderSfxPlayEditor(block) {
               `
             )
             .join("")}
+        </select>
+      </div>
+    </div>
+    <div class="detail-actions">
+      <button class="toolbar-button toolbar-button-primary" data-action="save-block">保存这张卡片</button>
+    </div>
+  `;
+}
+
+function renderVideoPlayEditor(block) {
+  const videoAssets = state.data.assetList.filter((asset) => asset.type === "video");
+  const assetId = getSafeAssetIdByType("video", block.assetId);
+  const startTimeSeconds = getSafeNonNegativeNumber(block.startTimeSeconds, 0);
+  const endTimeSeconds = getSafeNonNegativeNumber(block.endTimeSeconds, 0);
+  const volume = getSafeVideoVolume(block.volume);
+  const fit = getSafeVideoFit(block.fit);
+
+  return `
+    <article class="editor-card">
+      <h3>编辑视频播放</h3>
+      <p>适合 OP、ED、PV、过场动画。这里也提供最基础的裁段能力：设置开始秒数和结束秒数，就能只播放素材中的一小段。</p>
+    </article>
+    <div class="field-grid">
+      <div class="detail-row">
+        <label for="editorVideoAssetId">视频素材</label>
+        <select id="editorVideoAssetId">
+          <option value="">暂时不选择视频</option>
+          ${videoAssets
+            .map(
+              (asset) => `
+                <option value="${asset.id}" ${asset.id === assetId ? "selected" : ""}>
+                  ${escapeHtml(asset.name)}
+                </option>
+              `
+            )
+            .join("")}
+        </select>
+      </div>
+      <div class="detail-row">
+        <label for="editorVideoTitle">播放标题</label>
+        <input
+          id="editorVideoTitle"
+          type="text"
+          maxlength="48"
+          value="${escapeHtml(block.title ?? "")}"
+          placeholder="例如：Opening Movie / Ending Movie"
+        />
+      </div>
+      <div class="detail-row">
+        <label for="editorVideoFit">画面适配</label>
+        <select id="editorVideoFit">
+          ${Object.entries(VIDEO_FIT_LABELS)
+            .map(
+              ([value, label]) => `
+                <option value="${value}" ${value === fit ? "selected" : ""}>
+                  ${escapeHtml(label)}
+                </option>
+              `
+            )
+            .join("")}
+        </select>
+      </div>
+      <div class="detail-row">
+        <label for="editorVideoVolume">视频音量</label>
+        <select id="editorVideoVolume">
+          ${Object.entries(VIDEO_VOLUME_LABELS)
+            .map(
+              ([value, label]) => `
+                <option value="${value}" ${Number(value) === volume ? "selected" : ""}>
+                  ${escapeHtml(label)}
+                </option>
+              `
+            )
+            .join("")}
+        </select>
+      </div>
+      <div class="detail-row">
+        <label for="editorVideoStartTime">从第几秒开始</label>
+        <input id="editorVideoStartTime" type="number" min="0" step="0.1" value="${escapeHtml(String(startTimeSeconds))}" />
+      </div>
+      <div class="detail-row">
+        <label for="editorVideoEndTime">到第几秒结束</label>
+        <input id="editorVideoEndTime" type="number" min="0" step="0.1" value="${escapeHtml(String(endTimeSeconds))}" />
+      </div>
+      <div class="detail-row">
+        <label for="editorVideoSkippable">是否允许跳过</label>
+        <select id="editorVideoSkippable">
+          <option value="true" ${block.skippable !== false ? "selected" : ""}>允许玩家跳过</option>
+          <option value="false" ${block.skippable === false ? "selected" : ""}>必须播放完</option>
+        </select>
+      </div>
+      <div class="helper-text">结束秒数填 0 表示播放到视频文件自然结束。网页包和 NW.js 桌面包会直接播放视频；原生 Runtime 目前会显示提示页，后续可继续接视频解码器。</div>
+    </div>
+    <div class="detail-actions">
+      <button class="toolbar-button toolbar-button-primary" data-action="save-block">保存这张卡片</button>
+      <button class="toolbar-button" data-action="focus-asset-gap" data-asset-filter-mode="all" data-asset-type="video">去视频素材库</button>
+    </div>
+  `;
+}
+
+function renderCreditsRollEditor(block) {
+  const lines = getCreditsLinesText(block.lines);
+  const durationSeconds = getSafeCreditsDuration(block.durationSeconds);
+  const background = getSafeCreditsBackground(block.background);
+
+  return `
+    <article class="editor-card">
+      <h3>编辑片尾演职人员表</h3>
+      <p>这是一张轻量“片尾字幕”卡片，不需要外部剪辑软件也能做基础滚动片尾。后面如果要做更复杂的片尾动画，可以再导出视频替换。</p>
+    </article>
+    <div class="field-grid">
+      <div class="detail-row">
+        <label for="editorCreditsTitle">片尾标题</label>
+        <input
+          id="editorCreditsTitle"
+          type="text"
+          maxlength="48"
+          value="${escapeHtml(block.title ?? "STAFF")}"
+        />
+      </div>
+      <div class="detail-row">
+        <label for="editorCreditsSubtitle">副标题</label>
+        <input
+          id="editorCreditsSubtitle"
+          type="text"
+          maxlength="72"
+          value="${escapeHtml(block.subtitle ?? "")}"
+          placeholder="例如：Thank you for playing"
+        />
+      </div>
+      <div class="detail-row">
+        <label for="editorCreditsLines">字幕内容</label>
+        <textarea id="editorCreditsLines" placeholder="企划：Tony Na&#10;剧本：Tony Na&#10;美术：Your Artist&#10;音乐：Your Composer">${escapeHtml(lines)}</textarea>
+      </div>
+      <div class="detail-row">
+        <label for="editorCreditsDuration">滚动时长（秒）</label>
+        <input id="editorCreditsDuration" type="number" min="4" max="180" step="1" value="${escapeHtml(String(durationSeconds))}" />
+      </div>
+      <div class="detail-row">
+        <label for="editorCreditsBackground">片尾背景</label>
+        <select id="editorCreditsBackground">
+          ${Object.entries(CREDITS_BACKGROUND_LABELS)
+            .map(
+              ([value, label]) => `
+                <option value="${value}" ${value === background ? "selected" : ""}>
+                  ${escapeHtml(label)}
+                </option>
+              `
+            )
+            .join("")}
+        </select>
+      </div>
+      <div class="detail-row">
+        <label for="editorCreditsSkippable">是否允许跳过</label>
+        <select id="editorCreditsSkippable">
+          <option value="true" ${block.skippable !== false ? "selected" : ""}>允许玩家跳过</option>
+          <option value="false" ${block.skippable === false ? "selected" : ""}>必须滚完</option>
         </select>
       </div>
     </div>
@@ -28406,6 +29517,788 @@ function applyReleaseVersionPreset(preset) {
   showToast(`已套用版本预设：${nextReleaseVersion}`);
 }
 
+function buildDialogBoxAssetSelectOptions(selectedAssetId = "") {
+  const uiAssets = state.data.assetList.filter((asset) => asset.type === "ui");
+  if (!uiAssets.length) {
+    return `<option value="">当前还没有可用的 UI 素材</option>`;
+  }
+  return [
+    `<option value="" ${!selectedAssetId ? "selected" : ""}>不叠图片图层</option>`,
+    ...uiAssets.map(
+      (asset) =>
+        `<option value="${escapeHtml(asset.id)}" ${selectedAssetId === asset.id ? "selected" : ""}>${escapeHtml(
+          asset.fileExists ? `${asset.name} · ${asset.path.split("/").pop()}` : `${asset.name} · 文件未导入`
+        )}</option>`
+    ),
+  ].join("");
+}
+
+function buildGameUiAssetSelectOptions(selectedAssetId = "", allowedTypes = ["ui"], emptyLabel = "不绑定素材") {
+  const allowedSet = new Set(allowedTypes);
+  const assets = state.data.assetList.filter((asset) => allowedSet.has(asset.type));
+  const selectedAsset = selectedAssetId ? state.data.assetsById?.get(selectedAssetId) : null;
+  const options = [`<option value="" ${!selectedAssetId ? "selected" : ""}>${escapeHtml(emptyLabel)}</option>`];
+
+  if (selectedAssetId && selectedAsset && !allowedSet.has(selectedAsset.type)) {
+    options.push(
+      `<option value="${escapeHtml(selectedAsset.id)}" selected>${escapeHtml(`${selectedAsset.name} · 当前绑定`)}</option>`
+    );
+  }
+
+  if (!assets.length) {
+    options.push(`<option value="" disabled>当前还没有可用素材，可先去素材库导入 UI 图</option>`);
+    return options.join("");
+  }
+
+  options.push(
+    ...assets.map(
+      (asset) =>
+        `<option value="${escapeHtml(asset.id)}" ${selectedAssetId === asset.id ? "selected" : ""}>${escapeHtml(
+          asset.fileExists ? `${asset.name} · ${asset.path.split("/").pop()}` : `${asset.name} · 文件未导入`
+        )}</option>`
+    )
+  );
+
+  return options.join("");
+}
+
+function renderProjectRuntimeSettingsPanel() {
+  const runtimeSettings = getProjectRuntimeSettings();
+  const dialogBoxConfig = getProjectDialogBoxConfig();
+  const gameUiConfig = getProjectGameUiConfig();
+  return `
+    <article class="detail-card">
+      <strong>成品体验设置</strong>
+      <p class="helper-text">这里会直接写进项目文件，网页试玩包和桌面版都会吃这套配置。适合先把“存档规模”“对话框风格”和“成品 UI 皮肤”定下来。</p>
+      <div class="detail-stack">
+        <section class="detail-card dialog-config-card">
+          <strong>正式存档位数量</strong>
+          <p class="helper-text">手动存档位不再固定。大项目可直接扩到 50、100 或更多，读档分页会自动跟着变化。</p>
+          <div class="asset-search-row story-tree-filter-row">
+            <label class="asset-search-field">
+              <span class="sr-only">正式存档位数量</span>
+              <input
+                id="projectFormalSaveSlotCountInput"
+                type="number"
+                min="${PROJECT_SAVE_SLOT_COUNT_LIMITS.min}"
+                max="${PROJECT_SAVE_SLOT_COUNT_LIMITS.max}"
+                step="1"
+                value="${runtimeSettings.formalSaveSlotCount}"
+              />
+            </label>
+            <button class="toolbar-button toolbar-button-primary" data-action="save-project-save-slot-count">
+              保存存档位
+            </button>
+          </div>
+          <div class="detail-meta">当前项目已配置 ${runtimeSettings.formalSaveSlotCount} 个正式存档位，正式读档会自动分页展示。</div>
+        </section>
+        <section class="detail-card dialog-config-card">
+          <strong>对话文本框样式</strong>
+          <p class="helper-text">先选一个基础预设，再用颜色、透明度、尺寸和 UI 图层继续微调。没有特殊需求时也可以直接用透明无框。</p>
+          <div class="detail-actions">
+            ${Object.entries(PROJECT_DIALOG_BOX_PRESET_LABELS)
+              .filter(([preset]) => preset !== "custom")
+              .map(
+                ([preset, label]) => `
+                  <button
+                    class="toolbar-button ${dialogBoxConfig.preset === preset ? "toolbar-button-primary" : ""}"
+                    type="button"
+                    data-action="apply-project-dialog-box-preset"
+                    data-dialog-preset="${preset}"
+                  >
+                    ${escapeHtml(label)}
+                  </button>
+                `
+              )
+              .join("")}
+          </div>
+          <div class="playback-setting-grid dialog-config-grid">
+            <label class="playback-setting">
+              <span>当前预设</span>
+              <select id="projectDialogBoxPresetSelect">
+                ${Object.entries(PROJECT_DIALOG_BOX_PRESET_LABELS)
+                  .map(
+                    ([preset, label]) =>
+                      `<option value="${preset}" ${dialogBoxConfig.preset === preset ? "selected" : ""}>${escapeHtml(label)}</option>`
+                  )
+                  .join("")}
+              </select>
+            </label>
+            <label class="playback-setting">
+              <span>框体形状</span>
+              <select id="projectDialogBoxShapeSelect">
+                ${Object.entries(PROJECT_DIALOG_BOX_SHAPE_LABELS)
+                  .map(
+                    ([shape, label]) =>
+                      `<option value="${shape}" ${dialogBoxConfig.shape === shape ? "selected" : ""}>${escapeHtml(label)}</option>`
+                  )
+                  .join("")}
+              </select>
+            </label>
+            <label class="playback-setting">
+              <span>文本框位置</span>
+              <select id="projectDialogBoxAnchorSelect">
+                ${Object.entries(PROJECT_DIALOG_BOX_ANCHOR_LABELS)
+                  .map(
+                    ([anchor, label]) =>
+                      `<option value="${anchor}" ${dialogBoxConfig.anchor === anchor ? "selected" : ""}>${escapeHtml(label)}</option>`
+                  )
+                  .join("")}
+              </select>
+            </label>
+            <label class="playback-setting">
+              <span>图片图层</span>
+              <select id="projectDialogBoxAssetSelect">
+                ${buildDialogBoxAssetSelectOptions(dialogBoxConfig.panelAssetId)}
+              </select>
+            </label>
+            <label class="playback-setting">
+              <span>图层铺法</span>
+              <select id="projectDialogBoxAssetFitSelect">
+                <option value="cover" ${dialogBoxConfig.panelAssetFit === "cover" ? "selected" : ""}>铺满裁切</option>
+                <option value="contain" ${dialogBoxConfig.panelAssetFit === "contain" ? "selected" : ""}>完整显示</option>
+              </select>
+            </label>
+          </div>
+          <div class="playback-setting-grid dialog-config-grid dialog-config-colors">
+            <label class="playback-setting">
+              <span>底色</span>
+              <input id="projectDialogBoxBackgroundColorInput" type="color" value="${dialogBoxConfig.backgroundColor}" />
+            </label>
+            <label class="playback-setting">
+              <span>边框色</span>
+              <input id="projectDialogBoxBorderColorInput" type="color" value="${dialogBoxConfig.borderColor}" />
+            </label>
+            <label class="playback-setting">
+              <span>正文色</span>
+              <input id="projectDialogBoxTextColorInput" type="color" value="${dialogBoxConfig.textColor}" />
+            </label>
+            <label class="playback-setting">
+              <span>名字色</span>
+              <input id="projectDialogBoxSpeakerColorInput" type="color" value="${dialogBoxConfig.speakerColor}" />
+            </label>
+          </div>
+          <div class="playback-volume-grid dialog-config-ranges">
+            <label class="playback-setting">
+              <span>底色透明度</span>
+              <input id="projectDialogBoxBackgroundOpacityInput" type="range" min="0" max="100" step="1" value="${dialogBoxConfig.backgroundOpacity}" />
+              <strong class="playback-volume-value">${dialogBoxConfig.backgroundOpacity}%</strong>
+            </label>
+            <label class="playback-setting">
+              <span>边框透明度</span>
+              <input id="projectDialogBoxBorderOpacityInput" type="range" min="0" max="100" step="1" value="${dialogBoxConfig.borderOpacity}" />
+              <strong class="playback-volume-value">${dialogBoxConfig.borderOpacity}%</strong>
+            </label>
+            <label class="playback-setting">
+              <span>图层透明度</span>
+              <input id="projectDialogBoxAssetOpacityInput" type="range" min="0" max="100" step="1" value="${dialogBoxConfig.panelAssetOpacity}" />
+              <strong class="playback-volume-value">${dialogBoxConfig.panelAssetOpacity}%</strong>
+            </label>
+            <label class="playback-setting">
+              <span>模糊</span>
+              <input id="projectDialogBoxBlurInput" type="range" min="0" max="24" step="1" value="${dialogBoxConfig.blurStrength}" />
+              <strong class="playback-volume-value">${dialogBoxConfig.blurStrength}px</strong>
+            </label>
+            <label class="playback-setting">
+              <span>宽度</span>
+              <input id="projectDialogBoxWidthInput" type="range" min="55" max="100" step="1" value="${dialogBoxConfig.widthPercent}" />
+              <strong class="playback-volume-value">${dialogBoxConfig.widthPercent}%</strong>
+            </label>
+            <label class="playback-setting">
+              <span>高度</span>
+              <input id="projectDialogBoxHeightInput" type="range" min="96" max="320" step="4" value="${dialogBoxConfig.minHeight}" />
+              <strong class="playback-volume-value">${dialogBoxConfig.minHeight}px</strong>
+            </label>
+            <label class="playback-setting">
+              <span>水平偏移</span>
+              <input id="projectDialogBoxOffsetXInput" type="range" min="-35" max="35" step="1" value="${dialogBoxConfig.offsetXPercent}" />
+              <strong class="playback-volume-value">${dialogBoxConfig.offsetXPercent}%</strong>
+            </label>
+            <label class="playback-setting">
+              <span>垂直偏移</span>
+              <input id="projectDialogBoxOffsetYInput" type="range" min="-35" max="35" step="1" value="${dialogBoxConfig.offsetYPercent}" />
+              <strong class="playback-volume-value">${dialogBoxConfig.offsetYPercent}%</strong>
+            </label>
+          </div>
+          <div class="detail-actions">
+            <button class="toolbar-button toolbar-button-primary" data-action="save-project-dialog-box-config">
+              保存文本框样式
+            </button>
+            <button class="toolbar-button" data-action="set-preview-dialog-theme-project">
+              试玩里切到项目样式
+            </button>
+          </div>
+          <div class="detail-meta">当前支持预设、透明无框、自定义颜色/尺寸，以及叠加一张 UI 素材图层。后面还可以继续往更复杂的版式设计扩。</div>
+        </section>
+        <section class="detail-card dialog-config-card">
+          <strong>成品 UI 皮肤</strong>
+          <p class="helper-text">这一层控制玩家真正看到的标题页、顶部栏、按钮、系统菜单、存档/图鉴弹窗和侧栏外观；文本框仍然由上面的“对话文本框样式”单独控制。</p>
+          <div class="detail-actions">
+            ${Object.entries(PROJECT_GAME_UI_PRESET_LABELS)
+              .filter(([preset]) => preset !== "custom")
+              .map(
+                ([preset, label]) => `
+                  <button
+                    class="toolbar-button ${gameUiConfig.preset === preset ? "toolbar-button-primary" : ""}"
+                    type="button"
+                    data-action="apply-project-game-ui-preset"
+                    data-game-ui-preset="${preset}"
+                  >
+                    ${escapeHtml(label)}
+                  </button>
+                `
+              )
+              .join("")}
+          </div>
+          <div class="playback-setting-grid dialog-config-grid">
+            <label class="playback-setting">
+              <span>皮肤预设</span>
+              <select id="projectGameUiPresetSelect">
+                ${Object.entries(PROJECT_GAME_UI_PRESET_LABELS)
+                  .map(
+                    ([preset, label]) =>
+                      `<option value="${preset}" ${gameUiConfig.preset === preset ? "selected" : ""}>${escapeHtml(label)}</option>`
+                  )
+                  .join("")}
+              </select>
+            </label>
+            <label class="playback-setting">
+              <span>运行时布局</span>
+              <select id="projectGameUiLayoutPresetSelect">
+                ${Object.entries(PROJECT_GAME_UI_LAYOUT_LABELS)
+                  .map(
+                    ([layout, label]) =>
+                      `<option value="${layout}" ${gameUiConfig.layoutPreset === layout ? "selected" : ""}>${escapeHtml(label)}</option>`
+                  )
+                  .join("")}
+              </select>
+            </label>
+            <label class="playback-setting">
+              <span>标题页布局</span>
+              <select id="projectGameUiTitleLayoutSelect">
+                ${Object.entries(PROJECT_GAME_UI_TITLE_LAYOUT_LABELS)
+                  .map(
+                    ([layout, label]) =>
+                      `<option value="${layout}" ${gameUiConfig.titleLayout === layout ? "selected" : ""}>${escapeHtml(label)}</option>`
+                  )
+                  .join("")}
+              </select>
+            </label>
+            <label class="playback-setting">
+              <span>字体气质</span>
+              <select id="projectGameUiFontStyleSelect">
+                ${Object.entries(PROJECT_GAME_UI_FONT_LABELS)
+                  .map(
+                    ([style, label]) =>
+                      `<option value="${style}" ${gameUiConfig.fontStyle === style ? "selected" : ""}>${escapeHtml(label)}</option>`
+                  )
+                  .join("")}
+              </select>
+            </label>
+            <label class="playback-setting">
+              <span>面板质感</span>
+              <select id="projectGameUiSurfaceStyleSelect">
+                ${Object.entries(PROJECT_GAME_UI_SURFACE_LABELS)
+                  .map(
+                    ([style, label]) =>
+                      `<option value="${style}" ${gameUiConfig.surfaceStyle === style ? "selected" : ""}>${escapeHtml(label)}</option>`
+                  )
+                  .join("")}
+              </select>
+            </label>
+            <label class="playback-setting">
+              <span>品牌露出</span>
+              <select id="projectGameUiBrandModeSelect">
+                ${Object.entries(PROJECT_GAME_UI_BRAND_LABELS)
+                  .map(
+                    ([mode, label]) =>
+                      `<option value="${mode}" ${gameUiConfig.brandMode === mode ? "selected" : ""}>${escapeHtml(label)}</option>`
+                  )
+                  .join("")}
+              </select>
+            </label>
+            <label class="playback-setting">
+              <span>侧栏显示</span>
+              <select id="projectGameUiSidePanelModeSelect">
+                ${Object.entries(PROJECT_GAME_UI_SIDE_PANEL_LABELS)
+                  .map(
+                    ([mode, label]) =>
+                      `<option value="${mode}" ${gameUiConfig.sidePanelMode === mode ? "selected" : ""}>${escapeHtml(label)}</option>`
+                  )
+                  .join("")}
+              </select>
+            </label>
+            <label class="playback-setting">
+              <span>侧栏位置</span>
+              <select id="projectGameUiSidePanelPositionSelect">
+                ${Object.entries(PROJECT_GAME_UI_SIDE_POSITION_LABELS)
+                  .map(
+                    ([position, label]) =>
+                      `<option value="${position}" ${gameUiConfig.sidePanelPosition === position ? "selected" : ""}>${escapeHtml(label)}</option>`
+                  )
+                  .join("")}
+              </select>
+            </label>
+            <label class="playback-setting">
+              <span>顶部栏位置</span>
+              <select id="projectGameUiTopbarPositionSelect">
+                ${Object.entries(PROJECT_GAME_UI_TOPBAR_POSITION_LABELS)
+                  .map(
+                    ([position, label]) =>
+                      `<option value="${position}" ${gameUiConfig.topbarPosition === position ? "selected" : ""}>${escapeHtml(label)}</option>`
+                  )
+                  .join("")}
+              </select>
+            </label>
+            <label class="playback-setting">
+              <span>舞台 HUD</span>
+              <select id="projectGameUiHudPositionSelect">
+                ${Object.entries(PROJECT_GAME_UI_HUD_POSITION_LABELS)
+                  .map(
+                    ([position, label]) =>
+                      `<option value="${position}" ${gameUiConfig.hudPosition === position ? "selected" : ""}>${escapeHtml(label)}</option>`
+                  )
+                  .join("")}
+              </select>
+            </label>
+            <label class="playback-setting">
+              <span>标题卡片位置</span>
+              <select id="projectGameUiTitleCardAnchorSelect">
+                ${Object.entries(PROJECT_GAME_UI_TITLE_CARD_ANCHOR_LABELS)
+                  .map(
+                    ([anchor, label]) =>
+                      `<option value="${anchor}" ${gameUiConfig.titleCardAnchor === anchor ? "selected" : ""}>${escapeHtml(label)}</option>`
+                  )
+                  .join("")}
+              </select>
+            </label>
+            <label class="playback-setting">
+              <span>标题背景铺法</span>
+              <select id="projectGameUiTitleBackgroundFitSelect">
+                <option value="cover" ${gameUiConfig.titleBackgroundFit === "cover" ? "selected" : ""}>铺满裁切</option>
+                <option value="contain" ${gameUiConfig.titleBackgroundFit === "contain" ? "selected" : ""}>完整显示</option>
+              </select>
+            </label>
+          </div>
+          <div class="playback-setting-grid dialog-config-grid">
+            <label class="playback-setting">
+              <span>标题背景图</span>
+              <select id="projectGameUiTitleBackgroundAssetSelect">
+                ${buildGameUiAssetSelectOptions(gameUiConfig.titleBackgroundAssetId, ["background", "cg", "ui"], "不使用标题背景图")}
+              </select>
+            </label>
+            <label class="playback-setting">
+              <span>标题 Logo 图</span>
+              <select id="projectGameUiTitleLogoAssetSelect">
+                ${buildGameUiAssetSelectOptions(gameUiConfig.titleLogoAssetId, ["ui", "sprite", "cg"], "使用默认 Logo")}
+              </select>
+            </label>
+            <label class="playback-setting">
+              <span>通用面板贴图</span>
+              <select id="projectGameUiPanelFrameAssetSelect">
+                ${buildGameUiAssetSelectOptions(gameUiConfig.panelFrameAssetId, ["ui"], "不使用面板贴图")}
+              </select>
+            </label>
+            <label class="playback-setting">
+              <span>按钮贴图</span>
+              <select id="projectGameUiButtonFrameAssetSelect">
+                ${buildGameUiAssetSelectOptions(gameUiConfig.buttonFrameAssetId, ["ui"], "不使用按钮贴图")}
+              </select>
+            </label>
+            <label class="playback-setting">
+              <span>存档卡片贴图</span>
+              <select id="projectGameUiSaveSlotFrameAssetSelect">
+                ${buildGameUiAssetSelectOptions(gameUiConfig.saveSlotFrameAssetId, ["ui"], "不使用存档贴图")}
+              </select>
+            </label>
+            <label class="playback-setting">
+              <span>系统弹窗贴图</span>
+              <select id="projectGameUiSystemPanelFrameAssetSelect">
+                ${buildGameUiAssetSelectOptions(gameUiConfig.systemPanelFrameAssetId, ["ui"], "沿用通用面板")}
+              </select>
+            </label>
+            <label class="playback-setting">
+              <span>全局叠层纹理</span>
+              <select id="projectGameUiOverlayAssetSelect">
+                ${buildGameUiAssetSelectOptions(gameUiConfig.uiOverlayAssetId, ["ui"], "不使用叠层纹理")}
+              </select>
+            </label>
+          </div>
+          <div class="playback-setting-grid dialog-config-grid dialog-config-colors">
+            <label class="playback-setting">
+              <span>背景色</span>
+              <input id="projectGameUiBackgroundColorInput" type="color" value="${gameUiConfig.backgroundColor}" />
+            </label>
+            <label class="playback-setting">
+              <span>氛围色</span>
+              <input id="projectGameUiBackgroundAccentColorInput" type="color" value="${gameUiConfig.backgroundAccentColor}" />
+            </label>
+            <label class="playback-setting">
+              <span>面板色</span>
+              <input id="projectGameUiPanelColorInput" type="color" value="${gameUiConfig.panelColor}" />
+            </label>
+            <label class="playback-setting">
+              <span>正文色</span>
+              <input id="projectGameUiTextColorInput" type="color" value="${gameUiConfig.textColor}" />
+            </label>
+            <label class="playback-setting">
+              <span>弱文字</span>
+              <input id="projectGameUiMutedTextColorInput" type="color" value="${gameUiConfig.mutedTextColor}" />
+            </label>
+            <label class="playback-setting">
+              <span>主强调</span>
+              <input id="projectGameUiAccentColorInput" type="color" value="${gameUiConfig.accentColor}" />
+            </label>
+            <label class="playback-setting">
+              <span>副强调</span>
+              <input id="projectGameUiAccentAltColorInput" type="color" value="${gameUiConfig.accentAltColor}" />
+            </label>
+            <label class="playback-setting">
+              <span>按钮文字</span>
+              <input id="projectGameUiButtonTextColorInput" type="color" value="${gameUiConfig.buttonTextColor}" />
+            </label>
+            <label class="playback-setting">
+              <span>描边色</span>
+              <input id="projectGameUiBorderColorInput" type="color" value="${gameUiConfig.borderColor}" />
+            </label>
+          </div>
+          <div class="playback-volume-grid dialog-config-ranges">
+            <label class="playback-setting">
+              <span>面板透明度</span>
+              <input id="projectGameUiPanelOpacityInput" type="range" min="35" max="100" step="1" value="${gameUiConfig.panelOpacity}" />
+              <strong class="playback-volume-value">${gameUiConfig.panelOpacity}%</strong>
+            </label>
+            <label class="playback-setting">
+              <span>描边透明度</span>
+              <input id="projectGameUiBorderOpacityInput" type="range" min="0" max="100" step="1" value="${gameUiConfig.borderOpacity}" />
+              <strong class="playback-volume-value">${gameUiConfig.borderOpacity}%</strong>
+            </label>
+            <label class="playback-setting">
+              <span>圆角</span>
+              <input id="projectGameUiCornerRadiusInput" type="range" min="4" max="42" step="1" value="${gameUiConfig.cornerRadius}" />
+              <strong class="playback-volume-value">${gameUiConfig.cornerRadius}px</strong>
+            </label>
+            <label class="playback-setting">
+              <span>背景模糊</span>
+              <input id="projectGameUiBackdropBlurInput" type="range" min="0" max="28" step="1" value="${gameUiConfig.backdropBlur}" />
+              <strong class="playback-volume-value">${gameUiConfig.backdropBlur}px</strong>
+            </label>
+            <label class="playback-setting">
+              <span>舞台暗角</span>
+              <input id="projectGameUiStageVignetteInput" type="range" min="0" max="80" step="1" value="${gameUiConfig.stageVignette}" />
+              <strong class="playback-volume-value">${gameUiConfig.stageVignette}%</strong>
+            </label>
+            <label class="playback-setting">
+              <span>动态强度</span>
+              <input id="projectGameUiMotionIntensityInput" type="range" min="0" max="100" step="1" value="${gameUiConfig.motionIntensity}" />
+              <strong class="playback-volume-value">${gameUiConfig.motionIntensity}%</strong>
+            </label>
+            <label class="playback-setting">
+              <span>标题背景透明度</span>
+              <input id="projectGameUiTitleBackgroundOpacityInput" type="range" min="0" max="100" step="1" value="${gameUiConfig.titleBackgroundOpacity}" />
+              <strong class="playback-volume-value">${gameUiConfig.titleBackgroundOpacity}%</strong>
+            </label>
+            <label class="playback-setting">
+              <span>面板贴图透明度</span>
+              <input id="projectGameUiPanelFrameOpacityInput" type="range" min="0" max="100" step="1" value="${gameUiConfig.panelFrameOpacity}" />
+              <strong class="playback-volume-value">${gameUiConfig.panelFrameOpacity}%</strong>
+            </label>
+            <label class="playback-setting">
+              <span>按钮贴图透明度</span>
+              <input id="projectGameUiButtonFrameOpacityInput" type="range" min="0" max="100" step="1" value="${gameUiConfig.buttonFrameOpacity}" />
+              <strong class="playback-volume-value">${gameUiConfig.buttonFrameOpacity}%</strong>
+            </label>
+            <label class="playback-setting">
+              <span>全局纹理透明度</span>
+              <input id="projectGameUiOverlayOpacityInput" type="range" min="0" max="100" step="1" value="${gameUiConfig.uiOverlayOpacity}" />
+              <strong class="playback-volume-value">${gameUiConfig.uiOverlayOpacity}%</strong>
+            </label>
+            <label class="playback-setting">
+              <span>标题水平偏移</span>
+              <input id="projectGameUiTitleCardOffsetXInput" type="range" min="-35" max="35" step="1" value="${gameUiConfig.titleCardOffsetXPercent}" />
+              <strong class="playback-volume-value">${gameUiConfig.titleCardOffsetXPercent}%</strong>
+            </label>
+            <label class="playback-setting">
+              <span>标题垂直偏移</span>
+              <input id="projectGameUiTitleCardOffsetYInput" type="range" min="-35" max="35" step="1" value="${gameUiConfig.titleCardOffsetYPercent}" />
+              <strong class="playback-volume-value">${gameUiConfig.titleCardOffsetYPercent}%</strong>
+            </label>
+            <label class="playback-setting">
+              <span>主布局间距</span>
+              <input id="projectGameUiLayoutGapInput" type="range" min="8" max="48" step="1" value="${gameUiConfig.layoutGap}" />
+              <strong class="playback-volume-value">${gameUiConfig.layoutGap}px</strong>
+            </label>
+            <label class="playback-setting">
+              <span>侧栏宽度</span>
+              <input id="projectGameUiSidePanelWidthInput" type="range" min="240" max="460" step="4" value="${gameUiConfig.sidePanelWidth}" />
+              <strong class="playback-volume-value">${gameUiConfig.sidePanelWidth}px</strong>
+            </label>
+          </div>
+          <div class="detail-actions">
+            <button class="toolbar-button toolbar-button-primary" data-action="save-project-game-ui-config">
+              保存成品 UI 皮肤
+            </button>
+            <button class="toolbar-button" data-action="export-build" data-export-target="web">
+              导出网页包检查外观
+            </button>
+          </div>
+          <div class="detail-meta">当前覆盖标题页、系统菜单、存档/读档、EXTRA/图鉴弹窗、侧栏、按钮、HUD、布局位置和 UI 贴图绑定；后续可以继续扩到九宫格切片、逐状态按钮和更细的组件状态样式。</div>
+        </section>
+      </div>
+    </article>
+  `;
+}
+
+function readProjectDialogBoxConfigFromInputs() {
+  const currentConfig = getProjectDialogBoxConfig();
+  return getProjectDialogBoxConfig({
+    dialogBoxConfig: {
+      ...currentConfig,
+      preset: document.getElementById("projectDialogBoxPresetSelect")?.value,
+      shape: document.getElementById("projectDialogBoxShapeSelect")?.value,
+      anchor: document.getElementById("projectDialogBoxAnchorSelect")?.value,
+      widthPercent: document.getElementById("projectDialogBoxWidthInput")?.value,
+      minHeight: document.getElementById("projectDialogBoxHeightInput")?.value,
+      offsetXPercent: document.getElementById("projectDialogBoxOffsetXInput")?.value,
+      offsetYPercent: document.getElementById("projectDialogBoxOffsetYInput")?.value,
+      backgroundColor: document.getElementById("projectDialogBoxBackgroundColorInput")?.value,
+      backgroundOpacity: document.getElementById("projectDialogBoxBackgroundOpacityInput")?.value,
+      borderColor: document.getElementById("projectDialogBoxBorderColorInput")?.value,
+      borderOpacity: document.getElementById("projectDialogBoxBorderOpacityInput")?.value,
+      textColor: document.getElementById("projectDialogBoxTextColorInput")?.value,
+      speakerColor: document.getElementById("projectDialogBoxSpeakerColorInput")?.value,
+      blurStrength: document.getElementById("projectDialogBoxBlurInput")?.value,
+      panelAssetId: document.getElementById("projectDialogBoxAssetSelect")?.value,
+      panelAssetOpacity: document.getElementById("projectDialogBoxAssetOpacityInput")?.value,
+      panelAssetFit: document.getElementById("projectDialogBoxAssetFitSelect")?.value,
+    },
+  });
+}
+
+function readProjectGameUiConfigFromInputs() {
+  const currentConfig = getProjectGameUiConfig();
+  return getProjectGameUiConfig({
+    gameUiConfig: {
+      ...currentConfig,
+      preset: document.getElementById("projectGameUiPresetSelect")?.value,
+      layoutPreset: document.getElementById("projectGameUiLayoutPresetSelect")?.value,
+      titleLayout: document.getElementById("projectGameUiTitleLayoutSelect")?.value,
+      fontStyle: document.getElementById("projectGameUiFontStyleSelect")?.value,
+      surfaceStyle: document.getElementById("projectGameUiSurfaceStyleSelect")?.value,
+      brandMode: document.getElementById("projectGameUiBrandModeSelect")?.value,
+      sidePanelMode: document.getElementById("projectGameUiSidePanelModeSelect")?.value,
+      sidePanelPosition: document.getElementById("projectGameUiSidePanelPositionSelect")?.value,
+      topbarPosition: document.getElementById("projectGameUiTopbarPositionSelect")?.value,
+      hudPosition: document.getElementById("projectGameUiHudPositionSelect")?.value,
+      titleCardAnchor: document.getElementById("projectGameUiTitleCardAnchorSelect")?.value,
+      titleCardOffsetXPercent: document.getElementById("projectGameUiTitleCardOffsetXInput")?.value,
+      titleCardOffsetYPercent: document.getElementById("projectGameUiTitleCardOffsetYInput")?.value,
+      layoutGap: document.getElementById("projectGameUiLayoutGapInput")?.value,
+      sidePanelWidth: document.getElementById("projectGameUiSidePanelWidthInput")?.value,
+      titleBackgroundAssetId: document.getElementById("projectGameUiTitleBackgroundAssetSelect")?.value,
+      titleBackgroundFit: document.getElementById("projectGameUiTitleBackgroundFitSelect")?.value,
+      titleBackgroundOpacity: document.getElementById("projectGameUiTitleBackgroundOpacityInput")?.value,
+      titleLogoAssetId: document.getElementById("projectGameUiTitleLogoAssetSelect")?.value,
+      panelFrameAssetId: document.getElementById("projectGameUiPanelFrameAssetSelect")?.value,
+      panelFrameOpacity: document.getElementById("projectGameUiPanelFrameOpacityInput")?.value,
+      buttonFrameAssetId: document.getElementById("projectGameUiButtonFrameAssetSelect")?.value,
+      buttonFrameOpacity: document.getElementById("projectGameUiButtonFrameOpacityInput")?.value,
+      saveSlotFrameAssetId: document.getElementById("projectGameUiSaveSlotFrameAssetSelect")?.value,
+      systemPanelFrameAssetId: document.getElementById("projectGameUiSystemPanelFrameAssetSelect")?.value,
+      uiOverlayAssetId: document.getElementById("projectGameUiOverlayAssetSelect")?.value,
+      uiOverlayOpacity: document.getElementById("projectGameUiOverlayOpacityInput")?.value,
+      backgroundColor: document.getElementById("projectGameUiBackgroundColorInput")?.value,
+      backgroundAccentColor: document.getElementById("projectGameUiBackgroundAccentColorInput")?.value,
+      panelColor: document.getElementById("projectGameUiPanelColorInput")?.value,
+      panelOpacity: document.getElementById("projectGameUiPanelOpacityInput")?.value,
+      textColor: document.getElementById("projectGameUiTextColorInput")?.value,
+      mutedTextColor: document.getElementById("projectGameUiMutedTextColorInput")?.value,
+      accentColor: document.getElementById("projectGameUiAccentColorInput")?.value,
+      accentAltColor: document.getElementById("projectGameUiAccentAltColorInput")?.value,
+      buttonTextColor: document.getElementById("projectGameUiButtonTextColorInput")?.value,
+      borderColor: document.getElementById("projectGameUiBorderColorInput")?.value,
+      borderOpacity: document.getElementById("projectGameUiBorderOpacityInput")?.value,
+      cornerRadius: document.getElementById("projectGameUiCornerRadiusInput")?.value,
+      backdropBlur: document.getElementById("projectGameUiBackdropBlurInput")?.value,
+      stageVignette: document.getElementById("projectGameUiStageVignetteInput")?.value,
+      motionIntensity: document.getElementById("projectGameUiMotionIntensityInput")?.value,
+    },
+  });
+}
+
+async function saveProjectFormalSaveSlotCount() {
+  const input = document.getElementById("projectFormalSaveSlotCountInput");
+  const nextCount = getSafeProjectFormalSaveSlotCount(input?.value);
+  const currentCount = getProjectFormalSaveSlotCount();
+  if (nextCount === currentCount) {
+    setSaveStatus(`当前正式存档位已经是 ${currentCount} 个`);
+    showToast(`当前正式存档位已经是 ${currentCount} 个`);
+    return;
+  }
+
+  try {
+    setSaveStatus("正在保存正式存档位数量...");
+    await postJson(API_SAVE_PROJECT_SETTINGS, {
+      runtimeSettings: {
+        formalSaveSlotCount: nextCount,
+      },
+    });
+    await reloadProjectData({ ...getCurrentUiState() });
+    state.previewSaveSlots = loadStoredPreviewSaveSlots();
+    state.previewSaveDialogPage = 0;
+    renderPreviewScreen();
+    setSaveStatus(`正式存档位已更新为 ${getProjectFormalSaveSlotCount()} 个`);
+    showToast(`正式存档位已更新为 ${getProjectFormalSaveSlotCount()} 个`);
+  } catch (error) {
+    setSaveStatus("保存正式存档位失败", true);
+    showToast("保存正式存档位失败", "error");
+    window.alert(`保存正式存档位没有成功：${error.message}`);
+  }
+}
+
+async function saveProjectDialogBoxConfig() {
+  const nextConfig = readProjectDialogBoxConfigFromInputs();
+  try {
+    setSaveStatus("正在保存项目文本框样式...");
+    await postJson(API_SAVE_PROJECT_SETTINGS, {
+      dialogBoxConfig: nextConfig,
+    });
+    state.previewPlayback.dialogTheme = "project";
+    persistPreviewPlaybackSettings();
+    await reloadProjectData({ ...getCurrentUiState() });
+    renderPreviewScreen();
+    setSaveStatus("项目文本框样式已保存");
+    showToast("项目文本框样式已保存");
+  } catch (error) {
+    setSaveStatus("保存文本框样式失败", true);
+    showToast("保存文本框样式失败", "error");
+    window.alert(`保存文本框样式没有成功：${error.message}`);
+  }
+}
+
+async function saveProjectGameUiConfig() {
+  const nextConfig = readProjectGameUiConfigFromInputs();
+  try {
+    setSaveStatus("正在保存成品 UI 皮肤...");
+    await postJson(API_SAVE_PROJECT_SETTINGS, {
+      gameUiConfig: nextConfig,
+    });
+    await reloadProjectData({ ...getCurrentUiState() });
+    renderPreviewScreen();
+    setSaveStatus("成品 UI 皮肤已保存");
+    showToast("成品 UI 皮肤已保存");
+  } catch (error) {
+    setSaveStatus("保存成品 UI 皮肤失败", true);
+    showToast("保存成品 UI 皮肤失败", "error");
+    window.alert(`保存成品 UI 皮肤没有成功：${error.message}`);
+  }
+}
+
+function applyProjectDialogBoxPreset(preset) {
+  const nextConfig = getProjectDialogBoxPresetConfig(preset);
+  const fieldMap = {
+    projectDialogBoxPresetSelect: nextConfig.preset,
+    projectDialogBoxShapeSelect: nextConfig.shape,
+    projectDialogBoxAnchorSelect: nextConfig.anchor,
+    projectDialogBoxWidthInput: nextConfig.widthPercent,
+    projectDialogBoxHeightInput: nextConfig.minHeight,
+    projectDialogBoxOffsetXInput: nextConfig.offsetXPercent,
+    projectDialogBoxOffsetYInput: nextConfig.offsetYPercent,
+    projectDialogBoxBackgroundColorInput: nextConfig.backgroundColor,
+    projectDialogBoxBackgroundOpacityInput: nextConfig.backgroundOpacity,
+    projectDialogBoxBorderColorInput: nextConfig.borderColor,
+    projectDialogBoxBorderOpacityInput: nextConfig.borderOpacity,
+    projectDialogBoxTextColorInput: nextConfig.textColor,
+    projectDialogBoxSpeakerColorInput: nextConfig.speakerColor,
+    projectDialogBoxBlurInput: nextConfig.blurStrength,
+    projectDialogBoxAssetOpacityInput: nextConfig.panelAssetOpacity,
+    projectDialogBoxAssetFitSelect: nextConfig.panelAssetFit,
+  };
+
+  Object.entries(fieldMap).forEach(([id, value]) => {
+    const field = document.getElementById(id);
+    if (field) {
+      field.value = String(value);
+    }
+  });
+
+  if (preset === "transparent") {
+    const assetField = document.getElementById("projectDialogBoxAssetSelect");
+    if (assetField) {
+      assetField.value = "";
+    }
+  }
+
+  setSaveStatus(`已套用文本框预设：${PROJECT_DIALOG_BOX_PRESET_LABELS[getSafeProjectDialogBoxPreset(preset)]}`);
+  showToast(`已套用文本框预设：${PROJECT_DIALOG_BOX_PRESET_LABELS[getSafeProjectDialogBoxPreset(preset)]}`);
+}
+
+function applyProjectGameUiPreset(preset) {
+  const nextConfig = getProjectGameUiPresetConfig(preset);
+  const fieldMap = {
+    projectGameUiPresetSelect: nextConfig.preset,
+    projectGameUiLayoutPresetSelect: nextConfig.layoutPreset,
+    projectGameUiTitleLayoutSelect: nextConfig.titleLayout,
+    projectGameUiFontStyleSelect: nextConfig.fontStyle,
+    projectGameUiSurfaceStyleSelect: nextConfig.surfaceStyle,
+    projectGameUiBrandModeSelect: nextConfig.brandMode,
+    projectGameUiSidePanelModeSelect: nextConfig.sidePanelMode,
+    projectGameUiSidePanelPositionSelect: nextConfig.sidePanelPosition,
+    projectGameUiTopbarPositionSelect: nextConfig.topbarPosition,
+    projectGameUiHudPositionSelect: nextConfig.hudPosition,
+    projectGameUiTitleCardAnchorSelect: nextConfig.titleCardAnchor,
+    projectGameUiTitleCardOffsetXInput: nextConfig.titleCardOffsetXPercent,
+    projectGameUiTitleCardOffsetYInput: nextConfig.titleCardOffsetYPercent,
+    projectGameUiLayoutGapInput: nextConfig.layoutGap,
+    projectGameUiSidePanelWidthInput: nextConfig.sidePanelWidth,
+    projectGameUiTitleBackgroundFitSelect: nextConfig.titleBackgroundFit,
+    projectGameUiTitleBackgroundOpacityInput: nextConfig.titleBackgroundOpacity,
+    projectGameUiPanelFrameOpacityInput: nextConfig.panelFrameOpacity,
+    projectGameUiButtonFrameOpacityInput: nextConfig.buttonFrameOpacity,
+    projectGameUiOverlayOpacityInput: nextConfig.uiOverlayOpacity,
+    projectGameUiBackgroundColorInput: nextConfig.backgroundColor,
+    projectGameUiBackgroundAccentColorInput: nextConfig.backgroundAccentColor,
+    projectGameUiPanelColorInput: nextConfig.panelColor,
+    projectGameUiPanelOpacityInput: nextConfig.panelOpacity,
+    projectGameUiTextColorInput: nextConfig.textColor,
+    projectGameUiMutedTextColorInput: nextConfig.mutedTextColor,
+    projectGameUiAccentColorInput: nextConfig.accentColor,
+    projectGameUiAccentAltColorInput: nextConfig.accentAltColor,
+    projectGameUiButtonTextColorInput: nextConfig.buttonTextColor,
+    projectGameUiBorderColorInput: nextConfig.borderColor,
+    projectGameUiBorderOpacityInput: nextConfig.borderOpacity,
+    projectGameUiCornerRadiusInput: nextConfig.cornerRadius,
+    projectGameUiBackdropBlurInput: nextConfig.backdropBlur,
+    projectGameUiStageVignetteInput: nextConfig.stageVignette,
+    projectGameUiMotionIntensityInput: nextConfig.motionIntensity,
+  };
+
+  Object.entries(fieldMap).forEach(([id, value]) => {
+    const field = document.getElementById(id);
+    if (field) {
+      field.value = String(value);
+    }
+  });
+
+  [
+    "projectGameUiTitleBackgroundAssetSelect",
+    "projectGameUiTitleLogoAssetSelect",
+    "projectGameUiPanelFrameAssetSelect",
+    "projectGameUiButtonFrameAssetSelect",
+    "projectGameUiSaveSlotFrameAssetSelect",
+    "projectGameUiSystemPanelFrameAssetSelect",
+    "projectGameUiOverlayAssetSelect",
+  ].forEach((id) => {
+    const field = document.getElementById(id);
+    if (field) {
+      field.value = "";
+    }
+  });
+
+  setSaveStatus(`已套用成品 UI 皮肤：${PROJECT_GAME_UI_PRESET_LABELS[getSafeProjectGameUiPreset(preset)]}`);
+  showToast(`已套用成品 UI 皮肤：${PROJECT_GAME_UI_PRESET_LABELS[getSafeProjectGameUiPreset(preset)]}`);
+}
+
 function formatGroupedAssetCounts(groupedCounts = {}) {
   return Object.entries(groupedCounts)
     .filter(([, count]) => Number(count) > 0)
@@ -28628,7 +30521,9 @@ async function deleteSelectedUnusedAssets() {
 
 async function exportBuild(target = "web") {
   const exportTarget =
-    target === "windows_nwjs"
+    target === "native_runtime"
+      ? "native_runtime"
+      : target === "windows_nwjs"
       ? "windows_nwjs"
       : target === "macos_nwjs"
         ? "macos_nwjs"
@@ -28640,7 +30535,9 @@ async function exportBuild(target = "web") {
           ? "editor_desktop_suite"
           : "web";
   const targetLabel =
-    exportTarget === "windows_nwjs"
+    exportTarget === "native_runtime"
+      ? "原生 Runtime 包"
+      : exportTarget === "windows_nwjs"
       ? "Windows 桌面包"
       : exportTarget === "macos_nwjs"
         ? "macOS 桌面包"
@@ -28660,6 +30557,12 @@ async function exportBuild(target = "web") {
     if (result.missingAssets > 0) {
       setSaveStatus(`${result.targetLabel ?? targetLabel}已导出，但还有 ${result.missingAssets} 个素材文件没找到`);
       showToast(`${result.targetLabel ?? targetLabel}已导出，缺失 ${result.missingAssets} 个素材`, "error");
+      return;
+    }
+
+    if (exportTarget === "native_runtime") {
+      setSaveStatus("原生 Runtime 包已经导出，里面已包含继续打成独立 App 的脚本");
+      showToast("原生 Runtime 包已经导出");
       return;
     }
 
@@ -28994,6 +30897,34 @@ function collectEditedBlock(block) {
     return {
       ...block,
       assetId: getSafeAssetIdByType("sfx", document.getElementById("editorSfxAssetId")?.value),
+    };
+  }
+
+  if (block.type === "video_play") {
+    const startTimeSeconds = getSafeNonNegativeNumber(document.getElementById("editorVideoStartTime")?.value, 0);
+    const endTimeSeconds = getSafeNonNegativeNumber(document.getElementById("editorVideoEndTime")?.value, 0);
+
+    return {
+      ...block,
+      assetId: getSafeAssetIdByType("video", document.getElementById("editorVideoAssetId")?.value),
+      title: String(document.getElementById("editorVideoTitle")?.value ?? "").trim(),
+      fit: getSafeVideoFit(document.getElementById("editorVideoFit")?.value),
+      volume: getSafeVideoVolume(document.getElementById("editorVideoVolume")?.value),
+      startTimeSeconds,
+      endTimeSeconds: endTimeSeconds > startTimeSeconds ? endTimeSeconds : 0,
+      skippable: document.getElementById("editorVideoSkippable")?.value !== "false",
+    };
+  }
+
+  if (block.type === "credits_roll") {
+    return {
+      ...block,
+      title: String(document.getElementById("editorCreditsTitle")?.value ?? "STAFF").trim() || "STAFF",
+      subtitle: String(document.getElementById("editorCreditsSubtitle")?.value ?? "").trim(),
+      lines: parseCreditsLines(document.getElementById("editorCreditsLines")?.value ?? ""),
+      durationSeconds: getSafeCreditsDuration(document.getElementById("editorCreditsDuration")?.value),
+      background: getSafeCreditsBackground(document.getElementById("editorCreditsBackground")?.value),
+      skippable: document.getElementById("editorCreditsSkippable")?.value !== "false",
     };
   }
 
@@ -30271,6 +32202,33 @@ function createDefaultBlock(scene, blockType) {
       id: blockId,
       type: "sfx_play",
       assetId: getSafeAssetIdByType("sfx"),
+    };
+  }
+
+  if (blockType === "video_play") {
+    return {
+      id: blockId,
+      type: "video_play",
+      assetId: getSafeAssetIdByType("video"),
+      title: "Opening Movie",
+      fit: "contain",
+      volume: 100,
+      startTimeSeconds: 0,
+      endTimeSeconds: 0,
+      skippable: true,
+    };
+  }
+
+  if (blockType === "credits_roll") {
+    return {
+      id: blockId,
+      type: "credits_roll",
+      title: "STAFF",
+      subtitle: "Thank you for playing",
+      lines: ["企划：Tony Na", "剧本：Tony Na", "美术：", "音乐：", "特别感谢：所有玩家"],
+      durationSeconds: 18,
+      background: "dark",
+      skippable: true,
     };
   }
 
@@ -33011,6 +34969,32 @@ function buildBlockDetails(block) {
         state.data.assetsById.get(block.assetId)?.name ?? block.assetId,
       ]);
       break;
+    case "video_play":
+      rows.push([
+        "视频素材",
+        state.data.assetsById.get(block.assetId)?.name ?? block.assetId,
+      ]);
+      rows.push(["播放标题", block.title || "未填写"]);
+      rows.push(["画面适配", getVideoFitLabel(block.fit)]);
+      rows.push(["视频音量", `${getSafeVideoVolume(block.volume)}%`]);
+      rows.push([
+        "播放片段",
+        `${getSafeNonNegativeNumber(block.startTimeSeconds, 0)}s -> ${
+          getSafeNonNegativeNumber(block.endTimeSeconds, 0) || "自然结束"
+        }`,
+      ]);
+      rows.push(["允许跳过", block.skippable === false ? "否" : "是"]);
+      break;
+    case "credits_roll": {
+      const creditsLines = getCreditsLines(block.lines);
+      rows.push(["片尾标题", block.title || "STAFF"]);
+      rows.push(["副标题", block.subtitle || "未填写"]);
+      rows.push(["字幕行数", `${creditsLines.length} 行`]);
+      rows.push(["滚动时长", `${getSafeCreditsDuration(block.durationSeconds)} 秒`]);
+      rows.push(["片尾背景", getCreditsBackgroundLabel(block.background)]);
+      rows.push(["允许跳过", block.skippable === false ? "否" : "是"]);
+      break;
+    }
     case "particle_effect":
       rows.push(["执行动作", getParticleActionLabel(block.action)]);
       if (getSafeParticleAction(block.action) === "start") {
@@ -33203,6 +35187,20 @@ function getBlockSummary(block, scene) {
         title: state.data.assetsById.get(block.assetId)?.name ?? block.assetId,
         meta: "播放一次音效",
       };
+    case "video_play":
+      return {
+        title: block.title || state.data.assetsById.get(block.assetId)?.name || block.assetId || "未选择视频",
+        meta: `${getVideoFitLabel(block.fit)} / ${getSafeVideoVolume(block.volume)}% / ${
+          block.skippable === false ? "不可跳过" : "可跳过"
+        }`,
+      };
+    case "credits_roll":
+      return {
+        title: block.title || "STAFF",
+        meta: `${getCreditsLines(block.lines).length} 行字幕 / ${getSafeCreditsDuration(
+          block.durationSeconds
+        )} 秒 / ${getCreditsBackgroundLabel(block.background)}`,
+      };
     case "particle_effect":
       return getSafeParticleAction(block.action) === "stop"
         ? {
@@ -33363,6 +35361,20 @@ function computeVisualState(scene, blockIndex) {
       }
       case "music_stop":
         visual.musicName = "未播放";
+        break;
+      case "video_play": {
+        const asset = state.data.assetsById.get(block.assetId);
+        visual.speakerName = "视频播放";
+        visual.dialogueText = `${block.title || asset?.name || block.assetId || "未选择视频"} 会以 ${getVideoFitLabel(
+          block.fit
+        )} 方式播放。`;
+        break;
+      }
+      case "credits_roll":
+        visual.speakerName = "片尾字幕";
+        visual.dialogueText = `${block.title || "STAFF"} / ${getCreditsLines(block.lines).length} 行 / ${getSafeCreditsDuration(
+          block.durationSeconds
+        )} 秒。`;
         break;
       case "particle_effect":
         if (getSafeParticleAction(block.action) === "stop") {
@@ -33827,7 +35839,27 @@ function validateBlock(block, scene, data, pushIssue) {
       case "background":
       case "music_play":
       case "sfx_play":
+      case "video_play":
         requireAsset(block.assetId);
+        if (block.type === "video_play") {
+          if (!block.assetId) {
+            pushIssue("warning", "视频播放卡片还没有选择视频素材。", location, blockContext);
+          }
+          if (getSafeVideoFit(block.fit) !== (block.fit ?? "contain")) {
+            pushIssue("warning", "视频适配方式不认识，预览时会回退成完整显示。", location, blockContext);
+          }
+          if (Number(block.endTimeSeconds ?? 0) > 0 && Number(block.endTimeSeconds) <= Number(block.startTimeSeconds ?? 0)) {
+            pushIssue("warning", "视频结束秒数需要大于开始秒数，否则会播放到自然结束。", location, blockContext);
+          }
+        }
+        break;
+      case "credits_roll":
+        if (getCreditsLines(block.lines).length === 0) {
+          pushIssue("warning", "片尾字幕还没有填写演职人员内容。", location, blockContext);
+        }
+        if (getSafeCreditsBackground(block.background) !== (block.background ?? "dark")) {
+          pushIssue("warning", "片尾背景样式不认识，预览时会回退成深色电影片尾。", location, blockContext);
+        }
         break;
       case "particle_effect":
         if (getSafeParticleAction(block.action) === "start") {
@@ -34158,6 +36190,56 @@ function isAudioAssetType(type) {
 
 function isVideoAssetType(type) {
   return type === "video";
+}
+
+function getSafeVideoFit(value) {
+  return Object.prototype.hasOwnProperty.call(VIDEO_FIT_LABELS, value) ? value : "contain";
+}
+
+function getVideoFitLabel(value) {
+  return VIDEO_FIT_LABELS[getSafeVideoFit(value)] ?? VIDEO_FIT_LABELS.contain;
+}
+
+function getSafeVideoVolume(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) {
+    return 100;
+  }
+  return Math.round(clamp(number, 0, 100));
+}
+
+function getSafeCreditsDuration(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) {
+    return 18;
+  }
+  return Math.round(clamp(number, 4, 180));
+}
+
+function getSafeCreditsBackground(value) {
+  return Object.prototype.hasOwnProperty.call(CREDITS_BACKGROUND_LABELS, value) ? value : "dark";
+}
+
+function getCreditsBackgroundLabel(value) {
+  return CREDITS_BACKGROUND_LABELS[getSafeCreditsBackground(value)] ?? CREDITS_BACKGROUND_LABELS.dark;
+}
+
+function parseCreditsLines(value) {
+  return String(value ?? "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function getCreditsLines(blockLines) {
+  if (Array.isArray(blockLines)) {
+    return blockLines.map((line) => String(line ?? "").trim()).filter(Boolean);
+  }
+  return parseCreditsLines(blockLines);
+}
+
+function getCreditsLinesText(blockLines) {
+  return getCreditsLines(blockLines).join("\n");
 }
 
 function buildTemplateAssetUrl(relativePath) {

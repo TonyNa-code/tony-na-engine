@@ -6,6 +6,8 @@ import json
 import os
 import plistlib
 import shutil
+import subprocess
+import sys
 import tempfile
 import tarfile
 import unittest
@@ -272,6 +274,67 @@ class RunEditorSmokeTests(unittest.TestCase):
             resolution={"width": 1920, "height": 1080},
             release_version="1.2.3-beta",
             editor_mode="advanced",
+            runtime_settings={"formalSaveSlotCount": 60},
+            dialog_box_config={
+                "preset": "transparent",
+                "shape": "capsule",
+                "widthPercent": 82,
+                "minHeight": 132,
+                "backgroundColor": "#10243a",
+                "backgroundOpacity": 12,
+                "borderColor": "#6fdfff",
+                "borderOpacity": 0,
+                "textColor": "#f0f6ff",
+                "speakerColor": "#ffffff",
+                "panelAssetFit": "contain",
+                "anchor": "center",
+                "offsetXPercent": 12,
+                "offsetYPercent": -8,
+            },
+            game_ui_config={
+                "preset": "minimal",
+                "layoutPreset": "cinematic",
+                "titleLayout": "poster",
+                "fontStyle": "serif",
+                "surfaceStyle": "minimal",
+                "brandMode": "hidden",
+                "sidePanelMode": "hidden",
+                "sidePanelPosition": "left",
+                "topbarPosition": "bottom",
+                "hudPosition": "bottom-right",
+                "titleCardAnchor": "right",
+                "titleCardOffsetXPercent": -7,
+                "titleCardOffsetYPercent": 5,
+                "layoutGap": 26,
+                "sidePanelWidth": 356,
+                "backgroundColor": "#05070c",
+                "backgroundAccentColor": "#ffffff",
+                "panelColor": "#080a10",
+                "panelOpacity": 48,
+                "textColor": "#f7f7f7",
+                "mutedTextColor": "#c6c8cf",
+                "accentColor": "#ffffff",
+                "accentAltColor": "#aeb5c6",
+                "buttonTextColor": "#101216",
+                "borderColor": "#ffffff",
+                "borderOpacity": 16,
+                "cornerRadius": 10,
+                "backdropBlur": 2,
+                "stageVignette": 20,
+                "motionIntensity": 10,
+                "titleBackgroundAssetId": "asset_title_bg",
+                "titleBackgroundFit": "contain",
+                "titleBackgroundOpacity": 55,
+                "titleLogoAssetId": "asset_title_logo",
+                "panelFrameAssetId": "asset_panel_frame",
+                "panelFrameOpacity": 41,
+                "buttonFrameAssetId": "asset_button_frame",
+                "buttonFrameOpacity": 36,
+                "saveSlotFrameAssetId": "asset_save_frame",
+                "systemPanelFrameAssetId": "asset_system_frame",
+                "uiOverlayAssetId": "asset_overlay_grid",
+                "uiOverlayOpacity": 9,
+            },
             particle_custom_presets=[
                 {
                     "name": "暴雪测试",
@@ -293,6 +356,41 @@ class RunEditorSmokeTests(unittest.TestCase):
         self.assertEqual(result["project"]["releaseVersion"], "1.2.3-beta")
         self.assertEqual(saved_project["editorMode"], "advanced")
         self.assertEqual(saved_project["resolution"]["width"], 1920)
+        self.assertEqual(saved_project["runtimeSettings"]["formalSaveSlotCount"], 60)
+        self.assertEqual(saved_project["dialogBoxConfig"]["preset"], "transparent")
+        self.assertEqual(saved_project["dialogBoxConfig"]["shape"], "capsule")
+        self.assertEqual(saved_project["dialogBoxConfig"]["widthPercent"], 82)
+        self.assertEqual(saved_project["dialogBoxConfig"]["backgroundColor"], "#10243a")
+        self.assertEqual(saved_project["dialogBoxConfig"]["anchor"], "center")
+        self.assertEqual(saved_project["dialogBoxConfig"]["offsetXPercent"], 12)
+        self.assertEqual(saved_project["dialogBoxConfig"]["offsetYPercent"], -8)
+        self.assertEqual(saved_project["gameUiConfig"]["preset"], "minimal")
+        self.assertEqual(saved_project["gameUiConfig"]["layoutPreset"], "cinematic")
+        self.assertEqual(saved_project["gameUiConfig"]["titleLayout"], "poster")
+        self.assertEqual(saved_project["gameUiConfig"]["fontStyle"], "serif")
+        self.assertEqual(saved_project["gameUiConfig"]["brandMode"], "hidden")
+        self.assertEqual(saved_project["gameUiConfig"]["sidePanelMode"], "hidden")
+        self.assertEqual(saved_project["gameUiConfig"]["sidePanelPosition"], "left")
+        self.assertEqual(saved_project["gameUiConfig"]["topbarPosition"], "bottom")
+        self.assertEqual(saved_project["gameUiConfig"]["hudPosition"], "bottom-right")
+        self.assertEqual(saved_project["gameUiConfig"]["titleCardAnchor"], "right")
+        self.assertEqual(saved_project["gameUiConfig"]["titleCardOffsetXPercent"], -7)
+        self.assertEqual(saved_project["gameUiConfig"]["titleCardOffsetYPercent"], 5)
+        self.assertEqual(saved_project["gameUiConfig"]["layoutGap"], 26)
+        self.assertEqual(saved_project["gameUiConfig"]["sidePanelWidth"], 356)
+        self.assertEqual(saved_project["gameUiConfig"]["panelOpacity"], 48)
+        self.assertEqual(saved_project["gameUiConfig"]["titleBackgroundAssetId"], "asset_title_bg")
+        self.assertEqual(saved_project["gameUiConfig"]["titleBackgroundFit"], "contain")
+        self.assertEqual(saved_project["gameUiConfig"]["titleBackgroundOpacity"], 55)
+        self.assertEqual(saved_project["gameUiConfig"]["titleLogoAssetId"], "asset_title_logo")
+        self.assertEqual(saved_project["gameUiConfig"]["panelFrameAssetId"], "asset_panel_frame")
+        self.assertEqual(saved_project["gameUiConfig"]["panelFrameOpacity"], 41)
+        self.assertEqual(saved_project["gameUiConfig"]["buttonFrameAssetId"], "asset_button_frame")
+        self.assertEqual(saved_project["gameUiConfig"]["buttonFrameOpacity"], 36)
+        self.assertEqual(saved_project["gameUiConfig"]["saveSlotFrameAssetId"], "asset_save_frame")
+        self.assertEqual(saved_project["gameUiConfig"]["systemPanelFrameAssetId"], "asset_system_frame")
+        self.assertEqual(saved_project["gameUiConfig"]["uiOverlayAssetId"], "asset_overlay_grid")
+        self.assertEqual(saved_project["gameUiConfig"]["uiOverlayOpacity"], 9)
         self.assertEqual(saved_project["particleCustomPresets"][0]["name"], "暴雪测试")
 
     def test_asset_import_replace_and_delete_with_usage_protection(self) -> None:
@@ -344,6 +442,55 @@ class RunEditorSmokeTests(unittest.TestCase):
         delete_result = run_editor.delete_asset(asset["id"])
         self.assertEqual(delete_result["deletedAssetId"], asset["id"])
         self.assertFalse((run_editor.TEMPLATE_DIR / replace_result["asset"]["path"]).exists())
+
+    def test_video_blocks_export_to_web_runtime(self) -> None:
+        _, chapter_result = self.create_blank_project_with_chapter()
+
+        import_result = run_editor.import_assets(
+            "auto",
+            [build_upload_payload("opening_movie.mp4", b"fake-video-data")],
+        )
+        video_asset = import_result["assets"][0]
+        self.assertEqual(video_asset["type"], "video")
+        self.assertTrue(video_asset["path"].startswith("assets/video/"))
+
+        self.save_scene_with_blocks(
+            chapter_result["chapterId"],
+            chapter_result["scene"],
+            [
+                {
+                    "id": "block_video",
+                    "type": "video_play",
+                    "assetId": video_asset["id"],
+                    "title": "Opening Movie",
+                    "fit": "contain",
+                    "volume": 75,
+                    "startTimeSeconds": 1.5,
+                    "endTimeSeconds": 4,
+                    "skippable": True,
+                },
+                {
+                    "id": "block_credits",
+                    "type": "credits_roll",
+                    "title": "STAFF",
+                    "subtitle": "Thank you for playing",
+                    "lines": ["企划：Tony Na", "测试：Tony Na Engine"],
+                    "durationSeconds": 12,
+                    "background": "dark",
+                    "skippable": True,
+                },
+            ],
+        )
+
+        export_result = run_editor.export_web_build()
+        build_dir = Path(export_result["buildPath"])
+        exported_video = build_dir / "assets" / "video" / f"{video_asset['id']}.mp4"
+        index_html = (build_dir / "index.html").read_text(encoding="utf-8")
+
+        self.assertTrue(exported_video.is_file())
+        self.assertIn('"type": "video_play"', index_html)
+        self.assertIn('"type": "credits_roll"', index_html)
+        self.assertIn("Opening Movie", index_html)
 
     def test_voice_placeholder_and_match_workflow(self) -> None:
         _, chapter_result = self.create_blank_project_with_chapter()
@@ -523,6 +670,240 @@ class RunEditorSmokeTests(unittest.TestCase):
             manifest["engine"]["releaseVersion"],
             run_editor.DEFAULT_EXPORT_RELEASE_VERSION,
         )
+
+    def test_native_runtime_export_build_smoke(self) -> None:
+        _, chapter_result = self.create_blank_project_with_chapter()
+        run_editor.save_project_settings(
+            runtime_settings={"formalSaveSlotCount": 60},
+            game_ui_config={
+                "preset": "paper",
+                "layoutPreset": "compact",
+                "titleLayout": "left",
+                "fontStyle": "serif",
+                "surfaceStyle": "solid",
+                "brandMode": "project",
+                "sidePanelMode": "compact",
+                "sidePanelPosition": "left",
+                "topbarPosition": "top",
+                "hudPosition": "bottom-left",
+                "titleCardAnchor": "left",
+                "titleCardOffsetXPercent": 3,
+                "titleCardOffsetYPercent": 2,
+                "layoutGap": 16,
+                "sidePanelWidth": 280,
+                "titleBackgroundFit": "contain",
+                "titleBackgroundOpacity": 33,
+                "panelFrameOpacity": 22,
+                "buttonFrameOpacity": 12,
+                "uiOverlayOpacity": 5,
+            },
+        )
+
+        self.save_scene_with_blocks(
+            chapter_result["chapterId"],
+            chapter_result["scene"],
+            [
+                {"id": "block_001", "type": "background", "assetId": ""},
+                {
+                    "id": "block_001b",
+                    "type": "particle_effect",
+                    "action": "start",
+                    "preset": "snow",
+                    "intensity": "medium",
+                    "speed": "medium",
+                    "wind": "still",
+                    "area": "full",
+                },
+                {"id": "block_001c", "type": "screen_flash", "color": "white", "intensity": "soft", "duration": "short"},
+                {"id": "block_001d", "type": "camera_zoom", "action": "zoom_in", "strength": "light", "focus": "center"},
+                {"id": "block_001e", "type": "screen_filter", "action": "apply", "preset": "memory", "strength": "soft"},
+                {
+                    "id": "block_002",
+                    "type": "dialogue",
+                    "speakerId": "heroine",
+                    "expressionId": "",
+                    "text": "这是原生 Runtime 包烟测。",
+                },
+            ],
+        )
+
+        export_result = run_editor.export_native_runtime_build()
+
+        build_dir = Path(export_result["buildPath"])
+        manifest_path = Path(export_result["manifestPath"])
+        self.assertEqual(export_result["target"], run_editor.EXPORT_TARGET_NATIVE_RUNTIME)
+        self.assertTrue((build_dir / "game_data.json").is_file())
+        self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_PLAYER_NAME).is_file())
+        self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_README_NAME).is_file())
+        self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_REQUIREMENTS_NAME).is_file())
+        self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_BUILD_REQUIREMENTS_NAME).is_file())
+        self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_APP_BUILDER_NAME).is_file())
+        self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_RELEASE_CHECK_NAME).is_file())
+        self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_MAC_COMMAND_NAME).is_file())
+        self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_LINUX_COMMAND_NAME).is_file())
+        self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_WINDOWS_COMMAND_NAME).is_file())
+        self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_MAC_APP_BUILDER_COMMAND_NAME).is_file())
+        self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_LINUX_APP_BUILDER_COMMAND_NAME).is_file())
+        self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_WINDOWS_APP_BUILDER_COMMAND_NAME).is_file())
+        self.assertTrue(Path(export_result["archivePath"]).is_file())
+        self.assertTrue(manifest_path.is_file())
+
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        self.assertEqual(manifest["engine"]["exportTarget"], run_editor.EXPORT_TARGET_NATIVE_RUNTIME)
+        self.assertEqual(manifest["runtime"]["mode"], "pygame_native")
+        self.assertTrue(manifest["runtime"]["canBuildStandaloneApp"])
+
+        release_check_payload = json.loads((build_dir / run_editor.NATIVE_RUNTIME_RELEASE_CHECK_NAME).read_text(encoding="utf-8"))
+        self.assertEqual(release_check_payload["status"], "pass")
+        self.assertEqual(release_check_payload["summary"]["errors"], 0)
+
+        game_data = json.loads((build_dir / "game_data.json").read_text(encoding="utf-8"))
+        self.assertIn("gameUiConfig", game_data["project"])
+        self.assertEqual(game_data["project"]["gameUiConfig"]["preset"], "paper")
+        self.assertEqual(game_data["project"]["gameUiConfig"]["layoutPreset"], "compact")
+        self.assertEqual(game_data["project"]["gameUiConfig"]["titleLayout"], "left")
+        self.assertEqual(game_data["project"]["gameUiConfig"]["sidePanelPosition"], "left")
+        self.assertEqual(game_data["project"]["gameUiConfig"]["hudPosition"], "bottom-left")
+        self.assertEqual(game_data["project"]["gameUiConfig"]["titleCardAnchor"], "left")
+        self.assertEqual(game_data["project"]["gameUiConfig"]["sidePanelWidth"], 280)
+        self.assertEqual(game_data["project"]["gameUiConfig"]["titleBackgroundFit"], "contain")
+        self.assertEqual(game_data["project"]["gameUiConfig"]["titleBackgroundOpacity"], 33)
+
+        app_builder_description = subprocess.run(
+            [
+                sys.executable,
+                str(build_dir / run_editor.NATIVE_RUNTIME_APP_BUILDER_NAME),
+                "--describe",
+                str(build_dir),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(app_builder_description.returncode, 0, app_builder_description.stdout + app_builder_description.stderr)
+        app_builder_payload = json.loads(app_builder_description.stdout)
+        self.assertEqual(app_builder_payload["gameData"], "game_data.json")
+        self.assertEqual(app_builder_payload["runtimePlayer"], run_editor.NATIVE_RUNTIME_PLAYER_NAME)
+        self.assertEqual(app_builder_payload["outputDir"], "native_app_dist")
+        self.assertEqual(app_builder_payload["packageManifest"], "native_app_package_manifest.json")
+        self.assertTrue(app_builder_payload["plannedArchiveName"].endswith("-preview.zip"))
+        self.assertIn(app_builder_payload["platform"], {"macos", "windows", "linux", "unknown"})
+        self.assertTrue(app_builder_payload["bundleIdentifier"].startswith("com.tonyna."))
+        self.assertTrue(app_builder_payload["distributionNotes"])
+        self.assertTrue(app_builder_payload["dataEntries"])
+        self.assertFalse(app_builder_payload["missingAssetPaths"])
+        self.assertEqual(app_builder_payload["releaseCheck"]["status"], "pass")
+
+        validation = subprocess.run(
+            [
+                sys.executable,
+                str(build_dir / run_editor.NATIVE_RUNTIME_PLAYER_NAME),
+                "--validate-bundle",
+                str(build_dir),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(validation.returncode, 0, validation.stdout + validation.stderr)
+
+        save_load_validation = subprocess.run(
+            [
+                sys.executable,
+                str(build_dir / run_editor.NATIVE_RUNTIME_PLAYER_NAME),
+                "--exercise-save-load",
+                str(build_dir),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(save_load_validation.returncode, 0, save_load_validation.stdout + save_load_validation.stderr)
+
+        settings_validation = subprocess.run(
+            [
+                sys.executable,
+                str(build_dir / run_editor.NATIVE_RUNTIME_PLAYER_NAME),
+                "--exercise-settings",
+                str(build_dir),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(settings_validation.returncode, 0, settings_validation.stdout + settings_validation.stderr)
+
+        archive_validation = subprocess.run(
+            [
+                sys.executable,
+                str(build_dir / run_editor.NATIVE_RUNTIME_PLAYER_NAME),
+                "--exercise-archives",
+                str(build_dir),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(archive_validation.returncode, 0, archive_validation.stdout + archive_validation.stderr)
+
+        particle_validation = subprocess.run(
+            [
+                sys.executable,
+                str(build_dir / run_editor.NATIVE_RUNTIME_PLAYER_NAME),
+                "--exercise-particles",
+                str(build_dir),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(particle_validation.returncode, 0, particle_validation.stdout + particle_validation.stderr)
+
+        visual_effect_validation = subprocess.run(
+            [
+                sys.executable,
+                str(build_dir / run_editor.NATIVE_RUNTIME_PLAYER_NAME),
+                "--exercise-visual-effects",
+                str(build_dir),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(visual_effect_validation.returncode, 0, visual_effect_validation.stdout + visual_effect_validation.stderr)
+
+        profile_validation = subprocess.run(
+            [
+                sys.executable,
+                str(build_dir / run_editor.NATIVE_RUNTIME_PLAYER_NAME),
+                "--exercise-profile",
+                str(build_dir),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(profile_validation.returncode, 0, profile_validation.stdout + profile_validation.stderr)
+
+        save_dialog_description = subprocess.run(
+            [
+                sys.executable,
+                str(build_dir / run_editor.NATIVE_RUNTIME_PLAYER_NAME),
+                "--describe-save-dialog",
+                str(build_dir),
+                "--page",
+                "1",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(save_dialog_description.returncode, 0, save_dialog_description.stdout + save_dialog_description.stderr)
+        dialog_payload = json.loads(save_dialog_description.stdout)
+        self.assertEqual(dialog_payload["slotCount"], 60)
+        self.assertEqual(dialog_payload["pageCount"], 10)
+        self.assertEqual(dialog_payload["page"], 1)
+        self.assertEqual(dialog_payload["visibleSlots"][0]["slotIndex"], 6)
 
     def test_macos_nwjs_build_smoke(self) -> None:
         _, chapter_result = self.create_blank_project_with_chapter()

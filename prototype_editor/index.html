@@ -209,6 +209,8 @@
             <button class="toolbar-button" data-action="add-music-play">播音乐</button>
             <button class="toolbar-button" data-action="add-music-stop">停音乐</button>
             <button class="toolbar-button" data-action="add-sfx-play">播音效</button>
+            <button class="toolbar-button" data-action="add-video-play">播视频</button>
+            <button class="toolbar-button" data-action="add-credits-roll">片尾字幕</button>
             <button class="toolbar-button" data-action="add-particle-effect">粒子特效</button>
             <button class="toolbar-button" data-action="add-screen-shake">屏幕震动</button>
             <button class="toolbar-button" data-action="add-screen-flash">闪屏</button>
@@ -266,6 +268,7 @@
                 <option value="story">只看正文</option>
                 <option value="effect">只看演出</option>
                 <option value="logic">只看逻辑</option>
+                <option value="video">只看视频</option>
                 <option value="dialogue">只看台词</option>
                 <option value="choice">只看选项</option>
               </select>
@@ -633,9 +636,11 @@
                   <label class="preview-setting">
                     <span>对话框主题</span>
                     <select id="previewDialogThemeSelect">
-                      <option value="warm" selected>暖光标准</option>
+                      <option value="project" selected>项目样式</option>
+                      <option value="warm">暖光标准</option>
                       <option value="moonlight">夜色月光</option>
                       <option value="paper">纸页回忆</option>
+                      <option value="transparent">透明无框</option>
                     </select>
                   </label>
                   <label class="preview-setting">
@@ -785,9 +790,11 @@
               <label class="preview-setting">
                 <span>对话框主题</span>
                 <select id="previewMenuDialogThemeSelect">
+                  <option value="project">项目样式</option>
                   <option value="warm">暖光标准</option>
                   <option value="moonlight">夜色月光</option>
                   <option value="paper">纸页回忆</option>
+                  <option value="transparent">透明无框</option>
                 </select>
               </label>
               <label class="preview-setting">

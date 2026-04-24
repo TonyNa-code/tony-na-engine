@@ -34,6 +34,7 @@ SAMPLE_PROJECT_ID = "sample_heartbeat"
 DEFAULT_PORT = 8765
 EXPORTS_DIR = ROOT_DIR / "exports"
 EXPORT_TEMPLATE_DIR = ROOT_DIR / "export_player_template"
+NATIVE_RUNTIME_TEMPLATE_DIR = ROOT_DIR / "native_runtime"
 EXPORT_RUNTIME_CACHE_DIR = ROOT_DIR / ".export_runtime_cache"
 SUPPORTED_RESOLUTIONS = {(1280, 720), (1920, 1080)}
 HISTORY_DIR_NAME = ".tony_na_history"
@@ -44,9 +45,80 @@ MAX_HISTORY_SNAPSHOTS = 40
 SESSION_STATE_FILE_NAME = "session_state.json"
 SESSION_FORMAT_VERSION = 1
 EXPORT_MANIFEST_FORMAT_VERSION = 1
-PROJECT_FORMAT_VERSION = 2
+PROJECT_FORMAT_VERSION = 3
 DEFAULT_EXPORT_RELEASE_VERSION = "1.0.0-preview"
 DEFAULT_EDITOR_MODE = "beginner"
+DEFAULT_FORMAL_SAVE_SLOT_COUNT = 24
+MIN_FORMAL_SAVE_SLOT_COUNT = 3
+MAX_FORMAL_SAVE_SLOT_COUNT = 120
+DEFAULT_DIALOG_BOX_CONFIG = {
+    "preset": "moonlight",
+    "shape": "rounded",
+    "widthPercent": 76,
+    "minHeight": 148,
+    "paddingX": 18,
+    "paddingY": 14,
+    "backgroundColor": "#0c1422",
+    "backgroundOpacity": 92,
+    "borderColor": "#79dcff",
+    "borderOpacity": 18,
+    "textColor": "#f3f6ff",
+    "speakerColor": "#ffffff",
+    "hintColor": "#c8d6ea",
+    "blurStrength": 10,
+    "borderWidth": 1,
+    "shadowStrength": 30,
+    "panelAssetId": "",
+    "panelAssetOpacity": 0,
+    "panelAssetFit": "cover",
+    "anchor": "bottom",
+    "offsetXPercent": 0,
+    "offsetYPercent": 0,
+}
+DEFAULT_GAME_UI_CONFIG = {
+    "preset": "stellar",
+    "layoutPreset": "balanced",
+    "titleLayout": "center",
+    "fontStyle": "modern",
+    "surfaceStyle": "glass",
+    "brandMode": "project",
+    "sidePanelMode": "full",
+    "sidePanelPosition": "right",
+    "topbarPosition": "top",
+    "hudPosition": "top",
+    "titleCardAnchor": "center",
+    "titleCardOffsetXPercent": 0,
+    "titleCardOffsetYPercent": 0,
+    "layoutGap": 20,
+    "sidePanelWidth": 320,
+    "backgroundColor": "#071120",
+    "backgroundAccentColor": "#6bd5ff",
+    "panelColor": "#0c1422",
+    "panelOpacity": 88,
+    "textColor": "#f3f7ff",
+    "mutedTextColor": "#bacce4",
+    "accentColor": "#79dcff",
+    "accentAltColor": "#7b7cff",
+    "buttonTextColor": "#f8fcff",
+    "borderColor": "#79dcff",
+    "borderOpacity": 18,
+    "cornerRadius": 22,
+    "backdropBlur": 14,
+    "stageVignette": 42,
+    "motionIntensity": 70,
+    "titleBackgroundAssetId": "",
+    "titleBackgroundFit": "cover",
+    "titleBackgroundOpacity": 42,
+    "titleLogoAssetId": "",
+    "panelFrameAssetId": "",
+    "panelFrameOpacity": 18,
+    "buttonFrameAssetId": "",
+    "buttonFrameOpacity": 24,
+    "saveSlotFrameAssetId": "",
+    "systemPanelFrameAssetId": "",
+    "uiOverlayAssetId": "",
+    "uiOverlayOpacity": 8,
+}
 ASSET_DIRECTORIES = {
     "background": Path("assets/backgrounds"),
     "sprite": Path("assets/sprites"),
@@ -76,6 +148,8 @@ BLOCK_LABELS = {
     "music_play": "播放音乐",
     "music_stop": "停止音乐",
     "sfx_play": "播放音效",
+    "video_play": "播放视频",
+    "credits_roll": "片尾字幕",
     "particle_effect": "粒子特效",
     "screen_shake": "屏幕震动",
     "screen_flash": "闪屏",
@@ -94,6 +168,7 @@ IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".avif"}
 AUDIO_EXTENSIONS = {".mp3", ".ogg", ".wav", ".m4a", ".aac", ".flac"}
 VIDEO_EXTENSIONS = {".mp4", ".webm", ".mov", ".m4v"}
 EXPORT_TARGET_WEB = "web"
+EXPORT_TARGET_NATIVE_RUNTIME = "native_runtime"
 EXPORT_TARGET_WINDOWS_NWJS = "windows_nwjs"
 EXPORT_TARGET_MACOS_NWJS = "macos_nwjs"
 EXPORT_TARGET_LINUX_NWJS = "linux_nwjs"
@@ -173,6 +248,23 @@ EDITOR_SIGNING_GUIDE_SOURCE = ROOT_DIR / "docs" / "maintainers" / "release" / "e
 EDITOR_SIGNING_ENV_EXAMPLE_SOURCE = ROOT_DIR / "docs" / "maintainers" / "release" / "editor_signing.env.example"
 EDITOR_SIGNING_CHECK_SCRIPT_SOURCE = ROOT_DIR / "tools" / "release" / "check_editor_signing_readiness.py"
 EDITOR_SIGNING_CHECK_COMMAND_SOURCE = ROOT_DIR / "tools" / "release" / "run_signing_readiness.command"
+NATIVE_RUNTIME_PLAYER_SOURCE = NATIVE_RUNTIME_TEMPLATE_DIR / "runtime_player.py"
+NATIVE_RUNTIME_README_SOURCE = NATIVE_RUNTIME_TEMPLATE_DIR / "README.md"
+NATIVE_RUNTIME_REQUIREMENTS_SOURCE = NATIVE_RUNTIME_TEMPLATE_DIR / "requirements.txt"
+NATIVE_RUNTIME_BUILD_REQUIREMENTS_SOURCE = NATIVE_RUNTIME_TEMPLATE_DIR / "requirements-build.txt"
+NATIVE_RUNTIME_PLAYER_NAME = "runtime_player.py"
+NATIVE_RUNTIME_README_NAME = "README_原生_Runtime_包先看这里.md"
+NATIVE_RUNTIME_REQUIREMENTS_NAME = "requirements-native-runtime.txt"
+NATIVE_RUNTIME_BUILD_REQUIREMENTS_NAME = "requirements-native-runtime-build.txt"
+NATIVE_RUNTIME_APP_BUILDER_SOURCE = NATIVE_RUNTIME_TEMPLATE_DIR / "build_native_runtime_app.py"
+NATIVE_RUNTIME_APP_BUILDER_NAME = "build_native_runtime_app.py"
+NATIVE_RUNTIME_RELEASE_CHECK_NAME = "native-runtime-release-check.json"
+NATIVE_RUNTIME_MAC_COMMAND_NAME = "启动原生Runtime预览.command"
+NATIVE_RUNTIME_LINUX_COMMAND_NAME = "run_native_runtime_preview.sh"
+NATIVE_RUNTIME_WINDOWS_COMMAND_NAME = "run_native_runtime_preview.bat"
+NATIVE_RUNTIME_MAC_APP_BUILDER_COMMAND_NAME = "打包原生Runtime应用.command"
+NATIVE_RUNTIME_LINUX_APP_BUILDER_COMMAND_NAME = "build_native_runtime_app.sh"
+NATIVE_RUNTIME_WINDOWS_APP_BUILDER_COMMAND_NAME = "build_native_runtime_app.bat"
 EDITOR_DISTRIBUTION_CONFIG_NAME = "editor_distribution.json"
 EDITOR_DISTRIBUTION_SNAPSHOT_NAME = "editor_distribution.snapshot.json"
 EDITOR_WINDOWS_INSTALLER_SCRIPT_NAME = "Tony Na Engine Editor Installer.iss"
@@ -466,6 +558,213 @@ def sanitize_project_resolution(value: object) -> dict:
     return {"width": 1920, "height": 1080}
 
 
+def clamp_int(value: object, fallback: int, minimum: int, maximum: int) -> int:
+    try:
+        numeric = int(value)
+    except (TypeError, ValueError):
+        numeric = fallback
+    return max(minimum, min(maximum, numeric))
+
+
+def is_valid_hex_color(value: object) -> bool:
+    return bool(re.fullmatch(r"#[0-9A-Fa-f]{6}", str(value or "").strip()))
+
+
+def sanitize_hex_color(value: object, fallback: str) -> str:
+    return str(value).strip().lower() if is_valid_hex_color(value) else fallback
+
+
+def build_default_project_runtime_settings() -> dict:
+    return {
+        "formalSaveSlotCount": DEFAULT_FORMAL_SAVE_SLOT_COUNT,
+    }
+
+
+def build_default_dialog_box_config() -> dict:
+    return dict(DEFAULT_DIALOG_BOX_CONFIG)
+
+
+def build_default_game_ui_config() -> dict:
+    return dict(DEFAULT_GAME_UI_CONFIG)
+
+
+def sanitize_project_runtime_settings(value: object) -> dict:
+    source = value if isinstance(value, dict) else {}
+    return {
+        "formalSaveSlotCount": clamp_int(
+            source.get("formalSaveSlotCount"),
+            DEFAULT_FORMAL_SAVE_SLOT_COUNT,
+            MIN_FORMAL_SAVE_SLOT_COUNT,
+            MAX_FORMAL_SAVE_SLOT_COUNT,
+        ),
+    }
+
+
+def sanitize_dialog_box_config(value: object) -> dict:
+    source = value if isinstance(value, dict) else {}
+    defaults = build_default_dialog_box_config()
+    preset = str(source.get("preset") or defaults["preset"]).strip().lower() or defaults["preset"]
+    if preset not in {"warm", "moonlight", "paper", "transparent", "custom"}:
+        preset = defaults["preset"]
+
+    shape = str(source.get("shape") or defaults["shape"]).strip().lower() or defaults["shape"]
+    if shape not in {"rounded", "square", "capsule"}:
+        shape = defaults["shape"]
+
+    panel_asset_fit = str(source.get("panelAssetFit") or defaults["panelAssetFit"]).strip().lower() or defaults["panelAssetFit"]
+    if panel_asset_fit not in {"cover", "contain"}:
+        panel_asset_fit = defaults["panelAssetFit"]
+
+    anchor = str(source.get("anchor") or defaults["anchor"]).strip().lower() or defaults["anchor"]
+    if anchor not in {"bottom", "center", "top", "free"}:
+        anchor = defaults["anchor"]
+
+    return {
+        "preset": preset,
+        "shape": shape,
+        "widthPercent": clamp_int(source.get("widthPercent"), defaults["widthPercent"], 55, 100),
+        "minHeight": clamp_int(source.get("minHeight"), defaults["minHeight"], 96, 320),
+        "paddingX": clamp_int(source.get("paddingX"), defaults["paddingX"], 8, 72),
+        "paddingY": clamp_int(source.get("paddingY"), defaults["paddingY"], 6, 48),
+        "backgroundColor": sanitize_hex_color(source.get("backgroundColor"), defaults["backgroundColor"]),
+        "backgroundOpacity": clamp_int(source.get("backgroundOpacity"), defaults["backgroundOpacity"], 0, 100),
+        "borderColor": sanitize_hex_color(source.get("borderColor"), defaults["borderColor"]),
+        "borderOpacity": clamp_int(source.get("borderOpacity"), defaults["borderOpacity"], 0, 100),
+        "textColor": sanitize_hex_color(source.get("textColor"), defaults["textColor"]),
+        "speakerColor": sanitize_hex_color(source.get("speakerColor"), defaults["speakerColor"]),
+        "hintColor": sanitize_hex_color(source.get("hintColor"), defaults["hintColor"]),
+        "blurStrength": clamp_int(source.get("blurStrength"), defaults["blurStrength"], 0, 24),
+        "borderWidth": clamp_int(source.get("borderWidth"), defaults["borderWidth"], 0, 4),
+        "shadowStrength": clamp_int(source.get("shadowStrength"), defaults["shadowStrength"], 0, 48),
+        "panelAssetId": str(source.get("panelAssetId") or "").strip(),
+        "panelAssetOpacity": clamp_int(source.get("panelAssetOpacity"), defaults["panelAssetOpacity"], 0, 100),
+        "panelAssetFit": panel_asset_fit,
+        "anchor": anchor,
+        "offsetXPercent": clamp_int(source.get("offsetXPercent"), defaults["offsetXPercent"], -35, 35),
+        "offsetYPercent": clamp_int(source.get("offsetYPercent"), defaults["offsetYPercent"], -35, 35),
+    }
+
+
+def sanitize_choice(value: object, allowed: set[str], fallback: str) -> str:
+    normalized = str(value or fallback).strip().lower() or fallback
+    return normalized if normalized in allowed else fallback
+
+
+def sanitize_game_ui_config(value: object) -> dict:
+    source = value if isinstance(value, dict) else {}
+    defaults = build_default_game_ui_config()
+    return {
+        "preset": sanitize_choice(
+            source.get("preset"),
+            {"stellar", "warm", "paper", "minimal", "custom"},
+            defaults["preset"],
+        ),
+        "layoutPreset": sanitize_choice(
+            source.get("layoutPreset"),
+            {"balanced", "cinematic", "compact", "minimal", "custom"},
+            defaults["layoutPreset"],
+        ),
+        "titleLayout": sanitize_choice(
+            source.get("titleLayout"),
+            {"center", "left", "poster"},
+            defaults["titleLayout"],
+        ),
+        "fontStyle": sanitize_choice(
+            source.get("fontStyle"),
+            {"modern", "serif", "rounded"},
+            defaults["fontStyle"],
+        ),
+        "surfaceStyle": sanitize_choice(
+            source.get("surfaceStyle"),
+            {"glass", "solid", "minimal"},
+            defaults["surfaceStyle"],
+        ),
+        "brandMode": sanitize_choice(
+            source.get("brandMode"),
+            {"project", "engine", "hidden"},
+            defaults["brandMode"],
+        ),
+        "sidePanelMode": sanitize_choice(
+            source.get("sidePanelMode"),
+            {"full", "compact", "hidden"},
+            defaults["sidePanelMode"],
+        ),
+        "sidePanelPosition": sanitize_choice(
+            source.get("sidePanelPosition"),
+            {"right", "left"},
+            defaults["sidePanelPosition"],
+        ),
+        "topbarPosition": sanitize_choice(
+            source.get("topbarPosition"),
+            {"top", "bottom", "hidden"},
+            defaults["topbarPosition"],
+        ),
+        "hudPosition": sanitize_choice(
+            source.get("hudPosition"),
+            {"top", "top-left", "top-right", "bottom-left", "bottom-right", "hidden"},
+            defaults["hudPosition"],
+        ),
+        "titleCardAnchor": sanitize_choice(
+            source.get("titleCardAnchor"),
+            {"center", "left", "right", "top", "bottom", "free"},
+            defaults["titleCardAnchor"],
+        ),
+        "titleCardOffsetXPercent": clamp_int(
+            source.get("titleCardOffsetXPercent"),
+            defaults["titleCardOffsetXPercent"],
+            -35,
+            35,
+        ),
+        "titleCardOffsetYPercent": clamp_int(
+            source.get("titleCardOffsetYPercent"),
+            defaults["titleCardOffsetYPercent"],
+            -35,
+            35,
+        ),
+        "layoutGap": clamp_int(source.get("layoutGap"), defaults["layoutGap"], 8, 48),
+        "sidePanelWidth": clamp_int(source.get("sidePanelWidth"), defaults["sidePanelWidth"], 240, 460),
+        "backgroundColor": sanitize_hex_color(source.get("backgroundColor"), defaults["backgroundColor"]),
+        "backgroundAccentColor": sanitize_hex_color(
+            source.get("backgroundAccentColor"),
+            defaults["backgroundAccentColor"],
+        ),
+        "panelColor": sanitize_hex_color(source.get("panelColor"), defaults["panelColor"]),
+        "panelOpacity": clamp_int(source.get("panelOpacity"), defaults["panelOpacity"], 35, 100),
+        "textColor": sanitize_hex_color(source.get("textColor"), defaults["textColor"]),
+        "mutedTextColor": sanitize_hex_color(source.get("mutedTextColor"), defaults["mutedTextColor"]),
+        "accentColor": sanitize_hex_color(source.get("accentColor"), defaults["accentColor"]),
+        "accentAltColor": sanitize_hex_color(source.get("accentAltColor"), defaults["accentAltColor"]),
+        "buttonTextColor": sanitize_hex_color(source.get("buttonTextColor"), defaults["buttonTextColor"]),
+        "borderColor": sanitize_hex_color(source.get("borderColor"), defaults["borderColor"]),
+        "borderOpacity": clamp_int(source.get("borderOpacity"), defaults["borderOpacity"], 0, 100),
+        "cornerRadius": clamp_int(source.get("cornerRadius"), defaults["cornerRadius"], 4, 42),
+        "backdropBlur": clamp_int(source.get("backdropBlur"), defaults["backdropBlur"], 0, 28),
+        "stageVignette": clamp_int(source.get("stageVignette"), defaults["stageVignette"], 0, 80),
+        "motionIntensity": clamp_int(source.get("motionIntensity"), defaults["motionIntensity"], 0, 100),
+        "titleBackgroundAssetId": str(source.get("titleBackgroundAssetId") or "").strip(),
+        "titleBackgroundFit": sanitize_choice(
+            source.get("titleBackgroundFit"),
+            {"cover", "contain"},
+            defaults["titleBackgroundFit"],
+        ),
+        "titleBackgroundOpacity": clamp_int(
+            source.get("titleBackgroundOpacity"),
+            defaults["titleBackgroundOpacity"],
+            0,
+            100,
+        ),
+        "titleLogoAssetId": str(source.get("titleLogoAssetId") or "").strip(),
+        "panelFrameAssetId": str(source.get("panelFrameAssetId") or "").strip(),
+        "panelFrameOpacity": clamp_int(source.get("panelFrameOpacity"), defaults["panelFrameOpacity"], 0, 100),
+        "buttonFrameAssetId": str(source.get("buttonFrameAssetId") or "").strip(),
+        "buttonFrameOpacity": clamp_int(source.get("buttonFrameOpacity"), defaults["buttonFrameOpacity"], 0, 100),
+        "saveSlotFrameAssetId": str(source.get("saveSlotFrameAssetId") or "").strip(),
+        "systemPanelFrameAssetId": str(source.get("systemPanelFrameAssetId") or "").strip(),
+        "uiOverlayAssetId": str(source.get("uiOverlayAssetId") or "").strip(),
+        "uiOverlayOpacity": clamp_int(source.get("uiOverlayOpacity"), defaults["uiOverlayOpacity"], 0, 100),
+    }
+
+
 def build_unique_slug_id(
     existing_ids: set[str],
     prefix: str,
@@ -697,6 +996,9 @@ def normalize_project_document(
     editor_mode = str(normalized.get("editorMode") or DEFAULT_EDITOR_MODE).strip().lower() or DEFAULT_EDITOR_MODE
     normalized["editorMode"] = editor_mode if editor_mode in {"beginner", "advanced"} else DEFAULT_EDITOR_MODE
     normalized["resolution"] = sanitize_project_resolution(normalized.get("resolution"))
+    normalized["runtimeSettings"] = sanitize_project_runtime_settings(normalized.get("runtimeSettings"))
+    normalized["dialogBoxConfig"] = sanitize_dialog_box_config(normalized.get("dialogBoxConfig"))
+    normalized["gameUiConfig"] = sanitize_game_ui_config(normalized.get("gameUiConfig"))
     normalized["particleCustomPresets"] = normalize_particle_presets_for_migration(
         normalized.get("particleCustomPresets")
     )
@@ -1125,6 +1427,9 @@ def save_project_settings(
     resolution: dict | None = None,
     release_version: str | None = None,
     editor_mode: str | None = None,
+    runtime_settings: dict | None = None,
+    dialog_box_config: dict | None = None,
+    game_ui_config: dict | None = None,
     particle_custom_presets: list | None = None,
 ) -> dict:
     project = read_json(PROJECT_PATH)
@@ -1158,6 +1463,15 @@ def save_project_settings(
         if normalized_editor_mode not in {"beginner", "advanced"}:
             raise ValueError("编辑模式只能是 beginner 或 advanced。")
         project["editorMode"] = normalized_editor_mode
+
+    if runtime_settings is not None:
+        project["runtimeSettings"] = sanitize_project_runtime_settings(runtime_settings)
+
+    if dialog_box_config is not None:
+        project["dialogBoxConfig"] = sanitize_dialog_box_config(dialog_box_config)
+
+    if game_ui_config is not None:
+        project["gameUiConfig"] = sanitize_game_ui_config(game_ui_config)
 
     if particle_custom_presets is not None:
         cleaned_particle_presets = sanitize_particle_custom_presets(particle_custom_presets)
@@ -1267,6 +1581,9 @@ def create_blank_project(project_name: str) -> dict:
             "width": 1920,
             "height": 1080,
         },
+        "runtimeSettings": build_default_project_runtime_settings(),
+        "dialogBoxConfig": build_default_dialog_box_config(),
+        "gameUiConfig": build_default_game_ui_config(),
         "formatVersion": PROJECT_FORMAT_VERSION,
         "chapterOrder": [],
         "entrySceneId": "",
@@ -5366,6 +5683,311 @@ def write_export_app_files(build_dir: Path, export_payload: dict) -> None:
     shutil.copy2(EXPORT_TEMPLATE_DIR / "player.js", build_dir / "player.js")
 
 
+def write_native_runtime_files(build_dir: Path, export_payload: dict) -> dict:
+    game_data_path = build_dir / "game_data.json"
+    game_data_path.write_text(json.dumps(export_payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    shutil.copy2(NATIVE_RUNTIME_PLAYER_SOURCE, build_dir / NATIVE_RUNTIME_PLAYER_NAME)
+    shutil.copy2(NATIVE_RUNTIME_README_SOURCE, build_dir / NATIVE_RUNTIME_README_NAME)
+    shutil.copy2(NATIVE_RUNTIME_REQUIREMENTS_SOURCE, build_dir / NATIVE_RUNTIME_REQUIREMENTS_NAME)
+    shutil.copy2(NATIVE_RUNTIME_BUILD_REQUIREMENTS_SOURCE, build_dir / NATIVE_RUNTIME_BUILD_REQUIREMENTS_NAME)
+    shutil.copy2(NATIVE_RUNTIME_APP_BUILDER_SOURCE, build_dir / NATIVE_RUNTIME_APP_BUILDER_NAME)
+
+    mac_launcher_path = build_dir / NATIVE_RUNTIME_MAC_COMMAND_NAME
+    linux_launcher_path = build_dir / NATIVE_RUNTIME_LINUX_COMMAND_NAME
+    windows_launcher_path = build_dir / NATIVE_RUNTIME_WINDOWS_COMMAND_NAME
+    mac_app_builder_path = build_dir / NATIVE_RUNTIME_MAC_APP_BUILDER_COMMAND_NAME
+    linux_app_builder_path = build_dir / NATIVE_RUNTIME_LINUX_APP_BUILDER_COMMAND_NAME
+    windows_app_builder_path = build_dir / NATIVE_RUNTIME_WINDOWS_APP_BUILDER_COMMAND_NAME
+    release_check_path = build_dir / NATIVE_RUNTIME_RELEASE_CHECK_NAME
+
+    mac_launcher_path.write_text(
+        "\n".join(
+            [
+                "#!/bin/bash",
+                'set -e',
+                'SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"',
+                'cd "$SCRIPT_DIR"',
+                'python3 runtime_player.py game_data.json || {',
+                '  echo ""',
+                '  echo "原生 Runtime 包没有启动成功。请先确认 Python 3 和 pygame-ce 已安装。"',
+                '  echo "安装命令：python3 -m pip install -r requirements-native-runtime.txt"',
+                '  echo ""',
+                '  read -r -p "按回车关闭..." _',
+                '  exit 1',
+                '}',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    linux_launcher_path.write_text(
+        "\n".join(
+            [
+                "#!/bin/bash",
+                'set -e',
+                'SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"',
+                'cd "$SCRIPT_DIR"',
+                'python3 runtime_player.py game_data.json',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    windows_launcher_path.write_text(
+        "\r\n".join(
+            [
+                "@echo off",
+                "cd /d %~dp0",
+                "python runtime_player.py game_data.json",
+                "if errorlevel 1 (",
+                "  echo.",
+                "  echo 原生 Runtime 包没有启动成功，请先确认 Python 3 和 pygame-ce 已安装。",
+                "  echo 安装命令：python -m pip install -r requirements-native-runtime.txt",
+                "  pause",
+                ")",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    mac_app_builder_path.write_text(
+        "\n".join(
+            [
+                "#!/bin/bash",
+                "set -e",
+                'SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"',
+                'cd "$SCRIPT_DIR"',
+                'python3 -m pip install -r requirements-native-runtime.txt -r requirements-native-runtime-build.txt',
+                'python3 build_native_runtime_app.py --mode onedir . || {',
+                '  echo ""',
+                '  echo "原生 Runtime 应用打包没有完成。请确认 Python 3、pygame-ce 和 PyInstaller 已安装。"',
+                '  echo "可手动执行：python3 build_native_runtime_app.py --mode onedir ."',
+                '  echo ""',
+                '  read -r -p "按回车关闭..." _',
+                '  exit 1',
+                '}',
+                'echo ""',
+                'echo "打包完成，输出目录：native_app_dist/"',
+                'echo "同时会生成 native_app_package_manifest.json 和平台 Preview zip。"',
+                'read -r -p "按回车关闭..." _',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    linux_app_builder_path.write_text(
+        "\n".join(
+            [
+                "#!/bin/bash",
+                "set -e",
+                'SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"',
+                'cd "$SCRIPT_DIR"',
+                'python3 -m pip install -r requirements-native-runtime.txt -r requirements-native-runtime-build.txt',
+                'python3 build_native_runtime_app.py --mode onedir .',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    windows_app_builder_path.write_text(
+        "\r\n".join(
+            [
+                "@echo off",
+                "cd /d %~dp0",
+                "python -m pip install -r requirements-native-runtime.txt -r requirements-native-runtime-build.txt",
+                "python build_native_runtime_app.py --mode onedir .",
+                "if errorlevel 1 (",
+                "  echo.",
+                "  echo 原生 Runtime 应用打包没有完成，请确认 Python 3、pygame-ce 和 PyInstaller 已安装。",
+                "  echo 可手动执行：python build_native_runtime_app.py --mode onedir .",
+                "  pause",
+                "  exit /b 1",
+                ")",
+                "echo.",
+                "echo 打包完成，输出目录：native_app_dist\\",
+                "echo 同时会生成 native_app_package_manifest.json 和平台 Preview zip。",
+                "pause",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    mac_launcher_path.chmod(0o755)
+    linux_launcher_path.chmod(0o755)
+    mac_app_builder_path.chmod(0o755)
+    linux_app_builder_path.chmod(0o755)
+
+    release_check = subprocess.run(
+        [
+            sys.executable,
+            str(build_dir / NATIVE_RUNTIME_PLAYER_NAME),
+            "--release-check",
+            str(build_dir),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if release_check.returncode == 0:
+        release_check_path.write_text(release_check.stdout, encoding="utf-8")
+    else:
+        release_check_path.write_text(
+            json.dumps(
+                {
+                    "status": "fail",
+                    "checkedAt": datetime.now().astimezone().isoformat(timespec="seconds"),
+                    "summary": {"errors": 1, "warnings": 0},
+                    "issues": [
+                        {
+                            "severity": "error",
+                            "code": "release_check_generation_failed",
+                            "message": release_check.stderr.strip() or release_check.stdout.strip() or "发布前自检生成失败。",
+                            "suggestion": "手动运行 python runtime_player.py --release-check . 查看具体问题。",
+                            "path": NATIVE_RUNTIME_PLAYER_NAME,
+                        }
+                    ],
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+    return {
+        "gameDataName": game_data_path.name,
+        "gameDataPath": str(game_data_path),
+        "playerName": NATIVE_RUNTIME_PLAYER_NAME,
+        "playerPath": str(build_dir / NATIVE_RUNTIME_PLAYER_NAME),
+        "readmeName": NATIVE_RUNTIME_README_NAME,
+        "readmePath": str(build_dir / NATIVE_RUNTIME_README_NAME),
+        "requirementsName": NATIVE_RUNTIME_REQUIREMENTS_NAME,
+        "requirementsPath": str(build_dir / NATIVE_RUNTIME_REQUIREMENTS_NAME),
+        "buildRequirementsName": NATIVE_RUNTIME_BUILD_REQUIREMENTS_NAME,
+        "buildRequirementsPath": str(build_dir / NATIVE_RUNTIME_BUILD_REQUIREMENTS_NAME),
+        "appBuilderName": NATIVE_RUNTIME_APP_BUILDER_NAME,
+        "appBuilderPath": str(build_dir / NATIVE_RUNTIME_APP_BUILDER_NAME),
+        "releaseCheckName": release_check_path.name,
+        "releaseCheckPath": str(release_check_path),
+        "macLauncherName": mac_launcher_path.name,
+        "macLauncherPath": str(mac_launcher_path),
+        "linuxLauncherName": linux_launcher_path.name,
+        "linuxLauncherPath": str(linux_launcher_path),
+        "windowsLauncherName": windows_launcher_path.name,
+        "windowsLauncherPath": str(windows_launcher_path),
+        "macAppBuilderName": mac_app_builder_path.name,
+        "macAppBuilderPath": str(mac_app_builder_path),
+        "linuxAppBuilderName": linux_app_builder_path.name,
+        "linuxAppBuilderPath": str(linux_app_builder_path),
+        "windowsAppBuilderName": windows_app_builder_path.name,
+        "windowsAppBuilderPath": str(windows_app_builder_path),
+    }
+
+
+def export_native_runtime_build() -> dict:
+    build_dir = create_export_build_dir("native_runtime_build")
+    bundle = load_project_bundle()
+    export_assets_doc, copied_assets, missing_assets = copy_assets_for_export(bundle["assets"], build_dir)
+    export_payload = build_export_payload(bundle, export_assets_doc, copied_assets, missing_assets)
+    release_version = get_export_release_version(bundle["project"])
+    export_payload["buildInfo"]["releaseVersion"] = release_version
+    export_payload["buildInfo"]["exportTargetLabel"] = "原生 Runtime 包（可打包 App）"
+    export_payload["buildInfo"]["runtimeMode"] = "pygame_native"
+    export_payload["buildInfo"]["runtimeStage"] = "preview"
+    runtime_files = write_native_runtime_files(build_dir, export_payload)
+    manifest = build_export_manifest(
+        bundle,
+        target=EXPORT_TARGET_NATIVE_RUNTIME,
+        target_label="原生 Runtime 包（可打包 App）",
+        build_id=build_dir.name,
+        copied_assets=copied_assets,
+        missing_assets=missing_assets,
+        extra_files={
+            "gameData": runtime_files["gameDataName"],
+            "playerScript": runtime_files["playerName"],
+            "readme": runtime_files["readmeName"],
+            "requirements": runtime_files["requirementsName"],
+            "buildRequirements": runtime_files["buildRequirementsName"],
+            "appBuilder": runtime_files["appBuilderName"],
+            "releaseCheck": runtime_files["releaseCheckName"],
+            "macLauncher": runtime_files["macLauncherName"],
+            "linuxLauncher": runtime_files["linuxLauncherName"],
+            "windowsLauncher": runtime_files["windowsLauncherName"],
+            "macAppBuilder": runtime_files["macAppBuilderName"],
+            "linuxAppBuilder": runtime_files["linuxAppBuilderName"],
+            "windowsAppBuilder": runtime_files["windowsAppBuilderName"],
+        },
+        runtime_info={
+            "mode": "pygame_native",
+            "modeLabel": "Python + pygame-ce 原生 Runtime",
+            "warning": "导出包已包含 PyInstaller 应用打包脚手架；正式分发前仍建议在目标系统做完整点测。",
+            "requiresPython3": True,
+            "requiresPygameCE": True,
+            "canBuildStandaloneApp": True,
+            "appBuilder": runtime_files["appBuilderName"],
+            "releaseCheck": runtime_files["releaseCheckName"],
+        },
+    )
+    manifest_path = write_export_manifest(build_dir, manifest)
+    archive_path = Path(shutil.make_archive(str(build_dir), "zip", root_dir=build_dir))
+    return {
+        "target": EXPORT_TARGET_NATIVE_RUNTIME,
+        "targetLabel": "原生 Runtime 包（可打包 App）",
+        "buildPath": str(build_dir),
+        "releaseVersion": release_version,
+        "archivePath": str(archive_path),
+        "archiveName": archive_path.name,
+        "archivePublicUrl": f"/exports/{archive_path.name}",
+        "copiedAssets": copied_assets,
+        "missingAssets": len(missing_assets),
+        "missingAssetNames": [asset.get("name") or asset.get("id") or "未命名素材" for asset in missing_assets],
+        "runtimeMode": "pygame_native",
+        "runtimeModeLabel": "Python + pygame-ce 原生 Runtime",
+        "manifestPath": str(manifest_path),
+        "manifestName": manifest_path.name,
+        "manifestPublicUrl": f"/exports/{build_dir.name}/{manifest_path.name}",
+        "gameDataPath": runtime_files["gameDataPath"],
+        "gameDataPublicUrl": f"/exports/{build_dir.name}/{runtime_files['gameDataName']}",
+        "playerScriptPath": runtime_files["playerPath"],
+        "playerScriptName": runtime_files["playerName"],
+        "playerScriptPublicUrl": f"/exports/{build_dir.name}/{runtime_files['playerName']}",
+        "readmeName": runtime_files["readmeName"],
+        "readmePath": runtime_files["readmePath"],
+        "readmePublicUrl": f"/exports/{build_dir.name}/{runtime_files['readmeName']}",
+        "requirementsName": runtime_files["requirementsName"],
+        "requirementsPath": runtime_files["requirementsPath"],
+        "requirementsPublicUrl": f"/exports/{build_dir.name}/{runtime_files['requirementsName']}",
+        "buildRequirementsName": runtime_files["buildRequirementsName"],
+        "buildRequirementsPath": runtime_files["buildRequirementsPath"],
+        "buildRequirementsPublicUrl": f"/exports/{build_dir.name}/{runtime_files['buildRequirementsName']}",
+        "appBuilderName": runtime_files["appBuilderName"],
+        "appBuilderPath": runtime_files["appBuilderPath"],
+        "appBuilderPublicUrl": f"/exports/{build_dir.name}/{runtime_files['appBuilderName']}",
+        "releaseCheckName": runtime_files["releaseCheckName"],
+        "releaseCheckPath": runtime_files["releaseCheckPath"],
+        "releaseCheckPublicUrl": f"/exports/{build_dir.name}/{runtime_files['releaseCheckName']}",
+        "macLauncherName": runtime_files["macLauncherName"],
+        "macLauncherPath": runtime_files["macLauncherPath"],
+        "macLauncherPublicUrl": f"/exports/{build_dir.name}/{runtime_files['macLauncherName']}",
+        "linuxLauncherName": runtime_files["linuxLauncherName"],
+        "linuxLauncherPath": runtime_files["linuxLauncherPath"],
+        "linuxLauncherPublicUrl": f"/exports/{build_dir.name}/{runtime_files['linuxLauncherName']}",
+        "windowsLauncherName": runtime_files["windowsLauncherName"],
+        "windowsLauncherPath": runtime_files["windowsLauncherPath"],
+        "windowsLauncherPublicUrl": f"/exports/{build_dir.name}/{runtime_files['windowsLauncherName']}",
+        "macAppBuilderName": runtime_files["macAppBuilderName"],
+        "macAppBuilderPath": runtime_files["macAppBuilderPath"],
+        "macAppBuilderPublicUrl": f"/exports/{build_dir.name}/{runtime_files['macAppBuilderName']}",
+        "linuxAppBuilderName": runtime_files["linuxAppBuilderName"],
+        "linuxAppBuilderPath": runtime_files["linuxAppBuilderPath"],
+        "linuxAppBuilderPublicUrl": f"/exports/{build_dir.name}/{runtime_files['linuxAppBuilderName']}",
+        "windowsAppBuilderName": runtime_files["windowsAppBuilderName"],
+        "windowsAppBuilderPath": runtime_files["windowsAppBuilderPath"],
+        "windowsAppBuilderPublicUrl": f"/exports/{build_dir.name}/{runtime_files['windowsAppBuilderName']}",
+    }
+
+
 def export_web_build() -> dict:
     build_dir = create_export_build_dir("web_build")
     bundle = load_project_bundle()
@@ -6711,6 +7333,8 @@ def export_editor_desktop_suite_build() -> dict:
 
 def export_project_build(target: str = EXPORT_TARGET_WEB) -> dict:
     target_name = str(target or EXPORT_TARGET_WEB).strip() or EXPORT_TARGET_WEB
+    if target_name == EXPORT_TARGET_NATIVE_RUNTIME:
+        return export_native_runtime_build()
     if target_name == EXPORT_TARGET_WINDOWS_NWJS:
         return export_windows_nwjs_build()
     if target_name == EXPORT_TARGET_MACOS_NWJS:
@@ -7952,6 +8576,9 @@ class EditorRequestHandler(SimpleHTTPRequestHandler):
                     resolution=payload.get("resolution"),
                     release_version=payload.get("releaseVersion"),
                     editor_mode=payload.get("editorMode"),
+                    runtime_settings=payload.get("runtimeSettings"),
+                    dialog_box_config=payload.get("dialogBoxConfig"),
+                    game_ui_config=payload.get("gameUiConfig"),
                     particle_custom_presets=payload.get("particleCustomPresets"),
                 ),
                 "修改项目设置",
