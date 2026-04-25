@@ -3546,10 +3546,33 @@ class NativeRuntimePlayer:
                 "speakerName": self.get_line_speaker_name(line),
                 "text": text,
                 "blockType": block_type,
+                "voiceAssetId": str(line.get("voiceAssetId") or "").strip(),
             }
         )
         self.text_history = self.text_history[-120:]
         self.history_scroll_index = max(0, len(self.text_history) - 1)
+
+    def get_selected_text_history_item(self) -> dict | None:
+        if not self.text_history:
+            return None
+        safe_index = max(0, min(len(self.text_history) - 1, self.history_scroll_index))
+        self.history_scroll_index = safe_index
+        return self.text_history[safe_index]
+
+    def play_selected_history_voice(self) -> bool:
+        item = self.get_selected_text_history_item()
+        if not item:
+            self.status_message = "当前还没有可回听的历史文本。"
+            return True
+        voice_asset_id = str(item.get("voiceAssetId") or "").strip()
+        if not voice_asset_id:
+            self.status_message = "这条历史文本没有绑定语音。"
+            return True
+        if self.play_voice(voice_asset_id):
+            self.status_message = f"正在回听：{item.get('speakerName') or '历史语音'}"
+        else:
+            self.status_message = "这条历史文本的语音素材不可用。"
+        return True
 
     def mark_current_line_read(self) -> None:
         if not self.current_line:
@@ -4873,16 +4896,18 @@ class NativeRuntimePlayer:
             except Exception:
                 return
 
-    def play_voice(self, asset_id: str | None) -> None:
+    def play_voice(self, asset_id: str | None) -> bool:
         self.stop_voice()
         sound = self._load_sound(asset_id)
         if not sound:
-            return
+            return False
         try:
             sound.set_volume(self.get_effective_volume("voiceVolume"))
             self.current_voice_channel = sound.play()
+            return True
         except Exception:
             self.current_voice_channel = None
+            return False
 
     def stop_voice(self) -> None:
         if self.current_voice_channel:
@@ -5958,13 +5983,24 @@ class NativeRuntimePlayer:
             max_start = max(0, len(self.text_history) - visible_count)
             start = max(0, min(max_start, self.history_scroll_index - visible_count + 1))
             y = list_rect.top + 16
-            for item in self.text_history[start : start + visible_count]:
+            for offset, item in enumerate(self.text_history[start : start + visible_count]):
+                item_index = start + offset
+                item_rect = self.pygame.Rect(list_rect.left + 10, y - 8, list_rect.width - 20, 96)
+                is_active = item_index == self.history_scroll_index
+                if is_active:
+                    self.pygame.draw.rect(self.screen, with_alpha(palette["accent"], 28), item_rect, border_radius=16)
+                    self.pygame.draw.rect(self.screen, with_alpha(palette["accentAlt"], 64), item_rect, 1, border_radius=16)
                 speaker = str(item.get("speakerName") or "旁白")
                 scene_name = str(item.get("sceneName") or "")
+                has_voice = bool(str(item.get("voiceAssetId") or "").strip())
                 header = f"{speaker} · {scene_name}" if scene_name else speaker
                 self.screen.blit(self.font_ui.render(header[:56], True, palette["accent"]), (list_rect.left + 18, y))
+                if has_voice:
+                    voice_surface = self.font_ui.render("VOICE", True, palette["accentAlt"])
+                    self.screen.blit(voice_surface, (list_rect.right - voice_surface.get_width() - 18, y))
                 text_rect = self.pygame.Rect(list_rect.left + 18, y + 24, list_rect.width - 36, 62)
                 self.blit_wrapped_text(self.font_ui, str(item.get("text") or ""), text_rect, palette["text"], line_gap=4, max_lines=3)
+                self.overlay_hotspots.append({"kind": "history-item", "value": item_index, "rect": item_rect})
                 y += 104
 
         close_rect = self.pygame.Rect(panel.right - 138, panel.bottom - 56, 108, 34)
@@ -5973,7 +6009,7 @@ class NativeRuntimePlayer:
         self.draw_game_ui_button_frame(close_rect, self.get_game_ui_button_state(close_rect))
         self.blit_text_center(self.font_ui, "关闭", close_rect.centerx, close_rect.top + 8, palette["text"])
         self.overlay_hotspots.append({"kind": "close", "rect": close_rect})
-        hint = "↑↓ 滚动 · PageUp/PageDown 快速滚动 · Esc 关闭"
+        hint = "↑↓ 选择 · R/V 重听语音 · PageUp/PageDown 快速滚动 · Esc 关闭"
         self.screen.blit(self.font_ui.render(hint, True, palette["muted"]), (panel.left + 28, panel.bottom - 44))
 
     def render_settings_overlay(self) -> None:
@@ -6571,11 +6607,18 @@ class NativeRuntimePlayer:
             if event.key == pygame.K_PAGEDOWN:
                 self.history_scroll_index = min(max(0, len(self.text_history) - 1), self.history_scroll_index + 5)
                 return True
+            if event.key in (pygame.K_r, pygame.K_v):
+                return self.play_selected_history_voice()
             if event.key in (pygame.K_RETURN, pygame.K_SPACE):
                 self.close_overlay()
                 return True
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             for target in self.overlay_hotspots:
+                if target.get("kind") == "history-item" and target["rect"].collidepoint(event.pos):
+                    self.history_scroll_index = int(target.get("value") or 0)
+                    if getattr(event, "clicks", 1) >= 2:
+                        return self.play_selected_history_voice()
+                    return True
                 if target.get("kind") == "close" and target["rect"].collidepoint(event.pos):
                     self.close_overlay()
                     return True

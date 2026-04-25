@@ -153,6 +153,7 @@ class NativeRuntimeRenderSmokeTests(unittest.TestCase):
                                     "id": "block_line",
                                     "type": "dialogue",
                                     "speakerId": "heroine",
+                                    "voiceAssetId": "voice_missing_line",
                                     "text": "Native Runtime render smoke.",
                                 },
                                 {
@@ -323,6 +324,11 @@ class NativeRuntimeRenderSmokeTests(unittest.TestCase):
         self.assert_screen_has_pixels(player)
         self.assertGreaterEqual(len(player.text_history), 1)
         self.assertTrue(player.font_source_status)
+        history_item = player.get_selected_text_history_item()
+        self.assertIsNotNone(history_item)
+        self.assertEqual(history_item["voiceAssetId"], "voice_missing_line")
+        player.play_selected_history_voice()
+        self.assertIn("语音素材不可用", player.status_message)
         read_key = str(player.current_line.get("historyKey") or "")
         self.assertTrue(read_key)
         player.mark_current_line_read()
