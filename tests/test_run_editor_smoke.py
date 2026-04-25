@@ -41,6 +41,12 @@ def build_fake_wav_bytes() -> bytes:
     )
 
 
+def build_fake_png_bytes() -> bytes:
+    return base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
+    )
+
+
 def create_fake_runtime_archive(archive_path: Path, platform_key: str) -> Path:
     with tempfile.TemporaryDirectory() as temp_dir:
         root = Path(temp_dir) / "python"
@@ -745,6 +751,21 @@ class RunEditorSmokeTests(unittest.TestCase):
 
     def test_native_runtime_export_build_smoke(self) -> None:
         _, chapter_result = self.create_blank_project_with_chapter()
+        ui_assets = run_editor.import_assets(
+            "ui",
+            [
+                build_upload_payload("title_background.png", build_fake_png_bytes()),
+                build_upload_payload("title_logo.png", build_fake_png_bytes()),
+                build_upload_payload("panel_frame.png", build_fake_png_bytes()),
+                build_upload_payload("button_frame.png", build_fake_png_bytes()),
+                build_upload_payload("button_hover_frame.png", build_fake_png_bytes()),
+                build_upload_payload("button_pressed_frame.png", build_fake_png_bytes()),
+                build_upload_payload("button_disabled_frame.png", build_fake_png_bytes()),
+                build_upload_payload("save_slot_frame.png", build_fake_png_bytes()),
+                build_upload_payload("system_panel_frame.png", build_fake_png_bytes()),
+                build_upload_payload("ui_overlay.png", build_fake_png_bytes()),
+            ],
+        )["assets"]
         run_editor.save_project_settings(
             runtime_settings={"formalSaveSlotCount": 60},
             game_ui_config={
@@ -763,13 +784,22 @@ class RunEditorSmokeTests(unittest.TestCase):
                 "titleCardOffsetYPercent": 2,
                 "layoutGap": 16,
                 "sidePanelWidth": 280,
+                "titleBackgroundAssetId": ui_assets[0]["id"],
+                "titleLogoAssetId": ui_assets[1]["id"],
                 "titleBackgroundFit": "contain",
                 "titleBackgroundOpacity": 33,
+                "panelFrameAssetId": ui_assets[2]["id"],
                 "panelFrameSlice": {"top": 9, "right": 11, "bottom": 13, "left": 15},
-                "buttonHoverFrameAssetId": "asset_button_hover",
+                "buttonFrameAssetId": ui_assets[3]["id"],
+                "buttonHoverFrameAssetId": ui_assets[4]["id"],
+                "buttonPressedFrameAssetId": ui_assets[5]["id"],
+                "buttonDisabledFrameAssetId": ui_assets[6]["id"],
                 "panelFrameOpacity": 22,
                 "buttonFrameOpacity": 12,
                 "buttonFrameSlice": {"top": 7, "right": 12, "bottom": 7, "left": 12},
+                "saveSlotFrameAssetId": ui_assets[7]["id"],
+                "systemPanelFrameAssetId": ui_assets[8]["id"],
+                "uiOverlayAssetId": ui_assets[9]["id"],
                 "uiOverlayOpacity": 5,
             },
         )
@@ -842,11 +872,20 @@ class RunEditorSmokeTests(unittest.TestCase):
         self.assertEqual(game_data["project"]["gameUiConfig"]["hudPosition"], "bottom-left")
         self.assertEqual(game_data["project"]["gameUiConfig"]["titleCardAnchor"], "left")
         self.assertEqual(game_data["project"]["gameUiConfig"]["sidePanelWidth"], 280)
+        self.assertEqual(game_data["project"]["gameUiConfig"]["titleBackgroundAssetId"], ui_assets[0]["id"])
+        self.assertEqual(game_data["project"]["gameUiConfig"]["titleLogoAssetId"], ui_assets[1]["id"])
         self.assertEqual(game_data["project"]["gameUiConfig"]["titleBackgroundFit"], "contain")
         self.assertEqual(game_data["project"]["gameUiConfig"]["titleBackgroundOpacity"], 33)
+        self.assertEqual(game_data["project"]["gameUiConfig"]["panelFrameAssetId"], ui_assets[2]["id"])
         self.assertEqual(game_data["project"]["gameUiConfig"]["panelFrameSlice"], {"top": 9, "right": 11, "bottom": 13, "left": 15})
-        self.assertEqual(game_data["project"]["gameUiConfig"]["buttonHoverFrameAssetId"], "asset_button_hover")
+        self.assertEqual(game_data["project"]["gameUiConfig"]["buttonFrameAssetId"], ui_assets[3]["id"])
+        self.assertEqual(game_data["project"]["gameUiConfig"]["buttonHoverFrameAssetId"], ui_assets[4]["id"])
+        self.assertEqual(game_data["project"]["gameUiConfig"]["buttonPressedFrameAssetId"], ui_assets[5]["id"])
+        self.assertEqual(game_data["project"]["gameUiConfig"]["buttonDisabledFrameAssetId"], ui_assets[6]["id"])
         self.assertEqual(game_data["project"]["gameUiConfig"]["buttonFrameSlice"], {"top": 7, "right": 12, "bottom": 7, "left": 12})
+        self.assertEqual(game_data["project"]["gameUiConfig"]["saveSlotFrameAssetId"], ui_assets[7]["id"])
+        self.assertEqual(game_data["project"]["gameUiConfig"]["systemPanelFrameAssetId"], ui_assets[8]["id"])
+        self.assertEqual(game_data["project"]["gameUiConfig"]["uiOverlayAssetId"], ui_assets[9]["id"])
 
         app_builder_description = subprocess.run(
             [

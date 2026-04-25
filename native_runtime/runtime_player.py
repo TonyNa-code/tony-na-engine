@@ -17,6 +17,18 @@ from pathlib import Path
 ASSET_TYPE_IMAGE = {"background", "sprite", "cg", "ui"}
 DEFAULT_GAME_DATA_NAME = "game_data.json"
 ENGINE_BRAND_LOGO_RELATIVE_PATH = "assets/brand-logo.png"
+GAME_UI_ASSET_REFERENCE_LABELS = {
+    "titleBackgroundAssetId": "标题背景",
+    "titleLogoAssetId": "标题 Logo",
+    "panelFrameAssetId": "通用面板九宫格",
+    "buttonFrameAssetId": "按钮默认九宫格",
+    "buttonHoverFrameAssetId": "按钮悬停九宫格",
+    "buttonPressedFrameAssetId": "按钮按下九宫格",
+    "buttonDisabledFrameAssetId": "按钮禁用九宫格",
+    "saveSlotFrameAssetId": "存档卡片九宫格",
+    "systemPanelFrameAssetId": "系统面板九宫格",
+    "uiOverlayAssetId": "UI 氛围叠层",
+}
 COLOR_BG = (12, 15, 28)
 COLOR_PANEL = (18, 24, 40)
 COLOR_PANEL_BORDER = (78, 106, 168)
@@ -551,6 +563,44 @@ def build_release_check_report(bundle_dir: Path) -> dict:
 
     assets_doc = payload.get("assets") if isinstance(payload.get("assets"), dict) else {}
     assets = assets_doc.get("assets") if isinstance(assets_doc.get("assets"), list) else []
+    assets_by_id = {str(asset.get("id")): asset for asset in assets if isinstance(asset, dict) and asset.get("id")}
+    game_ui_config = project.get("gameUiConfig") if isinstance(project.get("gameUiConfig"), dict) else {}
+    for field_name, label in GAME_UI_ASSET_REFERENCE_LABELS.items():
+        asset_id = str(game_ui_config.get(field_name) or "").strip()
+        if not asset_id:
+            continue
+        asset = assets_by_id.get(asset_id)
+        check_path = f"gameUiConfig.{field_name}"
+        if not asset:
+            add_release_check_issue(
+                issues,
+                "warning",
+                "game_ui_asset_reference_missing",
+                f"成品 UI 皮肤引用了不存在的素材：{label} ({asset_id})",
+                "重新选择这个 UI 素材，或清空该绑定；Runtime 会回退到基础 UI，但自定义皮肤不会完整显示。",
+                check_path,
+            )
+            continue
+        export_url = str(asset.get("exportUrl") or "").strip()
+        if asset.get("isMissing") or not export_url or not (bundle_dir / export_url).is_file():
+            add_release_check_issue(
+                issues,
+                "warning",
+                "game_ui_asset_file_missing",
+                f"成品 UI 皮肤素材不可用：{label}",
+                "回到素材库重新导入或替换该 UI 素材，再重新导出原生 Runtime 包。",
+                export_url or check_path,
+            )
+        if str(asset.get("type") or "") not in ASSET_TYPE_IMAGE:
+            add_release_check_issue(
+                issues,
+                "warning",
+                "game_ui_asset_type_risk",
+                f"成品 UI 皮肤绑定的不是图片素材：{label}",
+                "九宫格、Logo 和 UI 叠层建议使用 ui/background/cg/sprite 类型图片。",
+                export_url or check_path,
+            )
+
     for asset in assets:
         if not isinstance(asset, dict):
             continue
@@ -2867,6 +2917,119 @@ class NativeRuntimePlayer:
                 return title_logo
         return self._load_image_file(self.get_engine_brand_logo_path())
 
+    def draw_nine_slice_image(self, source, rect, slice_config: dict | None, opacity_percent: int) -> None:
+        if not source or rect.width <= 0 or rect.height <= 0:
+            return
+        opacity = clamp_int(opacity_percent, 0, 100, 0)
+        if opacity <= 0:
+            return
+
+        pygame = self.pygame
+        source_width, source_height = source.get_size()
+        if source_width <= 0 or source_height <= 0:
+            return
+
+        slice_source = slice_config if isinstance(slice_config, dict) else {}
+        left = clamp_int(slice_source.get("left"), 0, source_width // 2, 0)
+        right = clamp_int(slice_source.get("right"), 0, source_width // 2, 0)
+        top = clamp_int(slice_source.get("top"), 0, source_height // 2, 0)
+        bottom = clamp_int(slice_source.get("bottom"), 0, source_height // 2, 0)
+        target_left = min(left, rect.width // 2)
+        target_right = min(right, max(0, rect.width - target_left))
+        target_top = min(top, rect.height // 2)
+        target_bottom = min(bottom, max(0, rect.height - target_top))
+
+        source_columns = [(0, left), (left, source_width - right), (source_width - right, source_width)]
+        source_rows = [(0, top), (top, source_height - bottom), (source_height - bottom, source_height)]
+        target_columns = [
+            (0, target_left),
+            (target_left, rect.width - target_right),
+            (rect.width - target_right, rect.width),
+        ]
+        target_rows = [
+            (0, target_top),
+            (target_top, rect.height - target_bottom),
+            (rect.height - target_bottom, rect.height),
+        ]
+        frame_surface = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+
+        for row_index, (source_y1, source_y2) in enumerate(source_rows):
+            for column_index, (source_x1, source_x2) in enumerate(source_columns):
+                source_rect = pygame.Rect(source_x1, source_y1, source_x2 - source_x1, source_y2 - source_y1)
+                target_x1, target_x2 = target_columns[column_index]
+                target_y1, target_y2 = target_rows[row_index]
+                target_rect = pygame.Rect(target_x1, target_y1, target_x2 - target_x1, target_y2 - target_y1)
+                if (
+                    source_rect.width <= 0
+                    or source_rect.height <= 0
+                    or target_rect.width <= 0
+                    or target_rect.height <= 0
+                ):
+                    continue
+                segment = source.subsurface(source_rect).copy()
+                if segment.get_size() != target_rect.size:
+                    segment = pygame.transform.smoothscale(segment, target_rect.size)
+                frame_surface.blit(segment, target_rect)
+
+        frame_surface.set_alpha(int(round(opacity * 2.55)))
+        self.screen.blit(frame_surface, rect.topleft)
+
+    def get_game_ui_panel_frame_image(self, frame_kind: str = "panel"):
+        asset_key = {
+            "save": "saveSlotFrameAssetId",
+            "system": "systemPanelFrameAssetId",
+        }.get(frame_kind, "panelFrameAssetId")
+        asset_id = str(self.game_ui_config.get(asset_key) or "").strip()
+        image = self._load_image(asset_id) if asset_id else None
+        if not image and frame_kind != "panel":
+            fallback_asset_id = str(self.game_ui_config.get("panelFrameAssetId") or "").strip()
+            image = self._load_image(fallback_asset_id) if fallback_asset_id else None
+        return image
+
+    def draw_game_ui_panel_frame(self, rect, frame_kind: str = "panel") -> None:
+        self.draw_nine_slice_image(
+            self.get_game_ui_panel_frame_image(frame_kind),
+            rect,
+            self.game_ui_config.get("panelFrameSlice"),
+            int(self.game_ui_config.get("panelFrameOpacity") or 0),
+        )
+
+    def get_game_ui_button_frame_image(self, state: str = "normal"):
+        asset_key = {
+            "hover": "buttonHoverFrameAssetId",
+            "pressed": "buttonPressedFrameAssetId",
+            "disabled": "buttonDisabledFrameAssetId",
+        }.get(state, "buttonFrameAssetId")
+        asset_id = str(self.game_ui_config.get(asset_key) or "").strip()
+        image = self._load_image(asset_id) if asset_id else None
+        if not image and state != "normal":
+            fallback_asset_id = str(self.game_ui_config.get("buttonFrameAssetId") or "").strip()
+            image = self._load_image(fallback_asset_id) if fallback_asset_id else None
+        return image
+
+    def get_game_ui_button_state(self, rect, *, active: bool = False, disabled: bool = False) -> str:
+        if disabled:
+            return "disabled"
+        try:
+            hovered = bool(rect.collidepoint(self.pygame.mouse.get_pos()))
+            pressed = bool(self.pygame.mouse.get_pressed()[0]) if hovered else False
+        except Exception:
+            hovered = False
+            pressed = False
+        if pressed:
+            return "pressed"
+        if hovered or active:
+            return "hover"
+        return "normal"
+
+    def draw_game_ui_button_frame(self, rect, state: str = "normal") -> None:
+        self.draw_nine_slice_image(
+            self.get_game_ui_button_frame_image(state),
+            rect,
+            self.game_ui_config.get("buttonFrameSlice"),
+            int(self.game_ui_config.get("buttonFrameOpacity") or 0),
+        )
+
     def _load_sound(self, asset_id: str | None):
         if not asset_id:
             return None
@@ -4230,6 +4393,7 @@ class NativeRuntimePlayer:
         panel = self.pygame.Rect(20, 18, self.width - 40, 64)
         self.pygame.draw.rect(self.screen, (*palette["panel"], palette["panelAlpha"]), panel, border_radius=18)
         self.pygame.draw.rect(self.screen, palette["panelBorder"], panel, 1, border_radius=18)
+        self.draw_game_ui_panel_frame(panel)
         project_title = self.project.get("title") or "Tony Na Engine"
         target_label = self.build_info.get("exportTargetLabel") or "原生 Runtime"
         status_text = f"{project_title} · {target_label}"
@@ -4307,6 +4471,7 @@ class NativeRuntimePlayer:
             border = with_alpha(self.dialog_box_config.get("speakerColor", COLOR_ACCENT_ALT), 88) if is_active else border_color
             self.pygame.draw.rect(self.screen, fill, row_rect, border_radius=16)
             self.pygame.draw.rect(self.screen, border, row_rect, 2, border_radius=16)
+            self.draw_game_ui_button_frame(row_rect, self.get_game_ui_button_state(row_rect, active=is_active))
             label = str(option.get("text") or f"选项 {index + 1}")
             self.screen.blit(
                 self.font_body.render(label, True, self.dialog_box_config.get("textColor", COLOR_TEXT)),
@@ -4354,6 +4519,7 @@ class NativeRuntimePlayer:
         panel.center = (self.width // 2, self.height // 2)
         self.pygame.draw.rect(self.screen, (*palette["panel"], 242), panel, border_radius=32)
         self.pygame.draw.rect(self.screen, with_alpha(palette["panelBorder"], 78), panel, 2, border_radius=32)
+        self.draw_game_ui_panel_frame(panel, "system")
 
         glow = self.pygame.Surface((panel.width, panel.height), self.pygame.SRCALPHA)
         self.pygame.draw.circle(glow, with_alpha(palette["accent"], 34), (int(panel.width * 0.28), int(panel.height * 0.24)), 190)
@@ -4363,6 +4529,7 @@ class NativeRuntimePlayer:
         logo_rect = self.pygame.Rect(panel.left + 46, panel.top + 70, 300, 250)
         self.pygame.draw.rect(self.screen, with_alpha(palette["panel"], 68), logo_rect, border_radius=28)
         self.pygame.draw.rect(self.screen, with_alpha(palette["panelBorder"], 36), logo_rect, 1, border_radius=28)
+        self.draw_game_ui_panel_frame(logo_rect)
         logo = self.get_title_logo_image()
         if logo:
             logo_width, logo_height = logo.get_size()
@@ -4401,6 +4568,10 @@ class NativeRuntimePlayer:
             border_color = palette["accentAlt"] if is_active else palette["panelBorder"]
             self.pygame.draw.rect(self.screen, with_alpha(fill_color, fill_alpha if enabled else 20), row_rect, border_radius=18)
             self.pygame.draw.rect(self.screen, with_alpha(border_color, 86 if is_active else 24), row_rect, 1, border_radius=18)
+            self.draw_game_ui_button_frame(
+                row_rect,
+                self.get_game_ui_button_state(row_rect, active=is_active, disabled=not enabled),
+            )
             label_color = palette["text"] if enabled else palette["muted"]
             self.screen.blit(self.font_body.render(str(item["label"]), True, label_color), (row_rect.left + 18, row_rect.top + 6))
             subtitle = str(item.get("subtitle") or "")
@@ -4423,6 +4594,7 @@ class NativeRuntimePlayer:
             2,
             border_radius=28,
         )
+        self.draw_game_ui_panel_frame(panel, "system")
 
         title = "正式存档" if self.overlay_mode == "save" else "读取存档"
         title_surface = self.font_title.render(title, True, self.dialog_box_config.get("speakerColor", COLOR_TEXT))
@@ -4441,6 +4613,7 @@ class NativeRuntimePlayer:
             1,
             border_radius=18,
         )
+        self.draw_game_ui_panel_frame(quick_rect, "save")
         quick_title = "快速存档" if not quick_save.get("isEmpty") else "快速存档（空）"
         self.screen.blit(
             self.font_ui.render(quick_title, True, self.dialog_box_config.get("speakerColor", COLOR_TEXT)),
@@ -4493,6 +4666,7 @@ class NativeRuntimePlayer:
                 2,
                 border_radius=22,
             )
+            self.draw_game_ui_panel_frame(card_rect, "save")
             label = str(slot.get("label") or "")
             scene_name = str(slot.get("sceneName") or ("空位" if slot.get("isEmpty") else "未命名场景"))
             summary_text = str(slot.get("summaryText") or "")
@@ -4534,6 +4708,7 @@ class NativeRuntimePlayer:
                 1,
                 border_radius=14,
             )
+            self.draw_game_ui_button_frame(button_rect, self.get_game_ui_button_state(button_rect))
             self.blit_text_center(
                 self.font_ui,
                 label,
@@ -4563,6 +4738,7 @@ class NativeRuntimePlayer:
         panel.center = (self.width // 2, self.height // 2)
         self.pygame.draw.rect(self.screen, (*palette["panel"], 246), panel, border_radius=28)
         self.pygame.draw.rect(self.screen, with_alpha(palette["panelBorder"], 72), panel, 2, border_radius=28)
+        self.draw_game_ui_panel_frame(panel, "system")
         self.screen.blit(self.font_title.render("玩家档案", True, palette["text"]), (panel.left + 30, panel.top + 26))
         self.screen.blit(
             self.font_ui.render("本地记录，不会上传；用于统计游玩和续玩入口。", True, palette["muted"]),
@@ -4595,6 +4771,7 @@ class NativeRuntimePlayer:
         close_rect = self.pygame.Rect(panel.right - 138, panel.bottom - 58, 108, 34)
         self.pygame.draw.rect(self.screen, with_alpha(palette["panel"], 58), close_rect, border_radius=14)
         self.pygame.draw.rect(self.screen, with_alpha(palette["panelBorder"], 42), close_rect, 1, border_radius=14)
+        self.draw_game_ui_button_frame(close_rect, self.get_game_ui_button_state(close_rect))
         self.blit_text_center(self.font_ui, "关闭", close_rect.centerx, close_rect.top + 8, palette["text"])
         self.overlay_hotspots.append({"kind": "close", "rect": close_rect})
         self.screen.blit(self.font_ui.render("Enter / Esc 关闭", True, palette["muted"]), (panel.left + 30, panel.bottom - 48))
@@ -4606,6 +4783,7 @@ class NativeRuntimePlayer:
         panel.center = (self.width // 2, self.height // 2)
         self.pygame.draw.rect(self.screen, (*palette["panel"], 246), panel, border_radius=28)
         self.pygame.draw.rect(self.screen, with_alpha(palette["panelBorder"], 72), panel, 2, border_radius=28)
+        self.draw_game_ui_panel_frame(panel, "system")
         self.screen.blit(self.font_title.render("续玩记录", True, palette["text"]), (panel.left + 30, panel.top + 26))
         self.screen.blit(
             self.font_ui.render("每次停在台词、选项或结束页时，原生 Runtime 会自动更新这里。", True, palette["muted"]),
@@ -4615,6 +4793,7 @@ class NativeRuntimePlayer:
         card_rect = self.pygame.Rect(panel.left + 30, panel.top + 108, panel.width - 60, 150)
         self.pygame.draw.rect(self.screen, with_alpha(palette["accent"], 26), card_rect, border_radius=20)
         self.pygame.draw.rect(self.screen, with_alpha(palette["panelBorder"], 36), card_rect, 1, border_radius=20)
+        self.draw_game_ui_panel_frame(card_rect, "save")
         if snapshot:
             scene_name = str(snapshot.get("sceneName") or snapshot.get("sceneId") or "未命名场景")
             summary = str(snapshot.get("summaryText") or snapshot.get("finishedMessage") or "当前没有摘要。")
@@ -4652,6 +4831,7 @@ class NativeRuntimePlayer:
                 1,
                 border_radius=14,
             )
+            self.draw_game_ui_button_frame(button_rect, self.get_game_ui_button_state(button_rect, active=is_primary))
             self.blit_text_center(self.font_ui, label, button_rect.centerx, button_rect.top + 9, palette["text"])
             self.overlay_hotspots.append({"kind": kind, "rect": button_rect})
 
@@ -4671,6 +4851,7 @@ class NativeRuntimePlayer:
             2,
             border_radius=28,
         )
+        self.draw_game_ui_panel_frame(panel, "system")
         title_surface = self.font_title.render("系统菜单", True, palette["text"])
         self.screen.blit(title_surface, (panel.left + 26, panel.top + 24))
         self.screen.blit(
@@ -4701,6 +4882,7 @@ class NativeRuntimePlayer:
                 1,
                 border_radius=16,
             )
+            self.draw_game_ui_button_frame(row_rect, self.get_game_ui_button_state(row_rect, active=is_active))
             self.screen.blit(
                 self.font_body.render(item_label, True, palette["text"]),
                 (row_rect.left + 16, row_rect.top + 4),
@@ -4725,6 +4907,7 @@ class NativeRuntimePlayer:
             2,
             border_radius=28,
         )
+        self.draw_game_ui_panel_frame(panel, "system")
         self.screen.blit(self.font_title.render("体验设置", True, palette["text"]), (panel.left + 28, panel.top + 24))
         self.screen.blit(
             self.font_ui.render("主题 / 显示模式 / 文字速度 / 四路音量", True, palette["muted"]),
@@ -4749,6 +4932,7 @@ class NativeRuntimePlayer:
                 1,
                 border_radius=16,
             )
+            self.draw_game_ui_button_frame(row_rect, self.get_game_ui_button_state(row_rect, active=is_active))
             self.screen.blit(self.font_ui.render(setting_label, True, palette["text"]), (row_rect.left + 14, row_rect.top + 10))
             value_label = self.get_setting_value_label(setting_key)
             value_surface = self.font_ui.render(value_label, True, palette["muted"])
@@ -4769,6 +4953,7 @@ class NativeRuntimePlayer:
         panel.center = (self.width // 2, self.height // 2)
         self.pygame.draw.rect(self.screen, (*palette["panel"], 246), panel, border_radius=28)
         self.pygame.draw.rect(self.screen, with_alpha(palette["panelBorder"], 72), panel, 2, border_radius=28)
+        self.draw_game_ui_panel_frame(panel, "system")
         title = ARCHIVE_MENU_ITEMS.get(self.current_archive_key, "资料馆")
         self.screen.blit(self.font_title.render("资料馆", True, palette["text"]), (panel.left + 26, panel.top + 24))
         unlocked_count = sum(1 for entry in entries if entry.get("unlocked"))
@@ -4801,6 +4986,7 @@ class NativeRuntimePlayer:
                 1,
                 border_radius=16,
             )
+            self.draw_game_ui_button_frame(tab_rect, self.get_game_ui_button_state(tab_rect, active=is_active))
             self.blit_text_center(self.font_ui, ARCHIVE_MENU_ITEMS[archive_key], tab_rect.centerx, tab_rect.top + 8, palette["text"])
             self.overlay_hotspots.append({"kind": "archive-tab", "value": archive_key, "rect": tab_rect})
 
@@ -4808,8 +4994,10 @@ class NativeRuntimePlayer:
         hero_rect = self.pygame.Rect(list_rect.right + 20, panel.top + 138, panel.right - list_rect.right - 44, panel.height - 190)
         self.pygame.draw.rect(self.screen, with_alpha(palette["panel"], 42), list_rect, border_radius=20)
         self.pygame.draw.rect(self.screen, with_alpha(palette["panelBorder"], 24), list_rect, 1, border_radius=20)
+        self.draw_game_ui_panel_frame(list_rect)
         self.pygame.draw.rect(self.screen, with_alpha(palette["panel"], 42), hero_rect, border_radius=20)
         self.pygame.draw.rect(self.screen, with_alpha(palette["panelBorder"], 24), hero_rect, 1, border_radius=20)
+        self.draw_game_ui_panel_frame(hero_rect)
 
         row_top = list_rect.top + 14
         row_height = 54
@@ -4829,6 +5017,7 @@ class NativeRuntimePlayer:
                 1,
                 border_radius=16,
             )
+            self.draw_game_ui_button_frame(row_rect, self.get_game_ui_button_state(row_rect, active=is_active))
             title_text = entry["name"] if entry.get("unlocked") else "未解锁"
             self.screen.blit(self.font_ui.render(title_text[:22], True, palette["text"]), (row_rect.left + 14, row_rect.top + 8))
             subtitle = entry.get("subtitle") or ""
@@ -4857,6 +5046,7 @@ class NativeRuntimePlayer:
             preview_rect = self.pygame.Rect(hero_rect.left + 22, hero_rect.top + 96, hero_rect.width - 44, hero_rect.height - 190)
             self.pygame.draw.rect(self.screen, with_alpha(palette["panel"], 22), preview_rect, border_radius=18)
             self.pygame.draw.rect(self.screen, with_alpha(palette["panelBorder"], 16), preview_rect, 1, border_radius=18)
+            self.draw_game_ui_panel_frame(preview_rect)
 
             preview_asset_id = str(selected_entry.get("previewAssetId") or "")
             if self.current_archive_key == "gallery" and selected_entry.get("unlocked"):
@@ -4931,6 +5121,14 @@ class NativeRuntimePlayer:
                 1,
                 border_radius=14,
             )
+            self.draw_game_ui_button_frame(
+                action_rect,
+                self.get_game_ui_button_state(
+                    action_rect,
+                    active=bool(selected_entry.get("actionEnabled")),
+                    disabled=not bool(selected_entry.get("actionEnabled")),
+                ),
+            )
             self.blit_text_center(self.font_ui, action_label, action_rect.centerx, action_rect.top + 7, palette["text"])
             self.overlay_hotspots.append({"kind": "archive-action", "rect": action_rect})
 
@@ -4971,6 +5169,7 @@ class NativeRuntimePlayer:
         panel.center = (self.width // 2, self.height // 2)
         self.pygame.draw.rect(self.screen, (*palette["panel"], 248), panel, border_radius=28)
         self.pygame.draw.rect(self.screen, with_alpha(palette["panelBorder"], 76), panel, 2, border_radius=28)
+        self.draw_game_ui_panel_frame(panel, "system")
 
         archive_title = ARCHIVE_MENU_ITEMS.get(archive_key, "资料馆")
         self.screen.blit(self.font_title.render(archive_title, True, palette["text"]), (panel.left + 28, panel.top + 24))
@@ -5031,6 +5230,7 @@ class NativeRuntimePlayer:
         back_rect = self.pygame.Rect(panel.right - 154, panel.bottom - 58, 126, 36)
         self.pygame.draw.rect(self.screen, with_alpha(palette["accent"], 74), back_rect, border_radius=14)
         self.pygame.draw.rect(self.screen, with_alpha(palette["accentAlt"], 84), back_rect, 1, border_radius=14)
+        self.draw_game_ui_button_frame(back_rect, self.get_game_ui_button_state(back_rect, active=True))
         self.blit_text_center(self.font_ui, "返回资料馆", back_rect.centerx, back_rect.top + 9, palette["text"])
         self.overlay_hotspots.append({"kind": "archive-detail-back", "rect": back_rect})
         hint = "Enter / Esc 返回资料馆"
@@ -5059,6 +5259,7 @@ class NativeRuntimePlayer:
         image = self._load_image(asset_id)
         self.pygame.draw.rect(self.screen, with_alpha(palette["panel"], 36), rect, border_radius=22)
         self.pygame.draw.rect(self.screen, with_alpha(palette["panelBorder"], 28), rect, 1, border_radius=22)
+        self.draw_game_ui_panel_frame(rect)
         if not image:
             self.blit_text_center(self.font_body, empty_label, rect.centerx, rect.centery - 18, palette["muted"])
             return
