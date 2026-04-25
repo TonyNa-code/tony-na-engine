@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib
 import importlib.util
 import io
@@ -249,6 +250,7 @@ DEFAULT_RUNTIME_PLAYER_SETTINGS = {
     "sfxVolume": 90,
     "voiceVolume": 100,
 }
+READ_TEXT_KEY_LIMIT = 20000
 DEFAULT_PLAYER_PROFILE = {
     "firstPlayedAt": None,
     "lastPlayedAt": None,
@@ -1886,6 +1888,7 @@ def exercise_archive_progress(bundle_dir: Path) -> None:
         "relationUnlocked": [relation_id] if relation_id else [],
         "voiceReplayUnlocked": [voice_replay_id] if voice_replay_id else [],
         "endingUnlocked": [ending_scene_id] if ending_scene_id else [],
+        "readTextKeys": ["scene_start:1:dialogue:doctor-read-key"],
         "endingCompletionCount": 1 if ending_scene_id else 0,
         "endingLastCompletedAt": "2026-04-24T00:00:00+08:00" if ending_scene_id else None,
     }
@@ -1909,6 +1912,8 @@ def exercise_archive_progress(bundle_dir: Path) -> None:
         raise NativeRuntimeError("语音回听进度写入后没有正确读回。")
     if progress["endingUnlocked"] != loaded["endingUnlocked"]:
         raise NativeRuntimeError("结局回放进度写入后没有正确读回。")
+    if progress["readTextKeys"] != loaded["readTextKeys"]:
+        raise NativeRuntimeError("已读文本进度写入后没有正确读回。")
     if progress["endingCompletionCount"] != loaded["endingCompletionCount"]:
         raise NativeRuntimeError("结局完成次数写入后没有正确读回。")
     print(f"Native runtime archive progress validation passed: {get_project_progress_file_path(project_id)}")
@@ -2401,14 +2406,16 @@ def clear_project_auto_resume(project_id: str) -> Path:
 def sanitize_archive_progress(value: dict | None) -> dict:
     source = value or {}
 
-    def clean_id_list(raw_value) -> list[str]:
+    def clean_id_list(raw_value, limit: int | None = None) -> list[str]:
         if not isinstance(raw_value, list):
             return []
         result = []
         for item in raw_value:
-            safe_item = str(item or "").strip()
+            safe_item = str(item or "").strip()[:180]
             if safe_item and safe_item not in result:
                 result.append(safe_item)
+            if limit and len(result) >= limit:
+                break
         return result
 
     return {
@@ -2421,6 +2428,7 @@ def sanitize_archive_progress(value: dict | None) -> dict:
         "relationUnlocked": clean_id_list(source.get("relationUnlocked")),
         "voiceReplayUnlocked": clean_id_list(source.get("voiceReplayUnlocked")),
         "endingUnlocked": clean_id_list(source.get("endingUnlocked")),
+        "readTextKeys": clean_id_list(source.get("readTextKeys"), READ_TEXT_KEY_LIMIT),
         "endingCompletionCount": max(0, int(source.get("endingCompletionCount") or 0)),
         "endingLastCompletedAt": str(source.get("endingLastCompletedAt") or "").strip() or None,
     }
@@ -2697,6 +2705,7 @@ class NativeRuntimePlayer:
         self.settings_file_path = get_project_settings_file_path(self.project_id)
         self.archive_progress = load_project_archive_progress(self.project_id)
         self.progress_file_path = get_project_progress_file_path(self.project_id)
+        loaded_read_text_keys = list(self.archive_progress.get("readTextKeys") or [])
         self.player_profile = load_project_player_profile(self.project_id)
         self.profile_file_path = get_project_profile_file_path(self.project_id)
         self.auto_resume_snapshot = load_project_auto_resume(self.project_id)
@@ -2711,7 +2720,8 @@ class NativeRuntimePlayer:
         self.video_preview_frame_cache: dict[str, dict] = {}
         self.text_history: list[dict] = []
         self.text_history_seen_keys: set[str] = set()
-        self.read_text_keys: set[str] = set()
+        self.read_text_key_order: list[str] = loaded_read_text_keys[-READ_TEXT_KEY_LIMIT:]
+        self.read_text_keys: set[str] = set(self.read_text_key_order)
         self.history_scroll_index = 0
         self.auto_play_enabled = False
         self.auto_play_deadline_ms = 0
@@ -2866,6 +2876,12 @@ class NativeRuntimePlayer:
 
     def persist_archive_progress(self) -> None:
         write_project_archive_progress(self.project_id, self.archive_progress)
+
+    def persist_read_text_progress(self) -> None:
+        self.read_text_key_order = [key for key in self.read_text_key_order if key in self.read_text_keys]
+        self.read_text_key_order = self.read_text_key_order[-READ_TEXT_KEY_LIMIT:]
+        self.archive_progress["readTextKeys"] = list(self.read_text_key_order)
+        self.persist_archive_progress()
 
     def persist_player_profile(self) -> None:
         self.player_profile = sanitize_player_profile(self.player_profile)
@@ -3497,9 +3513,10 @@ class NativeRuntimePlayer:
         self.update_current_line_reveal()
         return self.current_line_full_text[: self.current_line_revealed_chars]
 
-    def build_text_history_key(self, scene: dict | None, block_index: int, block_type: str) -> str:
+    def build_text_history_key(self, scene: dict | None, block_index: int, block_type: str, text: str) -> str:
         scene_id = str((scene or {}).get("id") or self.current_scene_id or "")
-        return f"{scene_id}:{int(block_index)}:{block_type}"
+        text_digest = hashlib.sha1(str(text or "").encode("utf-8")).hexdigest()[:12]
+        return f"{scene_id}:{int(block_index)}:{block_type}:{text_digest}"
 
     def get_line_speaker_name(self, line: dict) -> str:
         speaker_id = line.get("speakerId")
@@ -3517,7 +3534,7 @@ class NativeRuntimePlayer:
         if not text:
             return
         block_type = str(line.get("type") or "")
-        history_key = self.build_text_history_key(scene, block_index, block_type)
+        history_key = self.build_text_history_key(scene, block_index, block_type, text)
         line["historyKey"] = history_key
         if history_key in self.text_history_seen_keys:
             return
@@ -3538,8 +3555,10 @@ class NativeRuntimePlayer:
         if not self.current_line:
             return
         history_key = str(self.current_line.get("historyKey") or "")
-        if history_key:
+        if history_key and history_key not in self.read_text_keys:
             self.read_text_keys.add(history_key)
+            self.read_text_key_order.append(history_key)
+            self.persist_read_text_progress()
 
     def open_text_history_overlay(self) -> None:
         self.overlay_mode = "history"

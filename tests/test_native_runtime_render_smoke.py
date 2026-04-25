@@ -19,6 +19,7 @@ except ModuleNotFoundError:  # pragma: no cover - CI installs pygame-ce for this
 from native_runtime.runtime_player import (
     NativeRuntimePlayer,
     build_native_video_preview_probe_report,
+    load_project_archive_progress,
     load_opencv_video_frame_surface,
 )
 
@@ -322,6 +323,14 @@ class NativeRuntimeRenderSmokeTests(unittest.TestCase):
         self.assert_screen_has_pixels(player)
         self.assertGreaterEqual(len(player.text_history), 1)
         self.assertTrue(player.font_source_status)
+        read_key = str(player.current_line.get("historyKey") or "")
+        self.assertTrue(read_key)
+        player.mark_current_line_read()
+        self.assertIn(read_key, load_project_archive_progress("native_render_smoke")["readTextKeys"])
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message="The system font .*", category=UserWarning)
+            second_player = NativeRuntimePlayer(pygame, data_path)
+        self.assertIn(read_key, second_player.read_text_keys)
 
         player.open_text_history_overlay()
         player.render()
