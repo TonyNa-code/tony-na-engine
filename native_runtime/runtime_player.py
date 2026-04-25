@@ -2765,6 +2765,7 @@ class NativeRuntimePlayer:
         self.auto_play_deadline_ms = 0
         self.skip_read_enabled = False
         self.skip_deadline_ms = 0
+        self.ui_hidden = False
         self.system_menu_index = 0
         self.title_menu_index = 0
         self.settings_menu_index = 0
@@ -3635,9 +3636,27 @@ class NativeRuntimePlayer:
             self.persist_read_text_progress()
 
     def open_text_history_overlay(self) -> None:
+        self.ui_hidden = False
         self.overlay_mode = "history"
         self.history_scroll_index = max(0, len(self.text_history) - 1)
         self.status_message = "文本历史已打开。"
+
+    def toggle_ui_hidden(self) -> None:
+        if self.overlay_mode or self.title_screen_active:
+            return
+        self.ui_hidden = not self.ui_hidden
+        if self.ui_hidden:
+            self.stop_flow_assist()
+            self.status_message = "界面已隐藏。左键 / 右键 / 中键 / U 可恢复。"
+        else:
+            self.status_message = "界面已恢复。"
+
+    def restore_ui_hidden(self) -> bool:
+        if not self.ui_hidden:
+            return False
+        self.ui_hidden = False
+        self.status_message = "界面已恢复。"
+        return True
 
     def toggle_auto_play(self) -> None:
         self.auto_play_enabled = not self.auto_play_enabled
@@ -4027,6 +4046,7 @@ class NativeRuntimePlayer:
         return ""
 
     def open_title_screen(self) -> None:
+        self.ui_hidden = False
         self.title_screen_active = True
         self.overlay_mode = "title"
         self.title_menu_index = 0
@@ -4039,6 +4059,7 @@ class NativeRuntimePlayer:
         self.status_message = "标题页：选择开始、续玩、读档或设置。"
 
     def start_story_from_title(self) -> None:
+        self.ui_hidden = False
         self.title_screen_active = False
         self.overlay_mode = None
         self.overlay_hotspots = []
@@ -4473,6 +4494,7 @@ class NativeRuntimePlayer:
         self.status_message = f"已读入正式存档 {slot_index + 1}：{snapshot.get('sceneName') or '未命名场景'}"
 
     def restore_from_snapshot(self, snapshot: dict) -> None:
+        self.ui_hidden = False
         self.title_screen_active = False
         self.overlay_mode = None
         self.auto_resume_write_enabled = True
@@ -5265,15 +5287,17 @@ class NativeRuntimePlayer:
         self.render_particle_effect(stage_surface)
         self.render_stage_surface(stage_surface)
         self.render_stage_effect_overlays()
-        self.render_status_bar()
-        if self.current_choices:
-            self.render_choices()
-        elif self.current_line and self.current_line.get("type") == "video_play":
-            self.render_video_card()
-        elif self.current_line:
-            self.render_dialogue()
-        elif self.finished:
-            self.render_finished()
+        if not self.ui_hidden or self.overlay_mode:
+            self.render_status_bar()
+        if not self.ui_hidden:
+            if self.current_choices:
+                self.render_choices()
+            elif self.current_line and self.current_line.get("type") == "video_play":
+                self.render_video_card()
+            elif self.current_line:
+                self.render_dialogue()
+            elif self.finished:
+                self.render_finished()
         self.render_screen_effect_overlays()
         self.render_overlay()
         pygame.display.flip()
@@ -5346,7 +5370,7 @@ class NativeRuntimePlayer:
         controls = (
             "↑↓：选择 · Enter：确认 · F11：全屏 · Esc：退出"
             if self.overlay_mode == "title"
-            else "左键：推进 · 右键/F1：系统 · 滚轮↑/H：历史 · A：自动 · S：快进"
+            else "左键：推进 · 右键/F1：系统 · 中键/U：隐藏界面 · 滚轮↑/H：历史"
         )
         control_surface = self.font_ui.render(controls, True, palette["muted"])
         self.screen.blit(control_surface, (self.width - control_surface.get_width() - 36, 30))
@@ -6469,8 +6493,16 @@ class NativeRuntimePlayer:
                     return True
                 self.close_overlay()
                 return True
+            if self.restore_ui_hidden():
+                return True
             return False
         if event.type == self.pygame.KEYDOWN:
+            if self.ui_hidden and event.key == self.pygame.K_u:
+                self.restore_ui_hidden()
+                return True
+            if self.ui_hidden and event.key not in {self.pygame.K_F11}:
+                self.restore_ui_hidden()
+                return True
             if self.current_line and self.current_line.get("type") == "video_play" and event.key == self.pygame.K_v:
                 self.open_current_video()
                 return True
@@ -6492,6 +6524,9 @@ class NativeRuntimePlayer:
                 return True
             if self.overlay_mode:
                 return self.handle_overlay_event(event)
+            if event.key == self.pygame.K_u:
+                self.toggle_ui_hidden()
+                return True
             if event.key == self.pygame.K_h:
                 self.open_text_history_overlay()
                 return True
@@ -6503,6 +6538,9 @@ class NativeRuntimePlayer:
                 return True
 
         if event.type == self.pygame.MOUSEWHEEL:
+            if self.ui_hidden:
+                self.restore_ui_hidden()
+                return True
             if self.overlay_mode:
                 return self.handle_overlay_event(event)
             if event.y > 0:
@@ -6513,6 +6551,9 @@ class NativeRuntimePlayer:
                 return True
 
         if event.type == self.pygame.MOUSEBUTTONDOWN and event.button == 3:
+            if self.ui_hidden:
+                self.restore_ui_hidden()
+                return True
             if self.overlay_mode:
                 if self.overlay_mode == "title":
                     return True
@@ -6524,7 +6565,20 @@ class NativeRuntimePlayer:
             self.open_system_menu()
             return True
 
+        if event.type == self.pygame.MOUSEBUTTONDOWN and event.button == 2:
+            if self.overlay_mode:
+                return self.handle_overlay_event(event)
+            self.toggle_ui_hidden()
+            return True
+
+        if event.type == self.pygame.MOUSEBUTTONDOWN and event.button == 1 and self.ui_hidden:
+            self.restore_ui_hidden()
+            return True
+
         if event.type == self.pygame.MOUSEBUTTONDOWN and event.button in {4, 5}:
+            if self.ui_hidden:
+                self.restore_ui_hidden()
+                return True
             if self.overlay_mode:
                 return self.handle_overlay_event(event)
             if event.button == 4:
@@ -6549,6 +6603,8 @@ class NativeRuntimePlayer:
                     return False
                 self.advance_current_line_if_allowed()
             elif event.type == self.pygame.MOUSEBUTTONDOWN and event.button == 1:
+                if self.restore_ui_hidden():
+                    return True
                 if self.finished:
                     return False
                 self.advance_current_line_if_allowed()
@@ -6839,7 +6895,8 @@ class NativeRuntimePlayer:
             self.load_quick()
             return True
 
-        is_ctrl = bool(event.mod & pygame.KMOD_CTRL) or bool(event.mod & pygame.KMOD_META)
+        event_mod = int(getattr(event, "mod", 0) or 0)
+        is_ctrl = bool(event_mod & pygame.KMOD_CTRL) or bool(event_mod & pygame.KMOD_META)
         if not is_ctrl:
             return False
 
@@ -6852,7 +6909,7 @@ class NativeRuntimePlayer:
             return False
 
         slot_index = slot_keys[event.key]
-        if event.mod & pygame.KMOD_SHIFT:
+        if event_mod & pygame.KMOD_SHIFT:
             self.load_formal_slot(slot_index)
         else:
             self.save_formal_slot(slot_index)
