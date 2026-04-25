@@ -590,12 +590,33 @@ class RunEditorSmokeTests(unittest.TestCase):
         video_backend_payload = json.loads(video_backend_description.stdout)
         self.assertEqual(video_backend_payload["nativePreviewMode"], "cinematic_bridge_card")
         self.assertEqual(video_backend_payload["videoAssetCount"], 1)
+        self.assertEqual(video_backend_payload["previewProbeCommand"], "python runtime_player.py --probe-video-preview .")
         self.assertTrue(
             any(
                 option["optionalRequirements"] == run_editor.NATIVE_RUNTIME_VIDEO_REQUIREMENTS_NAME
                 for option in video_backend_payload["backendOptions"]
                 if option.get("optionalRequirements")
             )
+        )
+
+        video_preview_probe = subprocess.run(
+            [
+                sys.executable,
+                str(build_dir / run_editor.NATIVE_RUNTIME_PLAYER_NAME),
+                "--probe-video-preview",
+                str(build_dir),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(video_preview_probe.returncode, 0, video_preview_probe.stdout + video_preview_probe.stderr)
+        video_preview_payload = json.loads(video_preview_probe.stdout)
+        self.assertEqual(video_preview_payload["backendId"], "opencv_frame_preview")
+        self.assertEqual(video_preview_payload["summary"]["videoAssetCount"], 1)
+        self.assertIn(
+            video_preview_payload["status"],
+            {"optional_dependency_missing", "pygame_missing", "ready", "partial", "all_failed"},
         )
 
     def test_voice_placeholder_and_match_workflow(self) -> None:

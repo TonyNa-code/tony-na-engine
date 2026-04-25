@@ -16,7 +16,11 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - CI installs pygame-ce for this suite.
     pygame = None
 
-from native_runtime.runtime_player import NativeRuntimePlayer, load_opencv_video_frame_surface
+from native_runtime.runtime_player import (
+    NativeRuntimePlayer,
+    build_native_video_preview_probe_report,
+    load_opencv_video_frame_surface,
+)
 
 
 UI_ASSET_IDS = [
@@ -245,6 +249,51 @@ class NativeRuntimeRenderSmokeTests(unittest.TestCase):
         self.assertIsNotNone(FakeCv2.last_capture)
         self.assertEqual(FakeCv2.last_capture.seek_calls, [(FakeCv2.CAP_PROP_POS_MSEC, 1500.0)])
         self.assertTrue(FakeCv2.last_capture.released)
+
+    def test_video_preview_probe_reports_ready_with_optional_backend(self) -> None:
+        self.write_game_data()
+
+        class FakeFrame:
+            shape = (2, 3, 3)
+
+            def tobytes(self) -> bytes:
+                return bytes([255, 255, 255] * 6)
+
+        class FakeCapture:
+            def __init__(self, video_path: str) -> None:
+                self.video_path = video_path
+
+            def isOpened(self) -> bool:
+                return True
+
+            def set(self, prop: int, value: float) -> None:
+                return None
+
+            def read(self) -> tuple[bool, FakeFrame]:
+                return True, FakeFrame()
+
+            def release(self) -> None:
+                return None
+
+        class FakeCv2:
+            CAP_PROP_POS_MSEC = 101
+            COLOR_BGR2RGB = 202
+
+            @staticmethod
+            def VideoCapture(video_path: str) -> FakeCapture:
+                return FakeCapture(video_path)
+
+            @staticmethod
+            def cvtColor(frame: FakeFrame, color_code: int) -> FakeFrame:
+                return frame
+
+        report = build_native_video_preview_probe_report(self.bundle_dir, pygame_module=pygame, cv2_module=FakeCv2)
+
+        self.assertEqual(report["status"], "ready")
+        self.assertEqual(report["summary"]["videoAssetCount"], 1)
+        self.assertEqual(report["summary"]["successCount"], 1)
+        self.assertEqual(report["entries"][0]["status"], "ready")
+        self.assertEqual(report["entries"][0]["surfaceSize"], {"width": 3, "height": 2})
 
     def test_native_runtime_renders_ui_skin_overlays_headlessly(self) -> None:
         data_path = self.write_game_data()

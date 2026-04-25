@@ -785,7 +785,7 @@ def build_release_check_report(bundle_dir: Path) -> dict:
                 )
             video_bridge_available = can_open_external_video()
             optional_video_hint = (
-                f"如需评估后续窗口内画面预览，可运行 python runtime_player.py --describe-video-backends .，"
+                f"如需检查可选窗口内帧预览，可运行 python runtime_player.py --probe-video-preview .，"
                 f"或安装 {NATIVE_VIDEO_OPTIONAL_REQUIREMENTS_NAME}。"
             )
             add_release_check_issue(
@@ -969,11 +969,170 @@ def build_native_video_backend_report(bundle_dir: Path) -> dict:
         "videoBlockCount": (bridge_report.get("summary") or {}).get("videoBlockCount", 0),
         "recommendation": recommendation,
         "backendOptions": backend_options,
+        "previewProbeCommand": "python runtime_player.py --probe-video-preview .",
     }
 
 
 def print_native_video_backend_report(bundle_dir: Path) -> None:
     report = build_native_video_backend_report(bundle_dir)
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+
+
+def build_video_preview_probe_entry_without_attempt(entry: dict, status: str, message: str) -> dict:
+    usage = (entry.get("usages") or [{}])[0] or {}
+    return {
+        "assetId": entry.get("assetId"),
+        "name": entry.get("name"),
+        "exportUrl": entry.get("exportUrl"),
+        "exists": bool(entry.get("exists")),
+        "startTimeSeconds": normalize_video_time_seconds(usage.get("startTimeSeconds")),
+        "attempted": False,
+        "status": status,
+        "message": message,
+        "surfaceSize": None,
+    }
+
+
+def build_native_video_preview_probe_report(
+    bundle_dir: Path,
+    pygame_module=None,
+    cv2_module=None,
+    max_assets: int = 3,
+) -> dict:
+    bridge_report = build_native_video_bridge_report(bundle_dir)
+    entries = bridge_report.get("entries") or []
+    backend_options = bridge_report.get("backendOptions") or get_native_video_backend_options(bundle_dir)
+    base_report = {
+        "checkedAt": now_iso(),
+        "bundleDir": str(bundle_dir),
+        "nativePreviewMode": NATIVE_VIDEO_PREVIEW_MODE,
+        "backendId": "opencv_frame_preview",
+        "backendOptions": backend_options,
+        "bridgeStatus": bridge_report.get("status"),
+        "summary": {
+            "videoAssetCount": len(entries),
+            "probedCount": 0,
+            "successCount": 0,
+            "failedCount": 0,
+        },
+        "entries": [],
+    }
+    if not entries:
+        return {
+            **base_report,
+            "status": "no_video",
+            "recommendation": "当前导出包没有视频素材，不需要检查视频帧预览。",
+        }
+
+    cv2_available = cv2_module is not None or is_optional_python_module_available("cv2")
+    if not cv2_available:
+        return {
+            **base_report,
+            "status": "optional_dependency_missing",
+            "recommendation": f"未安装 {NATIVE_VIDEO_OPTIONAL_REQUIREMENTS_NAME}，视频卡片会使用影院式桥接卡；需要帧预览时再安装可选依赖。",
+            "entries": [
+                build_video_preview_probe_entry_without_attempt(entry, "optional_dependency_missing", "未安装 OpenCV：使用桥接卡")
+                for entry in entries[:max_assets]
+            ],
+        }
+
+    if pygame_module is None:
+        os.environ.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")
+        pygame_module = import_optional_python_module("pygame")
+    if pygame_module is None:
+        return {
+            **base_report,
+            "status": "pygame_missing",
+            "recommendation": "已检测到 OpenCV，但当前 Python 环境缺少 pygame-ce，无法生成 Runtime 预览 Surface。",
+            "entries": [
+                build_video_preview_probe_entry_without_attempt(entry, "pygame_missing", "缺少 pygame-ce：无法生成预览 Surface")
+                for entry in entries[:max_assets]
+            ],
+        }
+
+    should_quit_pygame = False
+    if hasattr(pygame_module, "get_init") and hasattr(pygame_module, "init") and not pygame_module.get_init():
+        pygame_module.init()
+        should_quit_pygame = True
+
+    probe_entries = []
+    try:
+        for entry in entries[:max_assets]:
+            usage = (entry.get("usages") or [{}])[0] or {}
+            start_time = normalize_video_time_seconds(usage.get("startTimeSeconds"))
+            export_url = str(entry.get("exportUrl") or "").strip()
+            asset_path = bundle_dir / export_url if export_url else None
+            if not asset_path or not asset_path.is_file():
+                probe_entries.append(
+                    {
+                        "assetId": entry.get("assetId"),
+                        "name": entry.get("name"),
+                        "exportUrl": export_url,
+                        "exists": False,
+                        "startTimeSeconds": start_time,
+                        "attempted": False,
+                        "status": "file_missing",
+                        "message": "视频文件不存在",
+                        "surfaceSize": None,
+                    }
+                )
+                continue
+
+            surface, message = load_opencv_video_frame_surface(
+                pygame_module,
+                asset_path,
+                start_time,
+                cv2_module=cv2_module,
+            )
+            surface_size = None
+            if surface is not None:
+                width, height = surface.get_size()
+                surface_size = {"width": int(width), "height": int(height)}
+            probe_entries.append(
+                {
+                    "assetId": entry.get("assetId"),
+                    "name": entry.get("name"),
+                    "exportUrl": export_url,
+                    "exists": True,
+                    "startTimeSeconds": start_time,
+                    "attempted": True,
+                    "status": "ready" if surface is not None else "frame_unavailable",
+                    "message": message,
+                    "surfaceSize": surface_size,
+                }
+            )
+    finally:
+        if should_quit_pygame and hasattr(pygame_module, "quit"):
+            pygame_module.quit()
+
+    success_count = sum(1 for entry in probe_entries if entry.get("status") == "ready")
+    failed_count = sum(1 for entry in probe_entries if entry.get("status") != "ready")
+    if success_count and failed_count:
+        status = "partial"
+        recommendation = "部分视频可以生成帧预览；失败的视频仍会自动回落到系统播放器桥接卡。"
+    elif success_count:
+        status = "ready"
+        recommendation = "OpenCV 帧预览探针通过；视频卡片可显示剪辑起点附近的画面帧。"
+    else:
+        status = "all_failed"
+        recommendation = "OpenCV 已可用，但没有视频成功生成帧预览；请检查编码格式，或继续使用系统播放器桥接。"
+
+    return {
+        **base_report,
+        "status": status,
+        "recommendation": recommendation,
+        "summary": {
+            "videoAssetCount": len(entries),
+            "probedCount": len(probe_entries),
+            "successCount": success_count,
+            "failedCount": failed_count,
+        },
+        "entries": probe_entries,
+    }
+
+
+def print_native_video_preview_probe_report(bundle_dir: Path) -> None:
+    report = build_native_video_preview_probe_report(bundle_dir)
     print(json.dumps(report, ensure_ascii=False, indent=2))
 
 
@@ -6120,6 +6279,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--describe-title-screen", dest="describe_title_screen", help="输出原生 Runtime 标题页配置摘要，不启动窗口")
     parser.add_argument("--describe-video-bridge", dest="describe_video_bridge", help="输出原生 Runtime 视频桥接摘要，不启动窗口")
     parser.add_argument("--describe-video-backends", dest="describe_video_backends", help="输出原生 Runtime 可选视频后端摘要，不启动窗口")
+    parser.add_argument("--probe-video-preview", dest="probe_video_preview", help="输出原生 Runtime 可选视频帧预览探针，不启动窗口")
     parser.add_argument("--describe-save-dialog", dest="describe_save_dialog", help="输出正式存档面板摘要，不启动窗口")
     parser.add_argument("--page", dest="save_dialog_page", type=int, default=0, help="配合 --describe-save-dialog 使用，指定页码")
     args = parser.parse_args(argv)
@@ -6207,6 +6367,14 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         except NativeRuntimeError as error:
             print(f"Native runtime video backend description failed: {error}")
+            return 1
+
+    if args.probe_video_preview:
+        try:
+            print_native_video_preview_probe_report(Path(args.probe_video_preview).resolve())
+            return 0
+        except NativeRuntimeError as error:
+            print(f"Native runtime video preview probe failed: {error}")
             return 1
 
     if args.describe_save_dialog:
