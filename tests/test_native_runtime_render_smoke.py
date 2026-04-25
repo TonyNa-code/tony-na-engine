@@ -5,6 +5,7 @@ import os
 import tempfile
 import unittest
 import warnings
+from fractions import Fraction
 from pathlib import Path
 
 os.environ.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")
@@ -18,8 +19,10 @@ except ModuleNotFoundError:  # pragma: no cover - CI installs pygame-ce for this
 
 from native_runtime.runtime_player import (
     NATIVE_VIDEO_EMBEDDED_BACKEND_ID,
+    NATIVE_VIDEO_SYNC_BACKEND_ID,
     NativeRuntimePlayer,
     OpenCvEmbeddedVideoPlayback,
+    PyAvSynchronizedVideoPlayback,
     build_native_video_preview_probe_report,
     get_runtime_screenshot_dir,
     load_project_archive_progress,
@@ -342,6 +345,127 @@ class NativeRuntimeRenderSmokeTests(unittest.TestCase):
         self.assertIsNotNone(FakeCv2.last_capture)
         self.assertTrue(FakeCv2.last_capture.released)
         self.assertEqual(NATIVE_VIDEO_EMBEDDED_BACKEND_ID, "opencv_embedded_playback")
+
+    def test_optional_pyav_synchronized_video_playback_uses_timestamps(self) -> None:
+        class FakeVideoArray:
+            shape = (2, 3, 3)
+
+            def __init__(self, seed: int) -> None:
+                self.seed = seed
+
+            def tobytes(self) -> bytes:
+                return bytes([(self.seed + index * 13) % 255 for index in range(18)])
+
+        class FakeVideoFrame:
+            time_base = Fraction(1, 1000)
+
+            def __init__(self, pts: int, seed: int) -> None:
+                self.pts = pts
+                self.seed = seed
+
+            def to_rgb(self) -> "FakeVideoFrame":
+                return self
+
+            def to_ndarray(self) -> FakeVideoArray:
+                return FakeVideoArray(self.seed)
+
+        class FakeAudioArray:
+            def tobytes(self) -> bytes:
+                return b"\x00\x01" * 2048
+
+        class FakeAudioFrame:
+            time_base = Fraction(1, 1000)
+            sample_rate = 44100
+            samples = 1024
+
+            def __init__(self, pts: int) -> None:
+                self.pts = pts
+
+            def to_ndarray(self) -> FakeAudioArray:
+                return FakeAudioArray()
+
+        class FakeStream:
+            def __init__(self, stream_type: str) -> None:
+                self.type = stream_type
+
+        class FakeStreams:
+            def __init__(self) -> None:
+                self.video = [FakeStream("video")]
+                self.audio = [FakeStream("audio")]
+
+        class FakeContainer:
+            def __init__(self) -> None:
+                self.streams = FakeStreams()
+                self.seek_calls: list[int] = []
+                self.closed = False
+
+            def seek(self, offset: int, any_frame: bool = False, backward: bool = True) -> None:
+                self.seek_calls.append(offset)
+
+            def decode(self, stream: FakeStream):
+                if stream.type == "audio":
+                    yield FakeAudioFrame(0)
+                    yield FakeAudioFrame(100)
+                    return
+                yield FakeVideoFrame(0, 20)
+                yield FakeVideoFrame(100, 80)
+                yield FakeVideoFrame(200, 140)
+
+            def close(self) -> None:
+                self.closed = True
+
+        class FakeAv:
+            opened: list[FakeContainer] = []
+
+            @classmethod
+            def open(cls, video_path: str) -> FakeContainer:
+                container = FakeContainer()
+                cls.opened.append(container)
+                return container
+
+        class BusyChannel:
+            def get_busy(self) -> bool:
+                return True
+
+            def pause(self) -> None:
+                return None
+
+            def unpause(self) -> None:
+                return None
+
+            def stop(self) -> None:
+                return None
+
+        video_path = self.bundle_dir / "assets" / "video" / "pyav-sync.mp4"
+        video_path.parent.mkdir(parents=True, exist_ok=True)
+        video_path.write_bytes(b"fake-video-container")
+
+        playback = PyAvSynchronizedVideoPlayback(
+            pygame,
+            video_path,
+            start_time_seconds=0.0,
+            end_time_seconds=0.22,
+            av_module=FakeAv,
+        )
+
+        audio_bytes, audio_message = playback._decode_audio_buffer()
+        self.assertTrue(audio_bytes, audio_message)
+        opened, message = playback.open()
+        self.assertTrue(opened, message)
+        self.assertEqual(playback.backend_id, NATIVE_VIDEO_SYNC_BACKEND_ID)
+        playback.play(0)
+        playback.audio_channel = BusyChannel()
+        playback.update(0)
+        self.assertEqual(playback.status, "playing")
+        self.assertIsNotNone(playback.current_surface)
+        self.assertEqual(playback.current_surface.get_size(), (3, 2))
+        playback.update(120)
+        self.assertEqual(playback.status, "playing")
+        self.assertIsNotNone(playback.current_surface)
+        playback.update(240)
+        self.assertTrue(playback.finished)
+        self.assertEqual(playback.get_progress_ratio(), 1.0)
+        self.assertGreaterEqual(len(FakeAv.opened), 3)
 
     def test_video_preview_probe_reports_ready_with_optional_backend(self) -> None:
         self.write_game_data()

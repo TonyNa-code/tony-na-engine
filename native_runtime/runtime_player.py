@@ -26,6 +26,7 @@ DEFAULT_GAME_DATA_NAME = "game_data.json"
 ENGINE_BRAND_LOGO_RELATIVE_PATH = "assets/brand-logo.png"
 NATIVE_VIDEO_OPTIONAL_REQUIREMENTS_NAME = "requirements-native-runtime-video.txt"
 NATIVE_VIDEO_OPTIONAL_REQUIREMENTS_CANDIDATES = (NATIVE_VIDEO_OPTIONAL_REQUIREMENTS_NAME, "requirements-video.txt")
+NATIVE_VIDEO_SYNC_BACKEND_ID = "pyav_audio_video_sync"
 NATIVE_VIDEO_EMBEDDED_BACKEND_ID = "opencv_embedded_playback"
 GAME_UI_ASSET_REFERENCE_LABELS = {
     "titleBackgroundAssetId": "标题背景",
@@ -52,6 +53,17 @@ NATIVE_VIDEO_BACKEND_OPTIONS = [
         "notes": "默认方案。包体轻、三平台风险低，但无法在 Pygame 窗口内检测真实播放进度。",
     },
     {
+        "id": NATIVE_VIDEO_SYNC_BACKEND_ID,
+        "label": "PyAV/FFmpeg 音画同步内嵌播放",
+        "kind": "embedded_audio_video_sync",
+        "pythonPackage": "av>=12",
+        "moduleName": "av",
+        "embeddedVideo": True,
+        "audio": True,
+        "productionReady": False,
+        "notes": "推荐的商业化路线候选：按音频播放时钟驱动画面帧，支持剪辑区间和播放结束检测；仍需在目标系统实机验证编码兼容性。",
+    },
+    {
         "id": "opencv_frame_preview",
         "label": "OpenCV 内嵌画面帧预览",
         "kind": "embedded_visual_preview",
@@ -60,7 +72,7 @@ NATIVE_VIDEO_BACKEND_OPTIONS = [
         "embeddedVideo": True,
         "audio": False,
         "productionReady": False,
-        "notes": "可作为后续窗口内嵌画面解码候选；OpenCV 不负责音频，正式 OP/ED 仍需额外音频/同步方案。",
+        "notes": "用于快速抽帧和发布前画面探针；OpenCV 不负责音频，音画同步优先交给 PyAV/FFmpeg 后端。",
     },
     {
         "id": NATIVE_VIDEO_EMBEDDED_BACKEND_ID,
@@ -71,7 +83,7 @@ NATIVE_VIDEO_BACKEND_OPTIONS = [
         "embeddedVideo": True,
         "audio": False,
         "productionReady": False,
-        "notes": "实验性第一阶段：可在 Pygame 窗口内播放视频画面并识别结束；OpenCV 不解音频，音频仍需后续 FFmpeg/PyAV 或平台播放器方案。",
+        "notes": "PyAV 不可用时的画面播放兜底：可在 Pygame 窗口内播放视频画面并识别结束，但不解音频。",
     },
 ]
 COLOR_BG = (12, 15, 28)
@@ -398,6 +410,7 @@ SUPPORTED_FONT_EXTENSIONS = {".ttf", ".otf", ".ttc"}
 LARGE_IMAGE_WARNING_BYTES = 18 * 1024 * 1024
 LARGE_AUDIO_WARNING_BYTES = 30 * 1024 * 1024
 LARGE_VIDEO_WARNING_BYTES = 300 * 1024 * 1024
+MAX_EMBEDDED_VIDEO_AUDIO_BUFFER_BYTES = 96 * 1024 * 1024
 
 
 class NativeRuntimeError(RuntimeError):
@@ -556,6 +569,31 @@ def opencv_frame_to_pygame_surface(pygame, frame, cv2_module=None) -> tuple[obje
         return None, f"OpenCV 视频帧转换失败：{error}"
 
 
+def array_like_to_bytes(array_like) -> bytes:
+    if array_like is None:
+        return b""
+    if isinstance(array_like, bytes):
+        return array_like
+    if isinstance(array_like, bytearray):
+        return bytes(array_like)
+    if hasattr(array_like, "tobytes"):
+        return bytes(array_like.tobytes())
+    return bytes(array_like)
+
+
+def pyav_video_frame_to_pygame_surface(pygame, frame) -> tuple[object | None, str]:
+    try:
+        rgb_frame = frame.to_rgb() if hasattr(frame, "to_rgb") else frame
+        array = rgb_frame.to_ndarray()
+        height, width = array.shape[:2]
+        if width <= 0 or height <= 0:
+            return None, "PyAV 视频帧尺寸无效"
+        surface = pygame.image.frombuffer(array_like_to_bytes(array), (int(width), int(height)), "RGB").copy()
+        return surface, "PyAV 视频帧"
+    except Exception as error:
+        return None, f"PyAV 视频帧转换失败：{error}"
+
+
 def load_opencv_video_frame_surface(
     pygame,
     video_path: Path,
@@ -591,6 +629,11 @@ def load_opencv_video_frame_surface(
 
 
 class OpenCvEmbeddedVideoPlayback:
+    backend_id = NATIVE_VIDEO_EMBEDDED_BACKEND_ID
+    backend_label = "OpenCV 内嵌画面"
+    audio_enabled = False
+    clock_source = "video"
+
     def __init__(
         self,
         pygame,
@@ -746,6 +789,365 @@ class OpenCvEmbeddedVideoPlayback:
             except Exception:
                 pass
         self.capture = None
+
+    def get_progress_ratio(self) -> float:
+        if self.end_time_seconds > self.start_time_seconds:
+            start_ms = self.start_time_seconds * 1000.0
+            end_ms = self.end_time_seconds * 1000.0
+            return clamp((self.elapsed_ms - start_ms) / max(1.0, end_ms - start_ms), 0.0, 1.0)
+        if self.duration_ms > 0:
+            return clamp(self.elapsed_ms / self.duration_ms, 0.0, 1.0)
+        return 1.0 if self.finished else 0.0
+
+
+class PyAvSynchronizedVideoPlayback:
+    backend_id = NATIVE_VIDEO_SYNC_BACKEND_ID
+    backend_label = "PyAV 音画同步"
+    audio_enabled = True
+    clock_source = "audio"
+
+    def __init__(
+        self,
+        pygame,
+        video_path: Path,
+        start_time_seconds: float = 0.0,
+        end_time_seconds: float = 0.0,
+        fit_mode: str = "contain",
+        volume: int = 100,
+        av_module=None,
+    ) -> None:
+        self.pygame = pygame
+        self.video_path = video_path
+        self.start_time_seconds = max(0.0, float(start_time_seconds or 0.0))
+        self.end_time_seconds = max(0.0, float(end_time_seconds or 0.0))
+        self.fit_mode = fit_mode if fit_mode in {"contain", "cover"} else "contain"
+        self.volume = clamp_int(volume, 0, 100, 100) / 100
+        self.av = av_module if av_module is not None else import_optional_python_module("av")
+        self.video_container = None
+        self.video_stream = None
+        self.video_frames = None
+        self.pending_video_surface = None
+        self.pending_video_time_seconds = 0.0
+        self.current_surface = None
+        self.audio_sound = None
+        self.audio_channel = None
+        self.audio_buffer_bytes = 0
+        self.status = "stopped"
+        self.status_message = "尚未播放"
+        self.started_at_ms = 0
+        self.paused_at_ms = 0
+        self.total_paused_ms = 0
+        self.elapsed_ms = int(round(self.start_time_seconds * 1000.0))
+        self.duration_ms = 0
+        self.finished = False
+        self.paused = False
+        self.last_error = ""
+
+    def _open_container(self):
+        if self.av is None:
+            return None
+        return self.av.open(str(self.video_path))
+
+    def _stream_time_seconds(self, frame, fallback: float = 0.0) -> float:
+        try:
+            if getattr(frame, "pts", None) is not None and getattr(frame, "time_base", None):
+                return float(frame.pts * frame.time_base)
+        except Exception:
+            pass
+        return fallback
+
+    def _get_streams(self, container, media_type: str) -> list:
+        streams = getattr(container, "streams", None)
+        if streams is None:
+            return []
+        typed_streams = getattr(streams, media_type, None)
+        if typed_streams is not None:
+            return list(typed_streams)
+        try:
+            return [stream for stream in streams if getattr(stream, "type", "") == media_type]
+        except TypeError:
+            return []
+
+    def _seek_container(self, container) -> None:
+        if self.start_time_seconds <= 0 or not hasattr(container, "seek"):
+            return
+        try:
+            container.seek(int(self.start_time_seconds * 1_000_000), any_frame=False, backward=True)
+        except TypeError:
+            try:
+                container.seek(int(self.start_time_seconds * 1_000_000))
+            except Exception:
+                return
+        except Exception:
+            return
+
+    def _get_mixer_format(self) -> tuple[int, int, int]:
+        mixer_state = None
+        try:
+            mixer_state = self.pygame.mixer.get_init()
+        except Exception:
+            mixer_state = None
+        if not mixer_state:
+            try:
+                self.pygame.mixer.init(frequency=44100, size=-16, channels=2)
+                mixer_state = self.pygame.mixer.get_init()
+            except Exception:
+                mixer_state = None
+        if not mixer_state:
+            return (44100, -16, 2)
+        frequency, sample_format, channels = mixer_state
+        return int(frequency or 44100), int(sample_format or -16), int(channels or 2)
+
+    def _iter_resampled_audio_frames(self, frame, frequency: int, channels: int):
+        layout = "stereo" if channels != 1 else "mono"
+        try:
+            resampler_cls = self.av.audio.resampler.AudioResampler
+            resampler = getattr(self, "_audio_resampler", None)
+            if resampler is None:
+                resampler = resampler_cls(format="s16", layout=layout, rate=frequency)
+                self._audio_resampler = resampler
+            resampled = resampler.resample(frame)
+            if resampled is None:
+                return []
+            if isinstance(resampled, list):
+                return resampled
+            return [resampled]
+        except Exception:
+            return [frame]
+
+    def _decode_audio_buffer(self) -> tuple[bytes, str]:
+        if self.av is None:
+            return b"", "未安装 PyAV"
+        container = None
+        chunks: list[bytes] = []
+        total_bytes = 0
+        frequency, _sample_format, channels = self._get_mixer_format()
+        try:
+            container = self._open_container()
+            if container is None:
+                return b"", "PyAV 无法打开媒体"
+            audio_streams = self._get_streams(container, "audio")
+            if not audio_streams:
+                return b"", "视频没有音频轨"
+            audio_stream = audio_streams[0]
+            self._seek_container(container)
+            for frame in container.decode(audio_stream):
+                frame_time = self._stream_time_seconds(frame, 0.0)
+                frame_duration = 0.0
+                try:
+                    if getattr(frame, "sample_rate", None) and getattr(frame, "samples", None):
+                        frame_duration = float(frame.samples) / float(frame.sample_rate)
+                except Exception:
+                    frame_duration = 0.0
+                if frame_time + frame_duration < self.start_time_seconds:
+                    continue
+                if self.end_time_seconds > 0 and frame_time > self.end_time_seconds:
+                    break
+                for audio_frame in self._iter_resampled_audio_frames(frame, frequency, channels):
+                    if self.end_time_seconds > 0 and self._stream_time_seconds(audio_frame, frame_time) > self.end_time_seconds:
+                        break
+                    audio_bytes = array_like_to_bytes(audio_frame.to_ndarray())
+                    if not audio_bytes:
+                        continue
+                    chunks.append(audio_bytes)
+                    total_bytes += len(audio_bytes)
+                    if total_bytes > MAX_EMBEDDED_VIDEO_AUDIO_BUFFER_BYTES:
+                        return b"".join(chunks), "音频缓冲较大，已截断到安全上限"
+            payload = b"".join(chunks)
+            if not payload:
+                return b"", "未读取到可播放音频"
+            return payload, "PyAV 音频已解码"
+        except Exception as error:
+            return b"", f"PyAV 音频解码失败：{error}"
+        finally:
+            if container is not None and hasattr(container, "close"):
+                try:
+                    container.close()
+                except Exception:
+                    pass
+
+    def open(self) -> tuple[bool, str]:
+        if self.av is None:
+            self.status = "unavailable"
+            self.status_message = "未安装 PyAV，无法音画同步播放"
+            return False, self.status_message
+        if not self.video_path.is_file():
+            self.status = "file_missing"
+            self.status_message = "视频文件不存在"
+            return False, self.status_message
+        try:
+            self.video_container = self._open_container()
+            if self.video_container is None:
+                self.status = "open_failed"
+                self.status_message = "PyAV 无法打开视频"
+                return False, self.status_message
+            video_streams = self._get_streams(self.video_container, "video")
+            if not video_streams:
+                self.status = "open_failed"
+                self.status_message = "视频没有可解码画面轨"
+                return False, self.status_message
+            self.video_stream = video_streams[0]
+            self._seek_container(self.video_container)
+            self.video_frames = self.video_container.decode(self.video_stream)
+            audio_bytes, audio_message = self._decode_audio_buffer()
+            mixer_ready = False
+            try:
+                mixer_ready = bool(self.pygame.mixer.get_init())
+            except Exception:
+                mixer_ready = False
+            if audio_bytes and mixer_ready:
+                try:
+                    self.audio_sound = self.pygame.mixer.Sound(buffer=audio_bytes)
+                    self.audio_sound.set_volume(self.volume)
+                    self.audio_buffer_bytes = len(audio_bytes)
+                except Exception as error:
+                    self.audio_enabled = False
+                    self.clock_source = "video"
+                    audio_message = f"音频缓冲创建失败：{error}"
+            if not self.audio_sound:
+                self.audio_enabled = False
+                self.clock_source = "video"
+            self.duration_ms = int(round(max(0.0, self.end_time_seconds - self.start_time_seconds) * 1000.0))
+            self.status = "ready"
+            self.status_message = "PyAV 音画同步就绪" if self.audio_sound else f"PyAV 画面就绪（{audio_message}）"
+            return True, self.status_message
+        except Exception as error:
+            self.release()
+            self.status = "open_failed"
+            self.status_message = f"PyAV 音画同步打开失败：{error}"
+            self.last_error = self.status_message
+            return False, self.status_message
+
+    def play(self, now_ms: int) -> None:
+        self.paused = False
+        self.finished = False
+        self.status = "playing"
+        self.started_at_ms = now_ms
+        self.total_paused_ms = 0
+        self.paused_at_ms = 0
+        self.elapsed_ms = int(round(self.start_time_seconds * 1000.0))
+        if self.audio_sound:
+            try:
+                self.audio_channel = self.audio_sound.play()
+            except Exception:
+                self.audio_channel = None
+                self.audio_enabled = False
+                self.clock_source = "video"
+        self.status_message = "PyAV 音画同步播放中" if self.audio_channel else "PyAV 画面播放中（音频不可用）"
+
+    def pause(self) -> None:
+        if self.status == "playing":
+            self.paused = True
+            self.status = "paused"
+            self.paused_at_ms = self.pygame.time.get_ticks()
+            if self.audio_channel:
+                try:
+                    self.audio_channel.pause()
+                except Exception:
+                    pass
+            self.status_message = "PyAV 播放已暂停"
+
+    def resume(self, now_ms: int) -> None:
+        if self.status == "paused":
+            if self.paused_at_ms:
+                self.total_paused_ms += max(0, now_ms - self.paused_at_ms)
+            self.paused_at_ms = 0
+            self.paused = False
+            self.status = "playing"
+            if self.audio_channel:
+                try:
+                    self.audio_channel.unpause()
+                except Exception:
+                    pass
+            self.status_message = "PyAV 音画同步播放中" if self.audio_channel else "PyAV 画面播放中（音频不可用）"
+
+    def toggle_pause(self, now_ms: int) -> None:
+        if self.status == "playing":
+            self.pause()
+        elif self.status == "paused":
+            self.resume(now_ms)
+
+    def get_playback_seconds(self, now_ms: int) -> float:
+        if self.status == "paused" and self.paused_at_ms:
+            now_ms = self.paused_at_ms
+        elapsed = max(0, now_ms - self.started_at_ms - self.total_paused_ms)
+        self.elapsed_ms = int(round(self.start_time_seconds * 1000.0 + elapsed))
+        return self.elapsed_ms / 1000.0
+
+    def _next_video_surface(self):
+        if self.video_frames is None:
+            return None, None, "视频迭代器不存在"
+        try:
+            frame = next(self.video_frames)
+        except StopIteration:
+            return None, None, "视频播放到结尾"
+        except Exception as error:
+            return None, None, f"PyAV 视频解码失败：{error}"
+        frame_time = self._stream_time_seconds(frame, self.start_time_seconds)
+        surface, message = pyav_video_frame_to_pygame_surface(self.pygame, frame)
+        return surface, frame_time, message
+
+    def update(self, now_ms: int) -> None:
+        if self.status != "playing" or self.paused or self.finished:
+            return
+        playback_seconds = self.get_playback_seconds(now_ms)
+        if self.end_time_seconds > 0 and playback_seconds >= self.end_time_seconds:
+            self.mark_finished()
+            return
+
+        while True:
+            if self.pending_video_surface is not None:
+                if self.pending_video_time_seconds <= playback_seconds + 0.012:
+                    self.current_surface = self.pending_video_surface
+                    self.pending_video_surface = None
+                    continue
+                break
+
+            surface, frame_time, message = self._next_video_surface()
+            if surface is None:
+                self.last_error = "" if message == "视频播放到结尾" else str(message or "")
+                self.mark_finished()
+                break
+            if frame_time is None:
+                frame_time = playback_seconds
+            if frame_time < self.start_time_seconds - 0.04:
+                continue
+            if self.end_time_seconds > 0 and frame_time > self.end_time_seconds:
+                self.mark_finished()
+                break
+            if frame_time <= playback_seconds + 0.012:
+                self.current_surface = surface
+                continue
+            self.pending_video_surface = surface
+            self.pending_video_time_seconds = frame_time
+            break
+
+        if self.audio_channel and not self.audio_channel.get_busy() and self.status == "playing":
+            if self.end_time_seconds <= 0 or playback_seconds >= self.start_time_seconds + 0.25:
+                self.mark_finished()
+
+    def mark_finished(self) -> None:
+        self.finished = True
+        self.paused = False
+        self.status = "finished"
+        self.status_message = "PyAV 音画同步播放已结束"
+        self.release(stop_audio=True)
+
+    def release(self, stop_audio: bool = True) -> None:
+        if stop_audio and self.audio_channel:
+            try:
+                self.audio_channel.stop()
+            except Exception:
+                pass
+        self.audio_channel = None
+        self.audio_sound = None
+        if self.video_container is not None and hasattr(self.video_container, "close"):
+            try:
+                self.video_container.close()
+            except Exception:
+                pass
+        self.video_container = None
+        self.video_frames = None
 
     def get_progress_ratio(self) -> float:
         if self.end_time_seconds > self.start_time_seconds:
@@ -1166,7 +1568,8 @@ def build_native_video_bridge_report(bundle_dir: Path) -> dict:
                 "extension": extension,
                 "extensionSupported": extension in SUPPORTED_VIDEO_EXTENSIONS,
                 "externalPlaybackMode": "system_player_bridge",
-                "embeddedPlaybackMode": NATIVE_VIDEO_EMBEDDED_BACKEND_ID,
+                "embeddedPlaybackMode": NATIVE_VIDEO_SYNC_BACKEND_ID,
+                "fallbackEmbeddedPlaybackMode": NATIVE_VIDEO_EMBEDDED_BACKEND_ID,
                 "nativePreviewMode": NATIVE_VIDEO_PREVIEW_MODE,
                 "openerAvailable": opener_available,
                 "openerLabel": get_external_video_opener_label() if opener_available else "",
@@ -1206,13 +1609,13 @@ def build_native_video_backend_report(bundle_dir: Path) -> dict:
     if bridge_status == "no_video":
         recommendation = "当前导出包没有视频素材；如果后续加入 OP/ED/PV，可以继续使用系统播放器桥接。"
     elif bridge_status == "ready":
-        recommendation = "当前可以使用系统播放器桥接；如安装可选 OpenCV 依赖，也可在窗口内实验性播放视频画面。"
+        recommendation = "当前可以使用系统播放器桥接；安装可选视频依赖后，会优先尝试 PyAV/FFmpeg 音画同步内嵌播放，并以 OpenCV 画面播放兜底。"
     else:
-        recommendation = "当前系统没有检测到可用外部视频打开器；可安装可选 OpenCV 依赖尝试窗口内画面播放，或优先发布网页/NW.js 包。"
+        recommendation = "当前系统没有检测到可用外部视频打开器；可安装可选视频依赖尝试 PyAV/FFmpeg 音画同步或 OpenCV 画面播放，或优先发布网页/NW.js 包。"
     if available_embedded:
-        recommendation += " 已检测到可选内嵌画面后端，可用于窗口内逐帧播放预览。"
+        recommendation += " 已检测到可选内嵌后端，可用于窗口内视频播放验证。"
     else:
-        recommendation += f" 如需尝试实验性内嵌画面播放，可安装 {NATIVE_VIDEO_OPTIONAL_REQUIREMENTS_NAME}。"
+        recommendation += f" 如需尝试实验性内嵌音画同步，可安装 {NATIVE_VIDEO_OPTIONAL_REQUIREMENTS_NAME}。"
     return {
         "status": (
             "no_video"
@@ -2986,7 +3389,7 @@ class NativeRuntimePlayer:
         self.overlay_hotspots: list[dict] = []
         self.video_hotspots: list[dict] = []
         self.video_preview_frame_cache: dict[str, dict] = {}
-        self.embedded_video_playback: OpenCvEmbeddedVideoPlayback | None = None
+        self.embedded_video_playback: PyAvSynchronizedVideoPlayback | OpenCvEmbeddedVideoPlayback | None = None
         self.text_history: list[dict] = []
         self.text_history_seen_keys: set[str] = set()
         self.read_text_key_order: list[str] = loaded_read_text_keys[-READ_TEXT_KEY_LIMIT:]
@@ -5317,13 +5720,13 @@ class NativeRuntimePlayer:
         lines = [
             title,
             "",
-            "原生 Runtime Preview 会优先尝试 OpenCV 窗口内嵌播放画面；未安装可选依赖时，会回落到系统默认视频播放器桥接。",
+            "原生 Runtime Preview 会优先尝试 PyAV/FFmpeg 音画同步内嵌播放；依赖或编码不匹配时，会自动回落到 OpenCV 画面播放或系统播放器桥接。",
         ]
         if asset_path:
             lines.extend(
                 [
                     f"文件：{asset_path.name}",
-                    "操作：按 V 播放/暂停内嵌画面；按 O 调用系统播放器；播放结束后按 Enter 继续。",
+                    "操作：按 V 播放/暂停内嵌视频；按 O 调用系统播放器；播放结束后按 Enter 继续。",
                 ]
             )
         else:
@@ -5342,7 +5745,7 @@ class NativeRuntimePlayer:
             )
         if not bool(block.get("skippable", True)):
             lines.append("不可跳过提示：需要先播放视频；如果使用内嵌播放，需要播放结束后才能继续。")
-        lines.append("第一阶段内嵌播放只负责画面；需要音频时可按 O 使用系统播放器兜底。")
+        lines.append("音画提示：安装可选视频依赖后会走 PyAV 同步播放；若当前机器不支持该编码，仍可按 O 使用系统播放器兜底。")
         return "\n".join(lines)
 
     def get_video_preview_cache_key(self, line: dict) -> str:
@@ -5369,7 +5772,11 @@ class NativeRuntimePlayer:
             if self.embedded_video_playback.finished and self.current_line and self.current_line.get("type") == "video_play":
                 self.current_line["videoOpened"] = True
                 self.current_line["videoPlaybackFinished"] = True
-                self.current_line["videoPlaybackMode"] = NATIVE_VIDEO_EMBEDDED_BACKEND_ID
+                self.current_line["videoPlaybackMode"] = getattr(
+                    self.embedded_video_playback,
+                    "backend_id",
+                    NATIVE_VIDEO_EMBEDDED_BACKEND_ID,
+                )
                 self.status_message = self.embedded_video_playback.status_message
             return self.embedded_video_playback.current_surface
         return None
@@ -5378,6 +5785,42 @@ class NativeRuntimePlayer:
         if not self.embedded_video_playback:
             return ""
         return str(self.embedded_video_playback.status or "")
+
+    def create_embedded_video_playback(
+        self,
+        video_path: Path,
+        start_time_seconds: float,
+        end_time_seconds: float,
+        fit_mode: str,
+        volume: int,
+    ) -> tuple[PyAvSynchronizedVideoPlayback | OpenCvEmbeddedVideoPlayback | None, str]:
+        attempts: list[PyAvSynchronizedVideoPlayback | OpenCvEmbeddedVideoPlayback] = [
+            PyAvSynchronizedVideoPlayback(
+                self.pygame,
+                video_path,
+                start_time_seconds=start_time_seconds,
+                end_time_seconds=end_time_seconds,
+                fit_mode=fit_mode,
+                volume=volume,
+            ),
+            OpenCvEmbeddedVideoPlayback(
+                self.pygame,
+                video_path,
+                start_time_seconds=start_time_seconds,
+                end_time_seconds=end_time_seconds,
+                fit_mode=fit_mode,
+            ),
+        ]
+        failure_messages = []
+        for playback in attempts:
+            opened, message = playback.open()
+            if opened:
+                if failure_messages:
+                    return playback, f"{message}；此前尝试：{' / '.join(failure_messages)}"
+                return playback, message
+            failure_messages.append(message)
+            playback.release()
+        return None, "；".join(failure_messages) or "没有可用的内嵌视频后端"
 
     def start_or_toggle_embedded_video(self) -> bool:
         if not self.current_line or self.current_line.get("type") != "video_play":
@@ -5392,15 +5835,18 @@ class NativeRuntimePlayer:
             self.status_message = self.embedded_video_playback.status_message
             return True
         self.stop_embedded_video_playback()
-        playback = OpenCvEmbeddedVideoPlayback(
-            self.pygame,
+        start_time_seconds = normalize_video_time_seconds(self.current_line.get("videoStartTimeSeconds"))
+        end_time_seconds = normalize_video_time_seconds(self.current_line.get("videoEndTimeSeconds"))
+        fit_mode = str(self.current_line.get("videoFit") or "contain")
+        volume = clamp_int(self.current_line.get("videoVolume"), 0, 100, 100)
+        playback, message = self.create_embedded_video_playback(
             Path(video_path_value),
-            normalize_video_time_seconds(self.current_line.get("videoStartTimeSeconds")),
-            normalize_video_time_seconds(self.current_line.get("videoEndTimeSeconds")),
-            str(self.current_line.get("videoFit") or "contain"),
+            start_time_seconds,
+            end_time_seconds,
+            fit_mode,
+            volume,
         )
-        opened, message = playback.open()
-        if not opened:
+        if playback is None:
             self.status_message = f"{message}；已回落到系统播放器桥接。"
             return False
         playback.play(now_ms)
@@ -5408,8 +5854,13 @@ class NativeRuntimePlayer:
         self.embedded_video_playback = playback
         self.current_line["videoOpened"] = True
         self.current_line["videoPlaybackFinished"] = bool(playback.finished)
-        self.current_line["videoPlaybackMode"] = NATIVE_VIDEO_EMBEDDED_BACKEND_ID
-        self.status_message = "内嵌视频播放中（无音频预览）；按 Space 暂停，O 可用系统播放器播放。"
+        self.current_line["videoPlaybackMode"] = playback.backend_id
+        if playback.backend_id == NATIVE_VIDEO_SYNC_BACKEND_ID and getattr(playback, "audio_channel", None):
+            self.status_message = "PyAV 音画同步播放中；按 Space 暂停，O 可用系统播放器兜底。"
+        elif playback.backend_id == NATIVE_VIDEO_SYNC_BACKEND_ID:
+            self.status_message = "PyAV 画面播放中（音频不可用）；按 Space 暂停，O 可用系统播放器兜底。"
+        else:
+            self.status_message = "OpenCV 内嵌画面播放中（无音频）；按 Space 暂停，O 可用系统播放器播放。"
         self.reveal_current_line_immediately()
         return True
 
@@ -5819,9 +6270,16 @@ class NativeRuntimePlayer:
         self.pygame.draw.rect(self.screen, with_alpha(palette["panelBorder"], 76), panel, 2, border_radius=30)
         self.draw_game_ui_panel_frame(panel, "system")
 
-        embedded_status = self.get_current_embedded_video_status()
         embedded_frame = self.get_current_embedded_video_surface()
-        kicker = self.font_ui.render("NATIVE EMBEDDED VIDEO", True, palette["accent"])
+        embedded_status = self.get_current_embedded_video_status()
+        playback_mode = str(line.get("videoPlaybackMode") or "")
+        if self.embedded_video_playback:
+            playback_mode = str(getattr(self.embedded_video_playback, "backend_id", playback_mode) or playback_mode)
+        is_sync_backend = playback_mode == NATIVE_VIDEO_SYNC_BACKEND_ID
+        is_opencv_backend = playback_mode == NATIVE_VIDEO_EMBEDDED_BACKEND_ID
+        backend_label = "PyAV 音画同步" if is_sync_backend else ("OpenCV 画面" if is_opencv_backend else "自动检测")
+        kicker_label = "NATIVE SYNC VIDEO" if is_sync_backend else "NATIVE VIDEO CARD"
+        kicker = self.font_ui.render(kicker_label, True, palette["accent"])
         self.screen.blit(kicker, (panel.left + 30, panel.top + 24))
         title = str(line.get("videoTitle") or "视频播放")
         self.screen.blit(self.font_title.render(title[:34], True, palette["text"]), (panel.left + 30, panel.top + 52))
@@ -5832,19 +6290,23 @@ class NativeRuntimePlayer:
         display_frame = embedded_frame or preview_frame
         status_labels = [
             (
-                "内嵌播放中"
+                ("音画同步中" if is_sync_backend else "内嵌播放中")
                 if embedded_status == "playing"
-                else ("内嵌暂停" if embedded_status == "paused" else ("已播放" if line.get("videoOpened") else "等待播放"))
+                else (
+                    ("同步暂停" if is_sync_backend else "内嵌暂停")
+                    if embedded_status == "paused"
+                    else ("已播放" if line.get("videoOpened") else "等待播放")
+                )
             ),
             "不可跳过" if line.get("videoSkippable") is False else "可跳过",
-            "窗口内画面" if display_frame else "桥接卡预览",
+            backend_label if playback_mode else ("窗口内画面" if display_frame else "桥接卡预览"),
         ]
         pill_right = panel.right - 30
         for label in reversed(status_labels):
             label_surface = self.font_ui.render(label, True, palette["text"])
             pill_width = label_surface.get_width() + 22
             pill_rect = self.pygame.Rect(pill_right - pill_width, panel.top + 28, pill_width, 28)
-            fill_color = palette["accent"] if label in {"内嵌播放中", "内嵌暂停", "已播放"} else palette["panel"]
+            fill_color = palette["accent"] if label in {"音画同步中", "同步暂停", "内嵌播放中", "内嵌暂停", "已播放"} else palette["panel"]
             self.pygame.draw.rect(self.screen, with_alpha(fill_color, 62), pill_rect, border_radius=14)
             self.pygame.draw.rect(self.screen, with_alpha(palette["accentAlt"], 42), pill_rect, 1, border_radius=14)
             self.screen.blit(label_surface, (pill_rect.left + 11, pill_rect.top + 5))
@@ -5914,15 +6376,18 @@ class NativeRuntimePlayer:
                 self.pygame.draw.polygon(self.screen, palette["text"], triangle)
 
         file_label = str(line.get("videoFileName") or "视频文件未找到")
-        bridge_hint = "按 V 内嵌播放画面；按 O 使用系统播放器播放音频版。"
+        bridge_hint = "按 V 优先尝试 PyAV 音画同步；按 O 使用系统播放器兜底。"
         if embedded_status == "playing":
-            bridge_hint = "内嵌画面播放中（无音频）；按 Space / V 暂停，O 可打开系统播放器。"
+            if is_sync_backend:
+                bridge_hint = "PyAV 音画同步播放中；按 Space / V 暂停，O 可打开系统播放器。"
+            else:
+                bridge_hint = "OpenCV 画面播放中（无音频）；按 Space / V 暂停，O 可打开系统播放器。"
         elif embedded_status == "paused":
-            bridge_hint = "内嵌画面已暂停；按 Space / V 继续播放。"
+            bridge_hint = "内嵌视频已暂停；按 Space / V 继续播放。"
         elif line.get("videoPlaybackFinished"):
-            bridge_hint = "内嵌画面已播放结束；按 Enter 继续剧情。"
+            bridge_hint = "内嵌视频已播放结束；按 Enter 继续剧情。"
         elif preview_frame:
-            bridge_hint = "已读取视频画面帧；按 V 在窗口内播放画面。"
+            bridge_hint = "已读取视频画面帧；按 V 尝试窗口内音画同步播放。"
         elif preview_status:
             bridge_hint = f"{preview_status}；按 O 唤起系统播放器。"
         if not line.get("videoAssetPath"):
@@ -5935,6 +6400,7 @@ class NativeRuntimePlayer:
         meta_rows = [
             ("剪辑范围", clip_label),
             ("画面适配", str(line.get("videoFit") or "contain")),
+            ("播放后端", backend_label),
             ("音量", f"{int(line.get('videoVolume') or 100)}%"),
         ]
         meta_left = panel.left + 34
@@ -5967,7 +6433,7 @@ class NativeRuntimePlayer:
 
         self.video_hotspots = []
         button_y = panel.bottom - 54
-        play_label = "Space 暂停" if embedded_status == "playing" else ("Space 继续" if embedded_status == "paused" else "V 内嵌播放")
+        play_label = "Space 暂停" if embedded_status == "playing" else ("Space 继续" if embedded_status == "paused" else "V 音画播放")
         continue_disabled = line.get("videoSkippable") is False and bool(line.get("videoAssetPath")) and not bool(line.get("videoOpened"))
         buttons = [
             ("play-video", play_label, panel.left + 34, 140, False),

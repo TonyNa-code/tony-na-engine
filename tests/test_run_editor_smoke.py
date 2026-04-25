@@ -578,9 +578,13 @@ class RunEditorSmokeTests(unittest.TestCase):
         self.assertEqual(video_bridge_payload["summary"]["videoAssetCount"], 1)
         self.assertEqual(video_bridge_payload["summary"]["videoBlockCount"], 1)
         self.assertEqual(video_bridge_payload["entries"][0]["externalPlaybackMode"], "system_player_bridge")
-        self.assertEqual(video_bridge_payload["entries"][0]["embeddedPlaybackMode"], "opencv_embedded_playback")
+        self.assertEqual(video_bridge_payload["entries"][0]["embeddedPlaybackMode"], "pyav_audio_video_sync")
+        self.assertEqual(video_bridge_payload["entries"][0]["fallbackEmbeddedPlaybackMode"], "opencv_embedded_playback")
         self.assertEqual(video_bridge_payload["entries"][0]["nativePreviewMode"], "cinematic_bridge_card")
         self.assertEqual(video_bridge_payload["nativePreviewMode"], "cinematic_bridge_card")
+        self.assertTrue(
+            any(option["id"] == "pyav_audio_video_sync" for option in video_bridge_payload["backendOptions"])
+        )
         self.assertTrue(
             any(option["id"] == "opencv_frame_preview" for option in video_bridge_payload["backendOptions"])
         )
