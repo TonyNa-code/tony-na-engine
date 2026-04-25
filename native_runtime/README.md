@@ -200,6 +200,7 @@ Runtime 启动失败时，会在用户目录写入错误日志：
 - `H`：打开文本历史
 - `A`：开启 / 关闭自动播放
 - `S`：开启 / 关闭已读快进
+- `F12 / P`：保存当前画面截图
 - 鼠标左键：推进文本 / 确认
 - 鼠标右键：打开系统菜单；弹窗内右键返回 / 关闭
 - 鼠标中键 / `U`：隐藏或恢复界面，便于清屏查看 CG / 背景
@@ -225,6 +226,12 @@ Runtime 启动失败时，会在用户目录写入错误日志：
 ```text
 ~/.tony-na-engine/native-runtime-profiles/
 ~/.tony-na-engine/native-runtime-autoresume/
+```
+
+截图会保存到：
+
+```text
+~/.tony-na-engine/native-runtime-screenshots/
 ```
 
 ## 字体与阅读辅助

@@ -240,6 +240,7 @@ PROGRESS_SUBDIR_NAME = "native-runtime-progress"
 PROFILE_SUBDIR_NAME = "native-runtime-profiles"
 AUTO_RESUME_SUBDIR_NAME = "native-runtime-autoresume"
 LOG_SUBDIR_NAME = "native-runtime-logs"
+SCREENSHOT_SUBDIR_NAME = "native-runtime-screenshots"
 DEFAULT_RUNTIME_PLAYER_SETTINGS = {
     "themeMode": "auto",
     "displayMode": "windowed",
@@ -2188,6 +2189,10 @@ def get_runtime_auto_resume_dir() -> Path:
 
 def get_runtime_log_dir() -> Path:
     return Path.home() / SAVE_ROOT_DIR_NAME / LOG_SUBDIR_NAME
+
+
+def get_runtime_screenshot_dir() -> Path:
+    return Path.home() / SAVE_ROOT_DIR_NAME / SCREENSHOT_SUBDIR_NAME
 
 
 def write_runtime_crash_log(game_data_path: Path, error: BaseException, context: str) -> Path:
@@ -5370,7 +5375,7 @@ class NativeRuntimePlayer:
         controls = (
             "↑↓：选择 · Enter：确认 · F11：全屏 · Esc：退出"
             if self.overlay_mode == "title"
-            else "左键：推进 · 右键/F1：系统 · 中键/U：隐藏界面 · 滚轮↑/H：历史"
+            else "左键：推进 · 右键/F1：系统 · 中键/U：隐藏界面 · F12/P：截图"
         )
         control_surface = self.font_ui.render(controls, True, palette["muted"])
         self.screen.blit(control_surface, (self.width - control_surface.get_width() - 36, 30))
@@ -6481,6 +6486,20 @@ class NativeRuntimePlayer:
         quick_label = "已就绪" if quick_save else "空"
         return f"快存：{quick_label} · 正式存档：{filled_formal}/{self.formal_save_slot_count} · 存档文件：{self.save_file_path.name}"
 
+    def capture_screenshot(self) -> Path | None:
+        screenshot_dir = get_runtime_screenshot_dir()
+        screenshot_dir.mkdir(parents=True, exist_ok=True)
+        project_stem = Path(make_project_save_filename(self.project_id)).stem
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        screenshot_path = screenshot_dir / f"{project_stem}-{timestamp}.png"
+        try:
+            self.pygame.image.save(self.screen, str(screenshot_path))
+        except Exception:
+            self.status_message = "截图保存失败，请检查写入权限。"
+            return None
+        self.status_message = f"截图已保存：{screenshot_path.name}"
+        return screenshot_path
+
     def handle_event(self, event) -> bool:
         if event.type == self.pygame.QUIT:
             return False
@@ -6497,6 +6516,9 @@ class NativeRuntimePlayer:
                 return True
             return False
         if event.type == self.pygame.KEYDOWN:
+            if event.key in (self.pygame.K_F12, self.pygame.K_p):
+                self.capture_screenshot()
+                return True
             if self.ui_hidden and event.key == self.pygame.K_u:
                 self.restore_ui_hidden()
                 return True
