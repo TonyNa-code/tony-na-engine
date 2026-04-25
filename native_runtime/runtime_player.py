@@ -251,6 +251,7 @@ DEFAULT_RUNTIME_PLAYER_SETTINGS = {
     "voiceVolume": 100,
 }
 READ_TEXT_KEY_LIMIT = 20000
+SNAPSHOT_TEXT_HISTORY_LIMIT = 120
 DEFAULT_PLAYER_PROFILE = {
     "firstPlayedAt": None,
     "lastPlayedAt": None,
@@ -1792,6 +1793,16 @@ def exercise_save_load(bundle_dir: Path) -> None:
         "finished": False,
         "finishedMessage": "",
         "summaryText": "Native runtime save-load self test",
+        "textHistory": [
+            {
+                "key": "doctor-scene:0:narration:save-load",
+                "sceneName": scene.get("name") or scene.get("id"),
+                "speakerName": "旁白",
+                "text": "Native runtime save-load self test",
+                "blockType": "narration",
+                "voiceAssetId": "",
+            }
+        ],
     }
 
     project_id = str(project.get("projectId") or "untitled_project")
@@ -1802,6 +1813,8 @@ def exercise_save_load(bundle_dir: Path) -> None:
         raise NativeRuntimeError("快速存档写入后没有正确读回。")
     if (loaded.get("formalSlots") or [None])[0].get("sceneId") != scene.get("id"):
         raise NativeRuntimeError("正式存档写入后没有正确读回。")
+    if len(loaded.get("quickSave", {}).get("textHistory") or []) != 1:
+        raise NativeRuntimeError("存档文本历史写入后没有正确读回。")
     print(f"Native runtime save/load validation passed: {save_path}")
 
 
@@ -2346,6 +2359,30 @@ def write_project_player_profile(project_id: str, profile: dict) -> Path:
     return profile_path
 
 
+def sanitize_text_history_entries(value: object, limit: int = SNAPSHOT_TEXT_HISTORY_LIMIT) -> list[dict]:
+    if not isinstance(value, list):
+        return []
+    result: list[dict] = []
+    for item in value[-limit:]:
+        if not isinstance(item, dict):
+            continue
+        text = str(item.get("text") or "").strip()
+        if not text:
+            continue
+        key = str(item.get("key") or "").strip()[:180]
+        result.append(
+            {
+                "key": key,
+                "sceneName": str(item.get("sceneName") or "").strip()[:80],
+                "speakerName": str(item.get("speakerName") or "旁白").strip()[:80],
+                "text": text[:2000],
+                "blockType": str(item.get("blockType") or "").strip()[:40],
+                "voiceAssetId": str(item.get("voiceAssetId") or "").strip()[:120],
+            }
+        )
+    return result
+
+
 def sanitize_auto_resume_snapshot(value: dict | None) -> dict | None:
     if not isinstance(value, dict):
         return None
@@ -2369,6 +2406,7 @@ def sanitize_auto_resume_snapshot(value: dict | None) -> dict | None:
         snapshot["variableState"] = {}
     if not isinstance(snapshot.get("visibleCharacters"), dict):
         snapshot["visibleCharacters"] = {}
+    snapshot["textHistory"] = sanitize_text_history_entries(snapshot.get("textHistory"))
     return snapshot
 
 
@@ -2882,6 +2920,19 @@ class NativeRuntimePlayer:
         self.read_text_key_order = self.read_text_key_order[-READ_TEXT_KEY_LIMIT:]
         self.archive_progress["readTextKeys"] = list(self.read_text_key_order)
         self.persist_archive_progress()
+
+    def get_snapshot_text_history(self) -> list[dict]:
+        return sanitize_text_history_entries(self.text_history)
+
+    def restore_text_history_from_snapshot(self, snapshot: dict) -> None:
+        restored_history = sanitize_text_history_entries(snapshot.get("textHistory"))
+        self.text_history = restored_history
+        self.text_history_seen_keys = {
+            str(item.get("key") or "")
+            for item in restored_history
+            if str(item.get("key") or "")
+        }
+        self.history_scroll_index = max(0, len(self.text_history) - 1)
 
     def persist_player_profile(self) -> None:
         self.player_profile = sanitize_player_profile(self.player_profile)
@@ -4375,6 +4426,7 @@ class NativeRuntimePlayer:
             "finished": self.finished,
             "finishedMessage": self.finished_message,
             "summaryText": self.get_current_line_preview()[:96],
+            "textHistory": self.get_snapshot_text_history(),
             "particleEffect": dict(self.active_particle_effect) if self.active_particle_effect else None,
             "visualEffects": {
                 "screenFade": dict(self.screen_fade_effect) if self.screen_fade_effect else None,
@@ -4428,6 +4480,7 @@ class NativeRuntimePlayer:
         self.current_line = None
         self.current_choices = None
         self.current_choice_index = 0
+        self.restore_text_history_from_snapshot(snapshot)
         self.finished = bool(snapshot.get("finished"))
         self.finished_message = str(snapshot.get("finishedMessage") or "")
         scene_id = str(snapshot.get("sceneId") or self.project.get("entrySceneId") or self.scene_order[0])

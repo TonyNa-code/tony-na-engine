@@ -333,6 +333,13 @@ class NativeRuntimeRenderSmokeTests(unittest.TestCase):
         self.assertTrue(read_key)
         player.mark_current_line_read()
         self.assertIn(read_key, load_project_archive_progress("native_render_smoke")["readTextKeys"])
+        snapshot = player.build_save_snapshot("formal")
+        self.assertGreaterEqual(len(snapshot["textHistory"]), 1)
+        player.text_history = []
+        player.text_history_seen_keys = set()
+        player.restore_from_snapshot(snapshot)
+        self.assertGreaterEqual(len(player.text_history), 1)
+        self.assertEqual(player.get_selected_text_history_item()["voiceAssetId"], "voice_missing_line")
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", message="The system font .*", category=UserWarning)
             second_player = NativeRuntimePlayer(pygame, data_path)
