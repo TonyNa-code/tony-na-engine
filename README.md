@@ -68,7 +68,7 @@ Tony Na Engine 当前更适合这样理解：
 | 粒子与演出 | 可用 | 支持高级粒子预设、项目级自定义粒子、镜头、滤镜、闪屏、震动等演出配置。 |
 | 网页 / 桌面导出 | Preview | 网页试玩包与三平台桌面包可用；签名、公证和安装器状态以 Release notes 为准。 |
 | 原生 Runtime | Preview | 已覆盖核心播放链、存档、设置、历史文本、自动播放、视频兜底与第一批资料馆。 |
-| 手机端 Runtime | 实验规划 | 当前建议先通过网页 Runtime / WebView 验证触控、音频策略和界面适配。 |
+| 手机端 Runtime | 实验规划 | 当前处于触控、音频策略和界面适配验证阶段。 |
 
 ## 仓库结构
 
@@ -166,13 +166,7 @@ python run_editor.py
 - `网页试玩包`：适合快速预览、网页分发和轻量测试。
 - `Windows / macOS / Linux 桌面包`：当前主要基于 NW.js 桌面 Runtime。
 - `原生 Runtime 包`：Preview 路线，已覆盖标题页主菜单、基础剧情主链、正式存档/读档、系统菜单设置项、文本历史、自动播放、已读快进、项目字体、玩家档案/自动续玩、基础粒子与镜头演出、可选 PyAV/FFmpeg 音画同步内嵌视频播放、OpenCV 画面兜底、系统播放器桥接兜底，以及第一批资料馆和详情查看能力。
-- `手机端 Runtime`：实验规划阶段，优先通过 WebView / 网页 Runtime 验证触控、音频策略和界面适配。
-
-### 发布校验
-
-- 预览包如未完成签名 / 公证，系统可能出现安全提醒；具体状态以 Release notes 为准。
-- 发布前检查可参考 [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md) 与 [`RELEASE_P0.md`](RELEASE_P0.md)。
-- GitHub Release 正文草稿可参考 [`docs/github/preview-release-draft.md`](docs/github/preview-release-draft.md)。
+- `手机端 Runtime`：实验规划阶段，当前重点是触控、音频策略和界面适配验证。
 
 ## 测试
 
@@ -275,8 +269,6 @@ py -3 -m unittest discover -s tests -p "test_browser_playwright_smoke.py" -v
 - 自动化测试已经接通
 - GitHub Releases 可用于提供编辑器可运行包
 - 导出链和桌面打包链已经具备原型级完整度
-
-维护者相关的发布与签名资料已经挪到 `docs/maintainers/release` 与 `tools/release`，不再作为公开首页的主要内容展示。
 
 ## 其他设计文档
 
