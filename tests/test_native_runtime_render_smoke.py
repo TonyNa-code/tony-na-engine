@@ -24,9 +24,11 @@ from native_runtime.runtime_player import (
     OpenCvEmbeddedVideoPlayback,
     PyAvSynchronizedVideoPlayback,
     build_native_video_preview_probe_report,
+    ellipsize_text,
     get_runtime_screenshot_dir,
     load_project_archive_progress,
     load_opencv_video_frame_surface,
+    wrap_text,
 )
 
 
@@ -185,6 +187,22 @@ class NativeRuntimeRenderSmokeTests(unittest.TestCase):
         image_to_bytes = getattr(pygame.image, "tobytes", pygame.image.tostring)
         frame_bytes = image_to_bytes(player.screen, "RGB")
         self.assertTrue(any(channel != 0 for channel in frame_bytes))
+
+    def test_text_wrapping_preserves_words_newlines_and_ellipsis(self) -> None:
+        font = pygame.font.Font(None, 24)
+        lines = wrap_text(font, "Hello world from Tony Na Engine\n第二行中文EnglishMix测试", 128)
+
+        self.assertGreaterEqual(len(lines), 3)
+        self.assertIn("Hello", lines[0])
+        self.assertTrue(any("第二行" in line for line in lines))
+        self.assertTrue(all(font.size(line)[0] <= 128 for line in lines if line))
+        long_token_lines = wrap_text(font, "Supercalifragilisticexpialidocious", 64)
+        self.assertGreater(len(long_token_lines), 1)
+        self.assertTrue(all(font.size(line)[0] <= 64 for line in long_token_lines if line))
+
+        clipped = ellipsize_text(font, "This sentence is intentionally too long for the dialogue box.", 120)
+        self.assertTrue(clipped.endswith("…"))
+        self.assertLessEqual(font.size(clipped)[0], 120)
 
     def test_optional_opencv_video_frame_loader_builds_surface(self) -> None:
         class FakeFrame:
@@ -680,6 +698,33 @@ class NativeRuntimeRenderSmokeTests(unittest.TestCase):
             player.open_archive_detail(selected_entry)
             player.render()
             self.assert_screen_has_pixels(player)
+
+    def test_long_dialogue_expands_panel_and_marks_overflow(self) -> None:
+        data_path = self.write_game_data()
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message="The system font .*", category=UserWarning)
+            player = NativeRuntimePlayer(pygame, data_path)
+
+        long_text = (
+            "This is a deliberately long native Runtime dialogue line with English words, "
+            "中文长句，以及 mixed typography. "
+            * 8
+        )
+        player.current_line = {
+            "type": "dialogue",
+            "speakerId": "heroine",
+            "text": long_text,
+            "voiceAssetId": "",
+            "blockLabel": "台词",
+        }
+        player.start_current_line_display(long_text)
+        player.reveal_current_line_immediately()
+        layout = player.build_dialogue_layout(player.current_line)
+
+        self.assertGreater(layout["minHeight"], 176)
+        self.assertGreater(len(layout["fullLines"]), 4)
+        player.render_dialogue()
+        self.assert_screen_has_pixels(player)
 
 
 if __name__ == "__main__":

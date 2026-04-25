@@ -1290,6 +1290,26 @@ def build_release_check_report(bundle_dir: Path) -> dict:
             "如果这不是纯演出测试包，建议补一段可读剧情再发布。",
         )
 
+    long_text_warnings = []
+    for scene in scenes:
+        scene_name = str(scene.get("name") or scene.get("id") or "未命名场景")
+        for block_index, block in enumerate(scene.get("blocks", []) or []):
+            block_type = str(block.get("type") or "")
+            if block_type not in {"dialogue", "narration"}:
+                continue
+            text = str(block.get("text") or "")
+            if len(text) > 260 or text.count("\n") >= 5:
+                long_text_warnings.append((scene_name, block_index, len(text), text.count("\n") + 1))
+    for scene_name, block_index, text_length, line_count in long_text_warnings[:5]:
+        add_release_check_issue(
+            issues,
+            "warning",
+            "long_dialogue_text",
+            f"长文本可能影响阅读节奏：{scene_name} 第 {block_index + 1} 张卡（{text_length} 字 / {line_count} 行）",
+            "原生 Runtime 会尽量动态增高文本框并提示查看历史；正式发布前建议拆成多张台词卡，阅读节奏会更像商业 VN。",
+            f"{scene_name}#{block_index + 1}",
+        )
+
     formal_slot_count = get_project_formal_save_slot_count(project)
     if formal_slot_count > 80:
         add_release_check_issue(
@@ -1342,7 +1362,7 @@ def build_release_check_report(bundle_dir: Path) -> dict:
 
     font_asset_id = str(game_ui_config.get("fontAssetId") or "").strip()
     if font_asset_id:
-        font_asset = asset_by_id.get(font_asset_id)
+        font_asset = assets_by_id.get(font_asset_id)
         if not font_asset:
             add_release_check_issue(
                 issues,
@@ -3538,22 +3558,74 @@ def get_asset_runtime_path(bundle_dir: Path, asset: dict | None) -> Path | None:
     return candidate if candidate.is_file() else None
 
 
+def split_wrap_tokens(text: str) -> list[str]:
+    return re.findall(r"[A-Za-z0-9]+(?:[._:/@+-][A-Za-z0-9]+)*|\s+|.", str(text or ""), flags=re.DOTALL)
+
+
+def append_wrapped_token(font, lines: list[str], current: str, token: str, max_width: int) -> str:
+    if token.isspace():
+        return current + " " if current and not current.endswith(" ") else current
+
+    if not current and font.size(token)[0] <= max_width:
+        return token
+    if not current:
+        for char in token:
+            char_candidate = current + char
+            if current and font.size(char_candidate)[0] > max_width:
+                lines.append(current.rstrip())
+                current = char
+            else:
+                current = char_candidate
+        return current
+
+    candidate = current + token
+    if font.size(candidate)[0] <= max_width:
+        return candidate
+
+    lines.append(current.rstrip())
+    current = ""
+    if font.size(token)[0] <= max_width:
+        return token
+
+    for char in token:
+        char_candidate = current + char
+        if current and font.size(char_candidate)[0] > max_width:
+            lines.append(current.rstrip())
+            current = char
+        else:
+            current = char_candidate
+    return current
+
+
 def wrap_text(font, text: str, max_width: int) -> list[str]:
     if not text:
         return [""]
+    if max_width <= 0:
+        return [str(text or "")]
 
     lines: list[str] = []
-    current = ""
-    for char in text:
-        candidate = current + char
-        if current and font.size(candidate)[0] > max_width:
-            lines.append(current)
-            current = char
-        else:
-            current = candidate
-    if current:
-        lines.append(current)
-    return lines or [text]
+    raw_lines = str(text or "").splitlines()
+    for raw_line in raw_lines or [""]:
+        if raw_line == "":
+            lines.append("")
+            continue
+        current = ""
+        for token in split_wrap_tokens(raw_line):
+            current = append_wrapped_token(font, lines, current, token, max_width)
+        if current or not lines:
+            lines.append(current.rstrip())
+    return lines or [str(text or "")]
+
+
+def ellipsize_text(font, text: str, max_width: int, suffix: str = "…") -> str:
+    safe_text = str(text or "")
+    if font.size(safe_text)[0] <= max_width:
+        return safe_text
+    if font.size(suffix)[0] > max_width:
+        return ""
+    while safe_text and font.size(safe_text.rstrip() + suffix)[0] > max_width:
+        safe_text = safe_text[:-1]
+    return safe_text.rstrip() + suffix
 
 
 class NativeRuntimePlayer:
@@ -4924,6 +4996,49 @@ class NativeRuntimePlayer:
                 border_radius=radius,
             )
             self.screen.blit(border_surface, rect)
+
+    def get_dialogue_speaker_name(self, line: dict) -> str:
+        if line.get("type") == "dialogue":
+            character = self.characters_by_id.get(line.get("speakerId")) or {}
+            return str(character.get("displayName") or line.get("speakerId") or "")
+        if line.get("speakerName"):
+            return str(line.get("speakerName") or "")
+        if line.get("blockLabel"):
+            return str(line.get("blockLabel") or "")
+        return "旁白"
+
+    def build_dialogue_layout(self, line: dict | None, text_width: int | None = None) -> dict:
+        line = line or {}
+        padding_x = int(self.dialog_box_config.get("paddingX", 18))
+        padding_y = int(self.dialog_box_config.get("paddingY", 14))
+        probe_panel = self.get_dialog_panel_rect(176)
+        safe_text_width = int(text_width or (probe_panel.width - padding_x * 2))
+        speaker_name = self.get_dialogue_speaker_name(line)
+        speaker_height = self.font_title.get_height() + 12 if speaker_name else 0
+        meta_height = self.font_ui.get_height()
+        line_height = self.font_body.get_height() + 8
+        full_lines = wrap_text(self.font_body, self.current_line_full_text, safe_text_width)
+        max_panel_height = max(176, self.height - 48)
+        max_text_height = max(36, max_panel_height - padding_y * 2 - speaker_height - meta_height - 10)
+        max_possible_lines = max(1, max_text_height // line_height)
+        desired_lines = min(max(1, len(full_lines)), max_possible_lines)
+        desired_height = padding_y * 2 + speaker_height + meta_height + 10 + desired_lines * line_height
+        return {
+            "speakerName": speaker_name,
+            "fullLines": full_lines,
+            "lineHeight": line_height,
+            "minHeight": min(max_panel_height, max(176, desired_height)),
+            "textWidth": safe_text_width,
+        }
+
+    def blit_dialogue_text(self, font, text: str, position: tuple[int, int], color) -> None:
+        shadow_strength = int(self.dialog_box_config.get("shadowStrength", 0))
+        if shadow_strength > 0:
+            shadow_alpha = clamp_int(shadow_strength * 3, 0, 150, 0)
+            shadow_surface = font.render(str(text or ""), True, (0, 0, 0))
+            shadow_surface.set_alpha(shadow_alpha)
+            self.screen.blit(shadow_surface, (position[0] + 2, position[1] + 2))
+        self.screen.blit(font.render(str(text or ""), True, color), position)
 
     def get_save_dialog_data(self) -> dict:
         return build_save_dialog_page_data(
@@ -6456,42 +6571,53 @@ class NativeRuntimePlayer:
 
     def render_dialogue(self) -> None:
         line = self.current_line or {}
-        panel = self.get_dialog_panel_rect(176)
+        layout = self.build_dialogue_layout(line)
+        panel = self.get_dialog_panel_rect(layout["minHeight"])
         self.draw_dialog_panel(panel)
         padding_x = int(self.dialog_box_config.get("paddingX", 18))
         padding_y = int(self.dialog_box_config.get("paddingY", 14))
         text_left = panel.left + padding_x
         text_width = panel.width - padding_x * 2
 
-        speaker_id = line.get("speakerId")
-        speaker_name = ""
-        if line.get("type") == "dialogue":
-            character = self.characters_by_id.get(speaker_id) or {}
-            speaker_name = character.get("displayName") or str(speaker_id or "")
-        elif line.get("speakerName"):
-            speaker_name = str(line.get("speakerName") or "")
-        elif line.get("blockLabel"):
-            speaker_name = str(line.get("blockLabel") or "")
-        else:
-            speaker_name = "旁白"
+        if text_width != layout["textWidth"]:
+            layout = self.build_dialogue_layout(line, text_width)
+        speaker_name = layout["speakerName"]
 
         current_top = panel.top + padding_y
         if speaker_name:
-            speaker_surface = self.font_title.render(speaker_name, True, self.dialog_box_config.get("speakerColor", COLOR_TEXT))
-            self.screen.blit(speaker_surface, (text_left, current_top))
-            current_top += speaker_surface.get_height() + 12
+            self.blit_dialogue_text(
+                self.font_title,
+                speaker_name,
+                (text_left, current_top),
+                self.dialog_box_config.get("speakerColor", COLOR_TEXT),
+            )
+            current_top += self.font_title.get_height() + 12
 
         text = self.get_current_line_render_text()
-        meta_surface = self.font_ui.render(self.build_save_summary_line(), True, self.dialog_box_config.get("hintColor", COLOR_TEXT_MUTED))
+        full_lines = layout["fullLines"]
+        line_height = layout["lineHeight"]
+        meta_text = self.build_save_summary_line()
+        meta_height = self.font_ui.get_height()
+        meta_top = panel.bottom - padding_y - meta_height
+        max_text_height = max(36, meta_top - current_top - 10)
+        max_lines = max(1, max_text_height // line_height)
+        has_overflow = len(full_lines) > max_lines
+        if has_overflow:
+            meta_text += " · 长文本：H 查看历史"
+        meta_surface = self.font_ui.render(meta_text, True, self.dialog_box_config.get("hintColor", COLOR_TEXT_MUTED))
         meta_top = panel.bottom - padding_y - meta_surface.get_height()
         max_text_height = max(36, meta_top - current_top - 10)
-        line_height = self.font_body.get_height() + 8
         max_lines = max(1, max_text_height // line_height)
         lines = wrap_text(self.font_body, text, text_width)
-        for index, text_line in enumerate(lines[:max_lines]):
-            self.screen.blit(
-                self.font_body.render(text_line, True, self.dialog_box_config.get("textColor", COLOR_TEXT)),
+        visible_lines = list(lines[:max_lines])
+        if has_overflow and self.is_current_line_fully_visible() and visible_lines:
+            visible_lines[-1] = ellipsize_text(self.font_body, visible_lines[-1], text_width, " …")
+        for index, text_line in enumerate(visible_lines):
+            self.blit_dialogue_text(
+                self.font_body,
+                text_line,
                 (text_left, current_top + index * line_height),
+                self.dialog_box_config.get("textColor", COLOR_TEXT),
             )
 
         self.screen.blit(meta_surface, (text_left, meta_top))
