@@ -245,7 +245,10 @@ DEFAULT_RUNTIME_PLAYER_SETTINGS = {
     "themeMode": "auto",
     "displayMode": "windowed",
     "textSpeed": "normal",
+    "textScalePercent": 100,
+    "dialogBoxOpacityPercent": 100,
     "autoPlayDelayMs": 1800,
+    "autoPlayWaitForVoice": "off",
     "masterVolume": 100,
     "bgmVolume": 85,
     "sfxVolume": 90,
@@ -277,6 +280,9 @@ TEXT_SPEED_LABELS = {
     "instant": "瞬时",
 }
 AUTO_PLAY_DELAY_PRESETS = (900, 1400, 1800, 2400, 3200)
+TEXT_SCALE_PRESETS = (90, 100, 110, 125)
+DIALOG_BOX_OPACITY_PRESETS = (0, 35, 60, 80, 100)
+RUNTIME_TOGGLE_MODES = ("off", "on")
 SYSTEM_MENU_ITEMS = [
     ("continue", "继续"),
     ("help", "操作帮助"),
@@ -304,7 +310,10 @@ SETTINGS_MENU_ITEMS = [
     ("themeMode", "界面主题"),
     ("displayMode", "显示模式"),
     ("textSpeed", "文字速度"),
+    ("textScalePercent", "文字大小"),
+    ("dialogBoxOpacityPercent", "文本框透明度"),
     ("autoPlayDelayMs", "自动播放间隔"),
+    ("autoPlayWaitForVoice", "自动播放等语音"),
     ("masterVolume", "总音量"),
     ("bgmVolume", "BGM 音量"),
     ("sfxVolume", "音效音量"),
@@ -1841,10 +1850,13 @@ def exercise_runtime_settings(bundle_dir: Path) -> None:
             "themeMode": "dark",
             "displayMode": "fullscreen",
             "textSpeed": "fast",
+            "textScalePercent": 110,
+            "dialogBoxOpacityPercent": 60,
             "masterVolume": 78,
             "bgmVolume": 65,
             "sfxVolume": 70,
             "voiceVolume": 88,
+            "autoPlayWaitForVoice": "on",
         },
     )
     loaded = load_project_runtime_settings(project_id)
@@ -1852,6 +1864,10 @@ def exercise_runtime_settings(bundle_dir: Path) -> None:
         raise NativeRuntimeError("原生 Runtime 设置写入后没有正确读回。")
     if loaded["masterVolume"] != 78 or loaded["voiceVolume"] != 88:
         raise NativeRuntimeError("原生 Runtime 音量设置读回不正确。")
+    if loaded["textScalePercent"] != 110 or loaded["dialogBoxOpacityPercent"] != 60:
+        raise NativeRuntimeError("原生 Runtime 阅读设置读回不正确。")
+    if loaded["autoPlayWaitForVoice"] != "on":
+        raise NativeRuntimeError("原生 Runtime 自动播放语音等待设置读回不正确。")
     print(f"Native runtime settings validation passed: {get_project_settings_file_path(project_id)}")
 
 
@@ -2509,16 +2525,34 @@ def sanitize_runtime_player_settings(value: dict | None) -> dict:
     text_speed = str(source.get("textSpeed") or DEFAULT_RUNTIME_PLAYER_SETTINGS["textSpeed"]).strip().lower()
     if text_speed not in TEXT_SPEED_PRESETS:
         text_speed = DEFAULT_RUNTIME_PLAYER_SETTINGS["textSpeed"]
+    auto_play_wait_for_voice = str(
+        source.get("autoPlayWaitForVoice") or DEFAULT_RUNTIME_PLAYER_SETTINGS["autoPlayWaitForVoice"]
+    ).strip().lower()
+    if auto_play_wait_for_voice not in RUNTIME_TOGGLE_MODES:
+        auto_play_wait_for_voice = DEFAULT_RUNTIME_PLAYER_SETTINGS["autoPlayWaitForVoice"]
     return {
         "themeMode": theme_mode,
         "displayMode": display_mode,
         "textSpeed": text_speed,
+        "textScalePercent": clamp_int(
+            source.get("textScalePercent"),
+            min(TEXT_SCALE_PRESETS),
+            max(TEXT_SCALE_PRESETS),
+            DEFAULT_RUNTIME_PLAYER_SETTINGS["textScalePercent"],
+        ),
+        "dialogBoxOpacityPercent": clamp_int(
+            source.get("dialogBoxOpacityPercent"),
+            min(DIALOG_BOX_OPACITY_PRESETS),
+            max(DIALOG_BOX_OPACITY_PRESETS),
+            DEFAULT_RUNTIME_PLAYER_SETTINGS["dialogBoxOpacityPercent"],
+        ),
         "autoPlayDelayMs": clamp_int(
             source.get("autoPlayDelayMs"),
             min(AUTO_PLAY_DELAY_PRESETS),
             max(AUTO_PLAY_DELAY_PRESETS),
             DEFAULT_RUNTIME_PLAYER_SETTINGS["autoPlayDelayMs"],
         ),
+        "autoPlayWaitForVoice": auto_play_wait_for_voice,
         "masterVolume": clamp_int(source.get("masterVolume"), 0, 100, DEFAULT_RUNTIME_PLAYER_SETTINGS["masterVolume"]),
         "bgmVolume": clamp_int(source.get("bgmVolume"), 0, 100, DEFAULT_RUNTIME_PLAYER_SETTINGS["bgmVolume"]),
         "sfxVolume": clamp_int(source.get("sfxVolume"), 0, 100, DEFAULT_RUNTIME_PLAYER_SETTINGS["sfxVolume"]),
@@ -2737,6 +2771,7 @@ class NativeRuntimePlayer:
         self.font_body = self._create_font(30)
         self.font_title = self._create_font(36, bold=True)
         self.font_ui = self._create_font(18)
+        self.active_text_scale_percent = 100
         self.image_cache: dict[str, object] = {}
         self.image_file_cache: dict[str, object] = {}
         self.sound_cache: dict[str, object] = {}
@@ -2868,6 +2903,26 @@ class NativeRuntimePlayer:
         self.font_source_status = "Pygame 默认字体"
         return self.pygame.font.Font(None, size)
 
+    def get_runtime_text_scale_percent(self) -> int:
+        return clamp_int(
+            self.runtime_settings.get("textScalePercent"),
+            min(TEXT_SCALE_PRESETS),
+            max(TEXT_SCALE_PRESETS),
+            DEFAULT_RUNTIME_PLAYER_SETTINGS["textScalePercent"],
+        )
+
+    def apply_text_scale(self) -> None:
+        scale_percent = self.get_runtime_text_scale_percent()
+        if getattr(self, "active_text_scale_percent", 100) == scale_percent:
+            return
+        scale = scale_percent / 100
+        self.font_small = self._create_font(max(18, int(round(22 * scale))))
+        self.font_body = self._create_font(max(24, int(round(30 * scale))))
+        self.font_title = self._create_font(max(28, int(round(36 * scale))), bold=True)
+        ui_scale = min(1.16, max(0.94, scale))
+        self.font_ui = self._create_font(max(16, int(round(18 * ui_scale))))
+        self.active_text_scale_percent = scale_percent
+
     def _initialize_audio(self) -> None:
         try:
             self.pygame.mixer.init()
@@ -2879,7 +2934,16 @@ class NativeRuntimePlayer:
         channel = clamp(float(self.runtime_settings.get(channel_key, 100)) / 100, 0.0, 1.0)
         return master * channel
 
+    def is_voice_playing(self) -> bool:
+        if not self.current_voice_channel:
+            return False
+        try:
+            return bool(self.current_voice_channel.get_busy())
+        except Exception:
+            return False
+
     def apply_runtime_settings(self) -> None:
+        self.apply_text_scale()
         self.apply_display_mode()
         if self.pygame.mixer.get_init():
             try:
@@ -3710,6 +3774,9 @@ class NativeRuntimePlayer:
                 self.skip_deadline_ms = 0
             return
         if self.auto_play_enabled and self.is_current_line_fully_visible():
+            if self.runtime_settings.get("autoPlayWaitForVoice") == "on" and self.is_voice_playing():
+                self.auto_play_deadline_ms = 0
+                return
             if self.auto_play_deadline_ms <= 0:
                 delay_ms = int(self.runtime_settings.get("autoPlayDelayMs") or DEFAULT_RUNTIME_PLAYER_SETTINGS["autoPlayDelayMs"])
                 self.auto_play_deadline_ms = now_ms + max(400, delay_ms)
@@ -3936,6 +4003,18 @@ class NativeRuntimePlayer:
             return max(18, height // 2)
         return max(16, min(32, height // 6))
 
+    def get_dialog_opacity_scale(self) -> float:
+        opacity_percent = clamp_int(
+            self.runtime_settings.get("dialogBoxOpacityPercent"),
+            min(DIALOG_BOX_OPACITY_PRESETS),
+            max(DIALOG_BOX_OPACITY_PRESETS),
+            DEFAULT_RUNTIME_PLAYER_SETTINGS["dialogBoxOpacityPercent"],
+        )
+        return opacity_percent / 100
+
+    def scale_dialog_opacity(self, opacity: int | float) -> int:
+        return clamp_int(int(round(float(opacity or 0) * self.get_dialog_opacity_scale())), 0, 255, 0)
+
     def get_dialog_panel_rect(self, min_height: int) -> object:
         width_percent = self.dialog_box_config.get("widthPercent", 76) / 100
         width = max(420, min(self.width - 48, int(self.width * width_percent)))
@@ -3972,7 +4051,7 @@ class NativeRuntimePlayer:
         panel_surface = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
         panel_rect = panel_surface.get_rect()
 
-        background_opacity = int(config.get("backgroundOpacity", 0))
+        background_opacity = self.scale_dialog_opacity(int(config.get("backgroundOpacity", 0)))
         if background_opacity > 0:
             pygame.draw.rect(
                 panel_surface,
@@ -3982,7 +4061,7 @@ class NativeRuntimePlayer:
             )
 
         panel_art_id = config.get("panelAssetId")
-        panel_art_opacity = int(config.get("panelAssetOpacity", 0))
+        panel_art_opacity = self.scale_dialog_opacity(int(config.get("panelAssetOpacity", 0)))
         panel_art = self._load_image(panel_art_id) if panel_art_id and panel_art_opacity > 0 else None
         if panel_art:
             art_width, art_height = panel_art.get_size()
@@ -4300,11 +4379,26 @@ class NativeRuntimePlayer:
             self.runtime_settings["textSpeed"] = options[(current_index + direction) % len(options)]
             if self.current_line and not self.is_current_line_fully_visible():
                 self.start_current_line_display(self.current_line_full_text)
+        elif setting_key == "textScalePercent":
+            current = int(self.runtime_settings.get("textScalePercent") or DEFAULT_RUNTIME_PLAYER_SETTINGS["textScalePercent"])
+            options = list(TEXT_SCALE_PRESETS)
+            current_index = min(range(len(options)), key=lambda index: abs(options[index] - current))
+            self.runtime_settings["textScalePercent"] = options[(current_index + direction) % len(options)]
+        elif setting_key == "dialogBoxOpacityPercent":
+            current = int(self.runtime_settings.get("dialogBoxOpacityPercent", DEFAULT_RUNTIME_PLAYER_SETTINGS["dialogBoxOpacityPercent"]))
+            options = list(DIALOG_BOX_OPACITY_PRESETS)
+            current_index = min(range(len(options)), key=lambda index: abs(options[index] - current))
+            self.runtime_settings["dialogBoxOpacityPercent"] = options[(current_index + direction) % len(options)]
         elif setting_key == "autoPlayDelayMs":
             current = int(self.runtime_settings.get("autoPlayDelayMs") or DEFAULT_RUNTIME_PLAYER_SETTINGS["autoPlayDelayMs"])
             options = list(AUTO_PLAY_DELAY_PRESETS)
             current_index = min(range(len(options)), key=lambda index: abs(options[index] - current))
             self.runtime_settings["autoPlayDelayMs"] = options[(current_index + direction) % len(options)]
+        elif setting_key == "autoPlayWaitForVoice":
+            current = str(self.runtime_settings.get("autoPlayWaitForVoice") or DEFAULT_RUNTIME_PLAYER_SETTINGS["autoPlayWaitForVoice"])
+            options = list(RUNTIME_TOGGLE_MODES)
+            current_index = options.index(current) if current in options else 0
+            self.runtime_settings["autoPlayWaitForVoice"] = options[(current_index + direction) % len(options)]
         elif setting_key in {"masterVolume", "bgmVolume", "sfxVolume", "voiceVolume"}:
             current_value = int(self.runtime_settings.get(setting_key) or DEFAULT_RUNTIME_PLAYER_SETTINGS[setting_key])
             self.runtime_settings[setting_key] = clamp_int(current_value + direction * 5, 0, 100, current_value)
@@ -4326,8 +4420,15 @@ class NativeRuntimePlayer:
         if setting_key == "textSpeed":
             speed_key = str(self.runtime_settings.get("textSpeed") or "normal")
             return TEXT_SPEED_LABELS.get(speed_key, speed_key)
+        if setting_key == "textScalePercent":
+            return f"{int(self.runtime_settings.get('textScalePercent') or DEFAULT_RUNTIME_PLAYER_SETTINGS['textScalePercent'])}%"
+        if setting_key == "dialogBoxOpacityPercent":
+            opacity = int(self.runtime_settings.get("dialogBoxOpacityPercent") or 0)
+            return "透明" if opacity == 0 else f"{opacity}%"
         if setting_key == "autoPlayDelayMs":
             return f"{int(self.runtime_settings.get('autoPlayDelayMs') or DEFAULT_RUNTIME_PLAYER_SETTINGS['autoPlayDelayMs']) / 1000:.1f} 秒"
+        if setting_key == "autoPlayWaitForVoice":
+            return "开启" if self.runtime_settings.get("autoPlayWaitForVoice") == "on" else "关闭"
         return f"{int(self.runtime_settings.get(setting_key) or 0)}%"
 
     def activate_archive_entry(self, entry: dict | None) -> bool:
@@ -5617,7 +5718,10 @@ class NativeRuntimePlayer:
         button_left = panel.left + padding_x
         button_width = panel.width - padding_x * 2
         active_fill = with_alpha(self.dialog_box_config.get("borderColor", COLOR_ACCENT), 88)
-        idle_fill = with_alpha(self.dialog_box_config.get("backgroundColor", COLOR_PANEL), max(28, self.dialog_box_config.get("backgroundOpacity", 0)))
+        idle_fill = with_alpha(
+            self.dialog_box_config.get("backgroundColor", COLOR_PANEL),
+            max(0, self.scale_dialog_opacity(self.dialog_box_config.get("backgroundOpacity", 0))),
+        )
         border_color = with_alpha(self.dialog_box_config.get("borderColor", COLOR_PANEL_BORDER), max(24, self.dialog_box_config.get("borderOpacity", 0)))
 
         for index, option in enumerate(self.current_choices or []):
@@ -6202,7 +6306,7 @@ class NativeRuntimePlayer:
         self.draw_game_ui_panel_frame(panel, "system")
         self.screen.blit(self.font_title.render("体验设置", True, palette["text"]), (panel.left + 28, panel.top + 24))
         self.screen.blit(
-            self.font_ui.render("主题 / 显示模式 / 文字速度 / 自动播放 / 四路音量", True, palette["muted"]),
+            self.font_ui.render("主题 / 显示 / 阅读辅助 / 文本框 / 自动播放 / 四路音量", True, palette["muted"]),
             (panel.left + 28, panel.top + 58),
         )
 
@@ -6237,7 +6341,7 @@ class NativeRuntimePlayer:
             self.screen.blit(value_surface, (row_rect.right - value_surface.get_width() - 48, row_rect.top + 10))
             self.screen.blit(self.font_ui.render("◀", True, palette["text"]), (row_rect.right - 32, row_rect.top + 9))
             self.screen.blit(self.font_ui.render("▶", True, palette["text"]), (row_rect.right - 16, row_rect.top + 9))
-            self.overlay_hotspots.append({"kind": "settings-item", "value": setting_key, "rect": row_rect})
+            self.overlay_hotspots.append({"kind": "settings-item", "value": setting_key, "index": index, "rect": row_rect})
 
         range_label = f"{visible_start + 1}-{visible_start + len(visible_items)}/{len(SETTINGS_MENU_ITEMS)}"
         self.screen.blit(self.font_ui.render(range_label, True, palette["muted"]), (panel.right - 96, panel.top + 62))
@@ -6984,7 +7088,7 @@ class NativeRuntimePlayer:
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             for index, target in enumerate(self.overlay_hotspots):
                 if target["kind"] == "settings-item" and target["rect"].collidepoint(event.pos):
-                    self.settings_menu_index = index
+                    self.settings_menu_index = int(target.get("index", index))
                     midpoint = target["rect"].centerx
                     self.adjust_runtime_setting(str(target["value"]), -1 if event.pos[0] < midpoint else 1)
                     return True

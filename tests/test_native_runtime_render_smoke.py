@@ -343,6 +343,30 @@ class NativeRuntimeRenderSmokeTests(unittest.TestCase):
         self.assertEqual(player.overlay_mode, "help")
         player.handle_event(pygame.event.Event(pygame.KEYDOWN, {"key": pygame.K_F2}))
         self.assertIsNone(player.overlay_mode)
+        player.open_settings_overlay()
+        player.render()
+        self.assert_screen_has_pixels(player)
+        player.adjust_runtime_setting("textScalePercent", 1)
+        self.assertEqual(player.runtime_settings["textScalePercent"], 110)
+        self.assertEqual(player.active_text_scale_percent, 110)
+        player.adjust_runtime_setting("dialogBoxOpacityPercent", -1)
+        self.assertEqual(player.runtime_settings["dialogBoxOpacityPercent"], 80)
+        player.adjust_runtime_setting("autoPlayWaitForVoice", 1)
+        self.assertEqual(player.runtime_settings["autoPlayWaitForVoice"], "on")
+        player.close_overlay(preserve_status=True)
+        if player.current_line:
+            class BusyVoiceChannel:
+                def get_busy(self) -> bool:
+                    return True
+
+            player.current_voice_channel = BusyVoiceChannel()
+            player.reveal_current_line_immediately()
+            player.auto_play_enabled = True
+            player.auto_play_deadline_ms = 123
+            player.update_flow_assist()
+            self.assertEqual(player.auto_play_deadline_ms, 0)
+            player.current_voice_channel = None
+            player.auto_play_enabled = False
         self.assertGreaterEqual(len(player.text_history), 1)
         self.assertTrue(player.font_source_status)
         history_item = player.get_selected_text_history_item()
