@@ -1,5 +1,5 @@
-# Optional experimental native video frame backend.
+# Optional experimental native video backend.
 #
 # The default runtime uses the system player bridge and does not require this file.
-# Install this only when evaluating future in-window video frame preview support.
+# Install this when evaluating in-window OpenCV video frame preview / visual playback.
 opencv-python>=4.9,<5

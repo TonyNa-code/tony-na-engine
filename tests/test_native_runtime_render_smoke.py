@@ -17,7 +17,9 @@ except ModuleNotFoundError:  # pragma: no cover - CI installs pygame-ce for this
     pygame = None
 
 from native_runtime.runtime_player import (
+    NATIVE_VIDEO_EMBEDDED_BACKEND_ID,
     NativeRuntimePlayer,
+    OpenCvEmbeddedVideoPlayback,
     build_native_video_preview_probe_report,
     get_runtime_screenshot_dir,
     load_project_archive_progress,
@@ -254,6 +256,92 @@ class NativeRuntimeRenderSmokeTests(unittest.TestCase):
         self.assertIsNotNone(FakeCv2.last_capture)
         self.assertEqual(FakeCv2.last_capture.seek_calls, [(FakeCv2.CAP_PROP_POS_MSEC, 1500.0)])
         self.assertTrue(FakeCv2.last_capture.released)
+
+    def test_optional_opencv_embedded_video_playback_advances_frames(self) -> None:
+        class FakeFrame:
+            shape = (2, 3, 3)
+
+            def __init__(self, seed: int) -> None:
+                self.seed = seed
+
+            def tobytes(self) -> bytes:
+                return bytes([(self.seed + index * 17) % 255 for index in range(18)])
+
+        class FakeCapture:
+            def __init__(self, video_path: str) -> None:
+                self.video_path = video_path
+                self.index = 0
+                self.position_ms = 0.0
+                self.released = False
+
+            def isOpened(self) -> bool:
+                return True
+
+            def set(self, prop: int, value: float) -> None:
+                if prop == FakeCv2.CAP_PROP_POS_MSEC:
+                    self.position_ms = value
+
+            def get(self, prop: int) -> float:
+                if prop == FakeCv2.CAP_PROP_FPS:
+                    return 10.0
+                if prop == FakeCv2.CAP_PROP_FRAME_COUNT:
+                    return 3.0
+                if prop == FakeCv2.CAP_PROP_POS_MSEC:
+                    return self.position_ms
+                return 0.0
+
+            def read(self) -> tuple[bool, FakeFrame | None]:
+                if self.index >= 3:
+                    return False, None
+                self.index += 1
+                self.position_ms = self.index * 100.0
+                return True, FakeFrame(self.index * 40)
+
+            def release(self) -> None:
+                self.released = True
+
+        class FakeCv2:
+            CAP_PROP_POS_MSEC = 101
+            CAP_PROP_FPS = 102
+            CAP_PROP_FRAME_COUNT = 103
+            COLOR_BGR2RGB = 202
+            last_capture: FakeCapture | None = None
+
+            @classmethod
+            def VideoCapture(cls, video_path: str) -> FakeCapture:
+                cls.last_capture = FakeCapture(video_path)
+                return cls.last_capture
+
+            @staticmethod
+            def cvtColor(frame: FakeFrame, color_code: int) -> FakeFrame:
+                return frame
+
+        video_path = self.bundle_dir / "assets" / "video" / "embedded.mp4"
+        video_path.parent.mkdir(parents=True, exist_ok=True)
+        video_path.write_bytes(b"fake-video-container")
+
+        playback = OpenCvEmbeddedVideoPlayback(
+            pygame,
+            video_path,
+            start_time_seconds=0.0,
+            end_time_seconds=0.2,
+            cv2_module=FakeCv2,
+        )
+
+        opened, message = playback.open()
+        self.assertTrue(opened, message)
+        playback.play(0)
+        playback.update(0)
+        self.assertEqual(playback.status, "playing")
+        self.assertIsNotNone(playback.current_surface)
+        self.assertEqual(playback.current_surface.get_size(), (3, 2))
+        playback.update(120)
+        self.assertTrue(playback.finished)
+        self.assertEqual(playback.status, "finished")
+        self.assertEqual(playback.get_progress_ratio(), 1.0)
+        self.assertIsNotNone(FakeCv2.last_capture)
+        self.assertTrue(FakeCv2.last_capture.released)
+        self.assertEqual(NATIVE_VIDEO_EMBEDDED_BACKEND_ID, "opencv_embedded_playback")
 
     def test_video_preview_probe_reports_ready_with_optional_backend(self) -> None:
         self.write_game_data()
