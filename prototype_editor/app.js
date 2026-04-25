@@ -35,6 +35,7 @@ const API_DELETE_ASSET = "/api/delete-asset";
 const API_UPDATE_ASSET_META = "/api/update-asset-meta";
 const API_BULK_UPDATE_ASSET_TAGS = "/api/bulk-update-asset-tags";
 const API_BULK_DELETE_ASSETS = "/api/bulk-delete-assets";
+const API_CREATIVE_ASSISTANT = "/api/creative-assistant";
 
 const BLOCK_LABELS = {
   background: "切换背景",
@@ -101,6 +102,32 @@ const ASSET_FILTER_MODE_STATUS_LABELS = {
   urgent_missing: "已被项目引用但缺文件的素材",
   duplicate: "疑似重复素材",
 };
+
+const CREATIVE_ASSISTANT_MODES = {
+  starter_demo: "试玩 Demo",
+  script: "剧情片段",
+  advice: "创作建议",
+  polish: "场景润色",
+};
+
+const CREATIVE_ASSISTANT_PROVIDERS = {
+  local: "本地模板",
+  openai: "OpenAI 真模型",
+};
+
+const CREATIVE_ASSISTANT_PROVIDER_STORAGE_KEY = "tony-na-engine:creative-assistant-provider";
+const CREATIVE_ASSISTANT_OPENAI_KEY_STORAGE_KEY = "tony-na-engine:creative-assistant-openai-key";
+const CREATIVE_ASSISTANT_OPENAI_MODEL_STORAGE_KEY = "tony-na-engine:creative-assistant-openai-model";
+const CREATIVE_ASSISTANT_REMEMBER_KEY_STORAGE_KEY = "tony-na-engine:creative-assistant-remember-key";
+const CREATIVE_ASSISTANT_HISTORY_STORAGE_KEY = "tony-na-engine:creative-assistant-history";
+const CREATIVE_ASSISTANT_DEFAULT_OPENAI_MODEL = "gpt-5.5";
+const CREATIVE_ASSISTANT_MAX_HISTORY = 8;
+
+const CREATIVE_ASSISTANT_PROMPT_SAMPLES = [
+  "雨夜校园悬疑恋爱，女主知道一个不能说的秘密",
+  "近未来城市里，AI 少女第一次学会撒谎",
+  "黄昏天台，青梅竹马终于谈起三年前的误会",
+];
 
 const PARTICLE_PRESET_LABELS = {
   snow: "雪花",
@@ -2006,6 +2033,17 @@ const state = {
   storyBlockIssueFilter: "all",
   storySceneTreeSearchQuery: "",
   storySceneTreeFilter: "all",
+  creativeAssistantMode: "starter_demo",
+  creativeAssistantPrompt: CREATIVE_ASSISTANT_PROMPT_SAMPLES[0],
+  creativeAssistantResult: null,
+  creativeAssistantLoading: false,
+  creativeAssistantError: "",
+  creativeAssistantProvider: loadStoredCreativeAssistantProvider(),
+  creativeAssistantOpenAiKey: loadStoredCreativeAssistantOpenAiKey(),
+  creativeAssistantRememberKey: loadStoredCreativeAssistantRememberKey(),
+  creativeAssistantModel: loadStoredCreativeAssistantModel(),
+  creativeAssistantSelectedBlockIndexes: null,
+  creativeAssistantHistory: loadStoredCreativeAssistantHistory(),
   particlePresetSearchQuery: "",
   selectedParticleCustomPresetId: "",
   characterSearchQuery: "",
@@ -2157,6 +2195,7 @@ const refs = {
   storyBlockClearButton: document.getElementById("storyBlockClearButton"),
   storyBlockFilterSummary: document.getElementById("storyBlockFilterSummary"),
   storyEditorModeHint: document.getElementById("storyEditorModeHint"),
+  creativeAssistantPanel: document.getElementById("creativeAssistantPanel"),
   assetTypeList: document.getElementById("assetTypeList"),
   assetGrid: document.getElementById("assetGrid"),
   assetDetails: document.getElementById("assetDetails"),
@@ -4869,6 +4908,83 @@ async function handleClick(event) {
     return;
   }
 
+  if (action === "set-creative-assistant-mode") {
+    state.creativeAssistantMode = getSafeCreativeAssistantMode(actionTarget.dataset.creativeMode);
+    state.creativeAssistantResult = null;
+    state.creativeAssistantSelectedBlockIndexes = null;
+    state.creativeAssistantError = "";
+    renderStoryScreen();
+    setSaveStatus(`智能助手已切到：${CREATIVE_ASSISTANT_MODES[state.creativeAssistantMode]}`);
+    return;
+  }
+
+  if (action === "set-creative-assistant-provider") {
+    state.creativeAssistantProvider = getSafeCreativeAssistantProvider(actionTarget.dataset.creativeProvider);
+    state.creativeAssistantResult = null;
+    state.creativeAssistantSelectedBlockIndexes = null;
+    state.creativeAssistantError = "";
+    persistCreativeAssistantSettings();
+    renderStoryScreen();
+    setSaveStatus(`智能助手生成引擎：${CREATIVE_ASSISTANT_PROVIDERS[state.creativeAssistantProvider]}`);
+    showToast(`智能助手：${CREATIVE_ASSISTANT_PROVIDERS[state.creativeAssistantProvider]}`);
+    return;
+  }
+
+  if (action === "apply-creative-assistant-sample") {
+    state.creativeAssistantPrompt = actionTarget.dataset.creativePrompt ?? state.creativeAssistantPrompt;
+    state.creativeAssistantResult = null;
+    state.creativeAssistantSelectedBlockIndexes = null;
+    state.creativeAssistantError = "";
+    renderStoryScreen();
+    setSaveStatus("已填入一个创作主题示例");
+    return;
+  }
+
+  if (action === "generate-creative-assistant") {
+    void generateCreativeAssistant();
+    return;
+  }
+
+  if (action === "insert-creative-assistant-blocks") {
+    void insertCreativeAssistantBlocks();
+    return;
+  }
+
+  if (action === "copy-creative-assistant-summary") {
+    void copyCreativeAssistantSummary();
+    return;
+  }
+
+  if (action === "copy-creative-assistant-blocks") {
+    void copyCreativeAssistantBlocks();
+    return;
+  }
+
+  if (action === "toggle-creative-assistant-block") {
+    toggleCreativeAssistantBlockSelection(actionTarget.dataset.creativeBlockIndex);
+    return;
+  }
+
+  if (action === "restore-creative-assistant-history") {
+    restoreCreativeAssistantHistoryRecord(actionTarget.dataset.creativeHistoryId);
+    return;
+  }
+
+  if (action === "export-creative-assistant-history") {
+    exportCreativeAssistantHistoryRecord(actionTarget.dataset.creativeHistoryId);
+    return;
+  }
+
+  if (action === "delete-creative-assistant-history") {
+    deleteCreativeAssistantHistoryRecord(actionTarget.dataset.creativeHistoryId);
+    return;
+  }
+
+  if (action === "clear-creative-assistant-history") {
+    clearCreativeAssistantHistory();
+    return;
+  }
+
   if (action === "select-scene") {
     selectScene(actionTarget.dataset.sceneId);
     const scene = state.data.scenesById.get(actionTarget.dataset.sceneId);
@@ -5515,6 +5631,17 @@ function handleChange(event) {
     return;
   }
 
+  if (target.id === "creativeAssistantRememberKey") {
+    state.creativeAssistantRememberKey = Boolean(target.checked);
+    persistCreativeAssistantSettings();
+    setSaveStatus(
+      state.creativeAssistantRememberKey
+        ? "智能助手会把 Key 记在本浏览器 localStorage"
+        : "智能助手不会继续保存 API Key"
+    );
+    return;
+  }
+
   if (target.matches("[data-preview-debug-variable]")) {
     updatePreviewDebugDraftValueFromField(target);
     setSaveStatus("分支调试值已改，写入当前试玩后即可测试路线");
@@ -5593,6 +5720,32 @@ function handleInput(event) {
   if (event.target.id === "storyBlockSearchInput") {
     state.storyBlockSearchQuery = event.target.value ?? "";
     renderStoryScreen();
+    return;
+  }
+
+  if (event.target.id === "creativeAssistantPrompt") {
+    state.creativeAssistantPrompt = event.target.value ?? "";
+    state.creativeAssistantResult = null;
+    state.creativeAssistantSelectedBlockIndexes = null;
+    state.creativeAssistantError = "";
+    return;
+  }
+
+  if (event.target.id === "creativeAssistantOpenAiKey") {
+    state.creativeAssistantOpenAiKey = event.target.value ?? "";
+    state.creativeAssistantResult = null;
+    state.creativeAssistantSelectedBlockIndexes = null;
+    state.creativeAssistantError = "";
+    persistCreativeAssistantSettings();
+    return;
+  }
+
+  if (event.target.id === "creativeAssistantModel") {
+    state.creativeAssistantModel = getSafeCreativeAssistantModel(event.target.value);
+    state.creativeAssistantResult = null;
+    state.creativeAssistantSelectedBlockIndexes = null;
+    state.creativeAssistantError = "";
+    persistCreativeAssistantSettings();
     return;
   }
 
@@ -7295,6 +7448,9 @@ function selectScene(sceneId) {
   const scene = state.data.scenesById.get(sceneId);
   state.selectedSceneId = sceneId;
   state.selectedBlockId = scene?.blocks?.[0]?.id ?? null;
+  state.creativeAssistantResult = null;
+  state.creativeAssistantSelectedBlockIndexes = null;
+  state.creativeAssistantError = "";
   state.previewStartSceneId = sceneId;
   state.previewSceneId = sceneId;
   state.previewBlockIndex = Math.max((scene?.blocks?.length ?? 1) - 1, 0);
@@ -13008,6 +13164,12 @@ function renderStoryScreen() {
   if (refs.storyEditorModeHint) {
     refs.storyEditorModeHint.innerHTML = isBlankProject ? "" : renderStoryEditorModeBanner(scene);
     refs.storyEditorModeHint.classList.toggle("is-hidden", isBlankProject);
+  }
+
+  if (refs.creativeAssistantPanel) {
+    refs.creativeAssistantPanel.innerHTML = isBlankProject
+      ? renderCreativeAssistantBlankPanel()
+      : renderCreativeAssistantPanel(scene, selectedBlock);
   }
 
   if (refs.storySceneTreeFilterBar) {
@@ -28361,6 +28523,866 @@ function renderChoiceOptionEditorRow(option, index) {
       </div>
     </div>
   `;
+}
+
+function getSafeCreativeAssistantMode(mode) {
+  const safeMode = String(mode ?? "").trim();
+  return Object.prototype.hasOwnProperty.call(CREATIVE_ASSISTANT_MODES, safeMode) ? safeMode : "starter_demo";
+}
+
+function getSafeCreativeAssistantProvider(provider) {
+  const safeProvider = String(provider ?? "").trim();
+  return Object.prototype.hasOwnProperty.call(CREATIVE_ASSISTANT_PROVIDERS, safeProvider) ? safeProvider : "local";
+}
+
+function getSafeCreativeAssistantModel(model) {
+  const cleanModel = String(model ?? "").trim();
+  return cleanModel || CREATIVE_ASSISTANT_DEFAULT_OPENAI_MODEL;
+}
+
+function loadStoredCreativeAssistantProvider() {
+  try {
+    return getSafeCreativeAssistantProvider(localStorage.getItem(CREATIVE_ASSISTANT_PROVIDER_STORAGE_KEY));
+  } catch (error) {
+    return "local";
+  }
+}
+
+function loadStoredCreativeAssistantRememberKey() {
+  try {
+    return localStorage.getItem(CREATIVE_ASSISTANT_REMEMBER_KEY_STORAGE_KEY) === "true";
+  } catch (error) {
+    return false;
+  }
+}
+
+function loadStoredCreativeAssistantOpenAiKey() {
+  try {
+    return localStorage.getItem(CREATIVE_ASSISTANT_OPENAI_KEY_STORAGE_KEY) ?? "";
+  } catch (error) {
+    return "";
+  }
+}
+
+function loadStoredCreativeAssistantModel() {
+  try {
+    return getSafeCreativeAssistantModel(localStorage.getItem(CREATIVE_ASSISTANT_OPENAI_MODEL_STORAGE_KEY));
+  } catch (error) {
+    return CREATIVE_ASSISTANT_DEFAULT_OPENAI_MODEL;
+  }
+}
+
+function persistCreativeAssistantSettings() {
+  try {
+    localStorage.setItem(CREATIVE_ASSISTANT_PROVIDER_STORAGE_KEY, getSafeCreativeAssistantProvider(state.creativeAssistantProvider));
+    localStorage.setItem(CREATIVE_ASSISTANT_OPENAI_MODEL_STORAGE_KEY, getSafeCreativeAssistantModel(state.creativeAssistantModel));
+    localStorage.setItem(CREATIVE_ASSISTANT_REMEMBER_KEY_STORAGE_KEY, state.creativeAssistantRememberKey ? "true" : "false");
+    if (state.creativeAssistantRememberKey && state.creativeAssistantOpenAiKey) {
+      localStorage.setItem(CREATIVE_ASSISTANT_OPENAI_KEY_STORAGE_KEY, state.creativeAssistantOpenAiKey);
+    } else {
+      localStorage.removeItem(CREATIVE_ASSISTANT_OPENAI_KEY_STORAGE_KEY);
+    }
+  } catch (error) {
+    return;
+  }
+}
+
+function trimCreativeAssistantText(value, maxLength = 600) {
+  return String(value ?? "").trim().slice(0, maxLength);
+}
+
+function createCreativeAssistantHistoryId() {
+  return `creative_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function cloneCreativeAssistantBlocksForHistory(blocks) {
+  if (!Array.isArray(blocks)) {
+    return [];
+  }
+  return blocks.slice(0, 12).map((block) => {
+    const blockType = ["dialogue", "narration", "choice"].includes(block?.type) ? block.type : "narration";
+    if (blockType === "choice") {
+      return {
+        type: "choice",
+        options: (Array.isArray(block.options) ? block.options : []).slice(0, 4).map((option, index) => ({
+          text: trimCreativeAssistantText(option?.text || `选项 ${index + 1}`, 120),
+          gotoSceneId: trimCreativeAssistantText(option?.gotoSceneId, 120),
+          effects: [],
+        })),
+      };
+    }
+    const clonedBlock = {
+      type: blockType,
+      text: trimCreativeAssistantText(block?.text, 800),
+    };
+    if (blockType === "dialogue") {
+      clonedBlock.speakerId = trimCreativeAssistantText(block?.speakerId, 120);
+      clonedBlock.expressionId = trimCreativeAssistantText(block?.expressionId, 120);
+    }
+    return clonedBlock;
+  });
+}
+
+function sanitizeCreativeAssistantHistoryResult(result) {
+  if (!result || typeof result !== "object") {
+    return null;
+  }
+  const blocks = cloneCreativeAssistantBlocksForHistory(result.blocks);
+  const provider = result.provider && typeof result.provider === "object" ? result.provider : {};
+  return {
+    mode: getSafeCreativeAssistantMode(result.mode),
+    modeLabel: trimCreativeAssistantText(result.modeLabel || CREATIVE_ASSISTANT_MODES[getSafeCreativeAssistantMode(result.mode)], 80),
+    title: trimCreativeAssistantText(result.title || "未命名灵感", 120),
+    summary: trimCreativeAssistantText(result.summary, 700),
+    guidance: (Array.isArray(result.guidance) ? result.guidance : [])
+      .map((item) => trimCreativeAssistantText(item, 280))
+      .filter(Boolean)
+      .slice(0, 8),
+    assetPrompts: (Array.isArray(result.assetPrompts) ? result.assetPrompts : [])
+      .map((item) => trimCreativeAssistantText(item, 280))
+      .filter(Boolean)
+      .slice(0, 6),
+    blocks,
+    insertable: Boolean(blocks.length),
+    blockCount: blocks.length,
+    provider: {
+      mode: getSafeCreativeAssistantProvider(provider.mode),
+      label: trimCreativeAssistantText(
+        provider.label || CREATIVE_ASSISTANT_PROVIDERS[getSafeCreativeAssistantProvider(provider.mode)],
+        80
+      ),
+      status: trimCreativeAssistantText(provider.status, 60),
+      model: trimCreativeAssistantText(provider.model, 80),
+      fallback: Boolean(provider.fallback),
+    },
+    privacy: {
+      mode: trimCreativeAssistantText(result.privacy?.mode, 80),
+      sentToExternalService: Boolean(result.privacy?.sentToExternalService),
+      message: trimCreativeAssistantText(result.privacy?.message, 260),
+    },
+    fallbackReason: trimCreativeAssistantText(result.fallbackReason, 260),
+  };
+}
+
+function sanitizeCreativeAssistantHistoryRecord(record) {
+  if (!record || typeof record !== "object") {
+    return null;
+  }
+  const result = sanitizeCreativeAssistantHistoryResult(record.result);
+  if (!result) {
+    return null;
+  }
+  return {
+    id: trimCreativeAssistantText(record.id, 80) || createCreativeAssistantHistoryId(),
+    createdAt: trimCreativeAssistantText(record.createdAt, 40) || new Date().toISOString(),
+    prompt: trimCreativeAssistantText(record.prompt, 800),
+    sceneId: trimCreativeAssistantText(record.sceneId, 160),
+    sceneName: trimCreativeAssistantText(record.sceneName || "当前场景", 160),
+    result,
+  };
+}
+
+function loadStoredCreativeAssistantHistory() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(CREATIVE_ASSISTANT_HISTORY_STORAGE_KEY) || "[]");
+    return (Array.isArray(parsed) ? parsed : [])
+      .map((record) => sanitizeCreativeAssistantHistoryRecord(record))
+      .filter(Boolean)
+      .slice(0, CREATIVE_ASSISTANT_MAX_HISTORY);
+  } catch (error) {
+    return [];
+  }
+}
+
+function persistCreativeAssistantHistory() {
+  try {
+    localStorage.setItem(
+      CREATIVE_ASSISTANT_HISTORY_STORAGE_KEY,
+      JSON.stringify((state.creativeAssistantHistory ?? []).slice(0, CREATIVE_ASSISTANT_MAX_HISTORY))
+    );
+  } catch (error) {
+    return;
+  }
+}
+
+function getCreativeAssistantHistoryRecord(recordId) {
+  const safeRecordId = String(recordId ?? "").trim();
+  if (!safeRecordId) {
+    return null;
+  }
+  return (state.creativeAssistantHistory ?? []).find((record) => record.id === safeRecordId) ?? null;
+}
+
+function rememberCreativeAssistantResult(result) {
+  const scene = getSelectedScene();
+  const record = sanitizeCreativeAssistantHistoryRecord({
+    id: createCreativeAssistantHistoryId(),
+    createdAt: new Date().toISOString(),
+    prompt: state.creativeAssistantPrompt,
+    sceneId: scene?.id ?? "",
+    sceneName: scene?.name ?? "当前场景",
+    result,
+  });
+
+  if (!record) {
+    return;
+  }
+
+  state.creativeAssistantHistory = [
+    record,
+    ...(state.creativeAssistantHistory ?? []).filter(
+      (item) => item.id !== record.id && `${item.result?.title ?? ""}|${item.prompt ?? ""}` !== `${record.result.title}|${record.prompt}`
+    ),
+  ].slice(0, CREATIVE_ASSISTANT_MAX_HISTORY);
+  persistCreativeAssistantHistory();
+}
+
+function formatCreativeAssistantHistoryTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "刚刚";
+  }
+  return date.toLocaleString("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function renderCreativeAssistantHistory() {
+  const records = state.creativeAssistantHistory ?? [];
+  if (!records.length) {
+    return "";
+  }
+  return `
+    <div class="creative-assistant-history">
+      <div class="creative-history-head">
+        <div>
+          <span class="eyebrow">Idea Vault</span>
+          <strong>灵感盒</strong>
+        </div>
+        <button type="button" class="toolbar-button" data-action="clear-creative-assistant-history">清空</button>
+      </div>
+      <div class="creative-history-list">
+        ${records
+          .slice(0, CREATIVE_ASSISTANT_MAX_HISTORY)
+          .map(
+            (record) => `
+              <article class="creative-history-card">
+                <div>
+                  <strong>${escapeHtml(record.result.title)}</strong>
+                  <p>${escapeHtml(record.prompt || record.result.summary || "未填写主题")}</p>
+                  <span>${escapeHtml(record.sceneName)} · ${escapeHtml(formatCreativeAssistantHistoryTime(record.createdAt))}</span>
+                </div>
+                <div class="creative-history-actions">
+                  <button type="button" class="toolbar-button" data-action="restore-creative-assistant-history" data-creative-history-id="${escapeHtml(record.id)}">恢复</button>
+                  <button type="button" class="toolbar-button" data-action="export-creative-assistant-history" data-creative-history-id="${escapeHtml(record.id)}">导出</button>
+                  <button type="button" class="toolbar-button danger" data-action="delete-creative-assistant-history" data-creative-history-id="${escapeHtml(record.id)}">删除</button>
+                </div>
+              </article>
+            `
+          )
+          .join("")}
+      </div>
+      <p class="creative-history-note">灵感盒只保存在当前浏览器 localStorage，不写入项目文件，也不会保存 API Key。</p>
+    </div>
+  `;
+}
+
+function restoreCreativeAssistantHistoryRecord(recordId) {
+  const record = getCreativeAssistantHistoryRecord(recordId);
+  if (!record) {
+    showToast("没有找到这条助手灵感", "error");
+    return;
+  }
+  state.creativeAssistantResult = sanitizeCreativeAssistantHistoryResult(record.result);
+  state.creativeAssistantPrompt = record.prompt || state.creativeAssistantPrompt;
+  state.creativeAssistantMode = getSafeCreativeAssistantMode(record.result.mode);
+  state.creativeAssistantSelectedBlockIndexes = getDefaultCreativeAssistantBlockSelection(state.creativeAssistantResult);
+  state.creativeAssistantError = "";
+  renderStoryScreen();
+  setSaveStatus(`已恢复灵感：${record.result.title}`);
+  showToast("已恢复到助手结果区");
+}
+
+function exportCreativeAssistantHistoryRecord(recordId) {
+  const record = getCreativeAssistantHistoryRecord(recordId);
+  if (!record) {
+    showToast("没有找到可导出的助手灵感", "error");
+    return;
+  }
+  downloadJsonFile(`${makeParticleCustomPresetId(record.result.title || "creative_assistant")}.tn-idea.json`, {
+    engine: "Tony Na Engine",
+    kind: "creative_assistant_idea",
+    exportedAt: new Date().toISOString(),
+    record,
+  });
+  setSaveStatus(`已导出灵感：${record.result.title}`);
+  showToast("助手灵感包已导出");
+}
+
+function deleteCreativeAssistantHistoryRecord(recordId) {
+  const beforeCount = state.creativeAssistantHistory?.length ?? 0;
+  state.creativeAssistantHistory = (state.creativeAssistantHistory ?? []).filter((record) => record.id !== recordId);
+  persistCreativeAssistantHistory();
+  renderStoryScreen();
+  if ((state.creativeAssistantHistory?.length ?? 0) < beforeCount) {
+    setSaveStatus("已删除一条助手灵感");
+    showToast("灵感已删除");
+  }
+}
+
+function clearCreativeAssistantHistory() {
+  state.creativeAssistantHistory = [];
+  persistCreativeAssistantHistory();
+  renderStoryScreen();
+  setSaveStatus("智能助手灵感盒已清空");
+  showToast("灵感盒已清空");
+}
+
+function renderCreativeAssistantProviderButtons() {
+  return Object.entries(CREATIVE_ASSISTANT_PROVIDERS)
+    .map(
+      ([provider, label]) => `
+        <button
+          type="button"
+          class="creative-mode-button ${getSafeCreativeAssistantProvider(state.creativeAssistantProvider) === provider ? "is-active" : ""}"
+          data-action="set-creative-assistant-provider"
+          data-creative-provider="${provider}"
+        >
+          ${escapeHtml(label)}
+        </button>
+      `
+    )
+    .join("");
+}
+
+function renderCreativeAssistantBlankPanel() {
+  return `
+    <div class="creative-assistant-shell is-blank">
+      <div class="creative-assistant-copy">
+        <span class="eyebrow">Tony Na Assistant</span>
+        <strong>先创建一个场景，智能创作助手就能帮你搭 Demo。</strong>
+        <p>默认使用本地模板，不上传项目、不产生 API 费用；也可以在剧情编辑页切到自带 Key 的真模型模式。</p>
+      </div>
+    </div>
+  `;
+}
+
+function renderCreativeAssistantModeButtons() {
+  return Object.entries(CREATIVE_ASSISTANT_MODES)
+    .map(
+      ([mode, label]) => `
+        <button
+          type="button"
+          class="creative-mode-button ${getSafeCreativeAssistantMode(state.creativeAssistantMode) === mode ? "is-active" : ""}"
+          data-action="set-creative-assistant-mode"
+          data-creative-mode="${mode}"
+        >
+          ${escapeHtml(label)}
+        </button>
+      `
+    )
+    .join("");
+}
+
+function getCreativeAssistantBlockTypeLabel(blockType) {
+  return (
+    {
+      dialogue: "台词",
+      narration: "旁白",
+      choice: "选项",
+    }[blockType] ?? "剧情"
+  );
+}
+
+function getCreativeAssistantBlockPreviewText(block, index) {
+  const blockType = ["dialogue", "narration", "choice"].includes(block?.type) ? block.type : "narration";
+  if (blockType === "choice") {
+    const options = Array.isArray(block.options) ? block.options : [];
+    const optionText = options
+      .map((option, optionIndex) => `${optionIndex + 1}. ${trimCreativeAssistantText(option?.text || `选项 ${optionIndex + 1}`, 120)}`)
+      .join("\n");
+    return `#${index + 1} ${getCreativeAssistantBlockTypeLabel(blockType)}\n${optionText || "1. 继续"}`;
+  }
+  const speaker = blockType === "dialogue" && block?.speakerId ? `【${block.speakerId}】` : "";
+  return `#${index + 1} ${getCreativeAssistantBlockTypeLabel(blockType)}\n${speaker}${trimCreativeAssistantText(block?.text, 900)}`;
+}
+
+function buildCreativeAssistantBlocksText(result) {
+  const blocks = getSelectedCreativeAssistantBlocks(result);
+  if (!blocks.length) {
+    return "";
+  }
+  return [
+    result?.title ? `《${result.title}》` : "Tony Na Assistant 剧情卡片",
+    result?.summary ?? "",
+    "",
+    ...blocks.map((block, index) => getCreativeAssistantBlockPreviewText(block, index)),
+  ]
+    .filter((line) => line !== null && line !== undefined)
+    .join("\n\n");
+}
+
+function getCreativeAssistantResultBlocks(result = state.creativeAssistantResult) {
+  return Array.isArray(result?.blocks) ? result.blocks : [];
+}
+
+function getDefaultCreativeAssistantBlockSelection(result = state.creativeAssistantResult) {
+  return getCreativeAssistantResultBlocks(result).map((_block, index) => index);
+}
+
+function getActiveCreativeAssistantBlockIndexes(result = state.creativeAssistantResult) {
+  const blocks = getCreativeAssistantResultBlocks(result);
+  if (!blocks.length) {
+    return [];
+  }
+  const validIndexes = new Set(blocks.map((_block, index) => index));
+  if (!Array.isArray(state.creativeAssistantSelectedBlockIndexes)) {
+    return getDefaultCreativeAssistantBlockSelection(result);
+  }
+  const selected = state.creativeAssistantSelectedBlockIndexes.filter((index) => validIndexes.has(Number(index))).map(Number);
+  return [...new Set(selected)].sort((left, right) => left - right);
+}
+
+function getSelectedCreativeAssistantBlocks(result = state.creativeAssistantResult) {
+  const blocks = getCreativeAssistantResultBlocks(result);
+  const selectedIndexes = getActiveCreativeAssistantBlockIndexes(result);
+  return selectedIndexes.map((index) => blocks[index]).filter(Boolean);
+}
+
+function toggleCreativeAssistantBlockSelection(indexValue) {
+  const index = Number(indexValue);
+  const blocks = getCreativeAssistantResultBlocks();
+  if (!Number.isInteger(index) || index < 0 || index >= blocks.length) {
+    return;
+  }
+  const selected = new Set(getActiveCreativeAssistantBlockIndexes());
+  if (selected.has(index)) {
+    selected.delete(index);
+  } else {
+    selected.add(index);
+  }
+  state.creativeAssistantSelectedBlockIndexes = [...selected].sort((left, right) => left - right);
+  renderStoryScreen();
+  setSaveStatus(`智能助手已选 ${state.creativeAssistantSelectedBlockIndexes.length}/${blocks.length} 张卡片`);
+}
+
+function renderCreativeAssistantBlockPreview(result) {
+  const blocks = getCreativeAssistantResultBlocks(result);
+  if (!blocks.length) {
+    return "";
+  }
+  const selectedIndexes = getActiveCreativeAssistantBlockIndexes(result);
+  const selectedSet = new Set(selectedIndexes);
+  return `
+    <div class="creative-block-preview">
+      <div class="creative-block-preview-head">
+        <span>剧情卡片预览 · 已选 ${selectedIndexes.length}/${blocks.length}</span>
+        <button type="button" class="toolbar-button" data-action="copy-creative-assistant-blocks" ${selectedIndexes.length ? "" : "disabled"}>复制已选卡片</button>
+      </div>
+      <div class="creative-block-preview-list">
+        ${blocks
+          .map((block, index) => {
+            const blockType = ["dialogue", "narration", "choice"].includes(block?.type) ? block.type : "narration";
+            const options = Array.isArray(block?.options) ? block.options : [];
+            const checked = selectedSet.has(index);
+            return `
+              <article class="creative-block-preview-card ${checked ? "is-selected" : ""}">
+                <div class="creative-block-preview-card-head">
+                  <span>#${index + 1}</span>
+                  <strong>${escapeHtml(getCreativeAssistantBlockTypeLabel(blockType))}</strong>
+                  <label class="creative-block-select">
+                    <input
+                      type="checkbox"
+                      data-action="toggle-creative-assistant-block"
+                      data-creative-block-index="${index}"
+                      ${checked ? "checked" : ""}
+                    />
+                    <span>插入</span>
+                  </label>
+                </div>
+                ${
+                  blockType === "choice"
+                    ? `
+                      <div class="creative-block-options">
+                        ${options
+                          .map(
+                            (option, optionIndex) => `
+                              <span>${optionIndex + 1}. ${escapeHtml(option?.text || `选项 ${optionIndex + 1}`)}</span>
+                            `
+                          )
+                          .join("")}
+                      </div>
+                    `
+                    : `
+                      <p>
+                        ${blockType === "dialogue" && block?.speakerId ? `<em>${escapeHtml(block.speakerId)}</em>` : ""}
+                        ${escapeHtml(block?.text ?? "")}
+                      </p>
+                    `
+                }
+              </article>
+            `;
+          })
+          .join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderCreativeAssistantResult() {
+  const result = state.creativeAssistantResult;
+
+  if (state.creativeAssistantLoading) {
+    return `
+      <div class="creative-assistant-result">
+        <strong>正在构思...</strong>
+        <p>助手正在把主题拆成剧情节奏、可插入卡片和素材方向。</p>
+      </div>
+    `;
+  }
+
+  if (state.creativeAssistantError) {
+    return `
+      <div class="creative-assistant-result is-error">
+        <strong>生成失败</strong>
+        <p>${escapeHtml(state.creativeAssistantError)}</p>
+      </div>
+    `;
+  }
+
+  if (!result) {
+    return `
+      <div class="creative-assistant-result is-empty">
+        <strong>可以从一句话开始。</strong>
+        <p>例如“雨夜校园悬疑恋爱”，助手会生成剧情片段、创作建议和可继续扩展的素材提示。</p>
+      </div>
+    `;
+  }
+
+  const guidance = Array.isArray(result.guidance) ? result.guidance : [];
+  const assetPrompts = Array.isArray(result.assetPrompts) ? result.assetPrompts : [];
+  const blockCount = Number(result.blockCount ?? result.blocks?.length ?? 0);
+  const provider = result.provider ?? {};
+  const providerLabel = provider.label ?? (provider.mode === "openai" ? "OpenAI 真模型" : "本地模板");
+  const providerMeta = provider.model ? `${providerLabel} · ${provider.model}` : providerLabel;
+  return `
+    <div class="creative-assistant-result">
+      <div class="creative-result-head">
+        <span class="issue-tag good-text">${escapeHtml(result.modeLabel ?? "本地助手")}</span>
+        <span class="issue-tag ${provider.fallback ? "warn-text" : ""}">${escapeHtml(providerMeta)}</span>
+        <span class="issue-tag">${blockCount > 0 ? `可插入 ${blockCount} 张卡片` : "仅建议"}</span>
+      </div>
+      <strong>${escapeHtml(result.title ?? "已生成创作建议")}</strong>
+      <p>${escapeHtml(result.summary ?? "")}</p>
+      <div class="creative-advice-list">
+        ${guidance.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}
+      </div>
+      ${renderCreativeAssistantBlockPreview(result)}
+      ${
+        assetPrompts.length > 0
+          ? `
+            <div class="creative-asset-prompts">
+              <span>素材概念提示</span>
+              ${assetPrompts.map((item) => `<code>${escapeHtml(item)}</code>`).join("")}
+            </div>
+          `
+          : ""
+      }
+      <div class="creative-privacy-note">
+        ${escapeHtml(result.privacy?.message ?? "当前为本地模板助手，不会上传项目内容。")}
+        ${result.fallbackReason ? `<br />回落原因：${escapeHtml(result.fallbackReason)}` : ""}
+      </div>
+    </div>
+  `;
+}
+
+function renderCreativeAssistantPanel(scene, selectedBlock) {
+  const sampleButtons = CREATIVE_ASSISTANT_PROMPT_SAMPLES.map(
+    (sample) => `
+      <button
+        type="button"
+        class="creative-sample-chip"
+        data-action="apply-creative-assistant-sample"
+        data-creative-prompt="${escapeHtml(sample)}"
+      >
+        ${escapeHtml(sample)}
+      </button>
+    `
+  ).join("");
+  const selectedAssistantBlockCount = getSelectedCreativeAssistantBlocks().length;
+  const canInsert = Boolean(state.creativeAssistantResult?.insertable && selectedAssistantBlockCount > 0 && !state.creativeAssistantLoading);
+  const provider = getSafeCreativeAssistantProvider(state.creativeAssistantProvider);
+  const isOpenAiProvider = provider === "openai";
+  return `
+    <div class="creative-assistant-shell">
+      <div class="creative-assistant-copy">
+        <span class="eyebrow">Tony Na Assistant · 创作搭子</span>
+        <div class="creative-assistant-title-row">
+          <strong>智能创作助手</strong>
+          <span class="badge badge-soft">${escapeHtml(scene?.name ?? "当前场景")}</span>
+        </div>
+        <p>本地模板适合零配置试玩；自带 OpenAI API Key 时可切到真模型生成，产出更自由的剧情、建议和素材提示。</p>
+        <div class="creative-current-context">
+          当前插入点：${escapeHtml(selectedBlock ? getBlockSummary(selectedBlock, scene).title : "场景末尾")}
+        </div>
+      </div>
+      <div class="creative-assistant-workbench">
+        <div class="creative-provider-row">
+          <span>生成引擎</span>
+          <div class="creative-mode-row">${renderCreativeAssistantProviderButtons()}</div>
+        </div>
+        ${
+          isOpenAiProvider
+            ? `
+              <div class="creative-openai-config">
+                <label>
+                  <span>OpenAI API Key</span>
+                  <input
+                    id="creativeAssistantOpenAiKey"
+                    type="password"
+                    autocomplete="off"
+                    placeholder="sk-..."
+                    value="${escapeHtml(state.creativeAssistantOpenAiKey)}"
+                  />
+                </label>
+                <label>
+                  <span>模型</span>
+                  <input
+                    id="creativeAssistantModel"
+                    type="text"
+                    spellcheck="false"
+                    value="${escapeHtml(getSafeCreativeAssistantModel(state.creativeAssistantModel))}"
+                  />
+                </label>
+                <label class="creative-remember-key">
+                  <input
+                    id="creativeAssistantRememberKey"
+                    type="checkbox"
+                    ${state.creativeAssistantRememberKey ? "checked" : ""}
+                  />
+                  <span>只在本浏览器记住 Key，不写入项目文件</span>
+                </label>
+              </div>
+            `
+            : ""
+        }
+        <div class="creative-mode-row">${renderCreativeAssistantModeButtons()}</div>
+        <textarea
+          id="creativeAssistantPrompt"
+          class="creative-assistant-prompt"
+          placeholder="一句话描述你想做的游戏或场景，比如：雨夜校园悬疑恋爱，女主知道一个不能说的秘密"
+        >${escapeHtml(state.creativeAssistantPrompt)}</textarea>
+        <div class="creative-sample-row">${sampleButtons}</div>
+        <div class="creative-action-row">
+          <button
+            type="button"
+            class="toolbar-button toolbar-button-primary"
+            data-action="generate-creative-assistant"
+            ${state.creativeAssistantLoading ? "disabled" : ""}
+          >
+            ${state.creativeAssistantLoading ? "生成中..." : isOpenAiProvider ? "用真模型生成" : "生成建议"}
+          </button>
+          <button
+            type="button"
+            class="toolbar-button"
+            data-action="insert-creative-assistant-blocks"
+            ${canInsert ? "" : "disabled"}
+          >
+            插入到当前场景
+          </button>
+          <button
+            type="button"
+            class="toolbar-button"
+            data-action="copy-creative-assistant-summary"
+            ${state.creativeAssistantResult ? "" : "disabled"}
+          >
+            复制建议
+          </button>
+          <button
+            type="button"
+            class="toolbar-button"
+            data-action="export-creative-assistant-history"
+            data-creative-history-id="${escapeHtml(state.creativeAssistantHistory?.[0]?.id ?? "")}"
+            ${state.creativeAssistantHistory?.[0] ? "" : "disabled"}
+          >
+            导出最新灵感
+          </button>
+        </div>
+      </div>
+      ${renderCreativeAssistantResult()}
+      ${renderCreativeAssistantHistory()}
+    </div>
+  `;
+}
+
+function normalizeAssistantDraftBlockForScene(sceneDraft, draftBlock) {
+  if (!draftBlock || typeof draftBlock !== "object") {
+    return null;
+  }
+
+  const blockType = ["dialogue", "narration", "choice"].includes(draftBlock.type) ? draftBlock.type : "narration";
+  const blockId = createBlockId(sceneDraft);
+  const block = { ...draftBlock, id: blockId, type: blockType };
+
+  if (blockType === "dialogue") {
+    block.speakerId = getSafeCharacterId(block.speakerId ?? state.selectedCharacterId ?? state.data.characters[0]?.id);
+    block.expressionId = getSafeExpressionId(block.speakerId, block.expressionId);
+    block.text = String(block.text ?? "新台词").trim() || "新台词";
+    delete block.options;
+  } else if (blockType === "choice") {
+    const rawOptions = Array.isArray(block.options) ? block.options : [];
+    block.options = rawOptions.slice(0, 4).map((option, index) => ({
+      id: createChoiceOptionId(blockId, index),
+      text: String(option?.text ?? `选项 ${index + 1}`).trim() || `选项 ${index + 1}`,
+      gotoSceneId: getSafeSceneId(option?.gotoSceneId ?? sceneDraft.id, sceneDraft.id),
+      effects: Array.isArray(option?.effects) ? option.effects : [],
+    }));
+    if (block.options.length === 0) {
+      block.options = createDefaultChoiceOptions(blockId, sceneDraft.id);
+    }
+  } else {
+    block.text = String(block.text ?? "新旁白").trim() || "新旁白";
+    delete block.speakerId;
+    delete block.expressionId;
+    delete block.options;
+  }
+
+  sceneDraft.blocks.push(block);
+  return block;
+}
+
+function buildAssistantBlocksForInsertion(scene, draftBlocks) {
+  const sceneDraft = cloneScene(scene);
+  sceneDraft.blocks = [...(scene.blocks ?? [])];
+  return (Array.isArray(draftBlocks) ? draftBlocks : [])
+    .map((block) => normalizeAssistantDraftBlockForScene(sceneDraft, block))
+    .filter(Boolean);
+}
+
+async function generateCreativeAssistant() {
+  const scene = getSelectedScene();
+
+  if (!scene) {
+    showToast("先选中一个场景", "error");
+    return;
+  }
+
+  state.creativeAssistantPrompt =
+    document.getElementById("creativeAssistantPrompt")?.value?.trim() || state.creativeAssistantPrompt;
+  state.creativeAssistantOpenAiKey =
+    document.getElementById("creativeAssistantOpenAiKey")?.value?.trim() ?? state.creativeAssistantOpenAiKey;
+  state.creativeAssistantModel =
+    document.getElementById("creativeAssistantModel")?.value?.trim() || state.creativeAssistantModel;
+  persistCreativeAssistantSettings();
+  state.creativeAssistantLoading = true;
+  state.creativeAssistantError = "";
+  renderStoryScreen();
+
+  try {
+    const selectedBlock = getSelectedBlock();
+    const result = await postJson(API_CREATIVE_ASSISTANT, {
+      provider: getSafeCreativeAssistantProvider(state.creativeAssistantProvider),
+      apiKey: state.creativeAssistantOpenAiKey,
+      model: getSafeCreativeAssistantModel(state.creativeAssistantModel),
+      mode: getSafeCreativeAssistantMode(state.creativeAssistantMode),
+      prompt: state.creativeAssistantPrompt,
+      sceneId: scene.id,
+      selectedBlockId: selectedBlock?.id ?? null,
+      selectedBlockSummary: selectedBlock ? getBlockSummary(selectedBlock, scene).title : "",
+    });
+    state.creativeAssistantResult = result.result ?? null;
+    if (state.creativeAssistantResult) {
+      state.creativeAssistantSelectedBlockIndexes = getDefaultCreativeAssistantBlockSelection(state.creativeAssistantResult);
+      rememberCreativeAssistantResult(state.creativeAssistantResult);
+    }
+    setSaveStatus(state.creativeAssistantResult?.title ?? "智能助手已生成建议");
+    showToast(
+      state.creativeAssistantResult?.provider?.fallback
+        ? "真模型不可用，已回落本地模板"
+        : state.creativeAssistantResult?.title ?? "智能助手已生成建议"
+    );
+  } catch (error) {
+    state.creativeAssistantError = error.message;
+    setSaveStatus("智能助手生成失败", true);
+    showToast("智能助手生成失败", "error");
+  } finally {
+    state.creativeAssistantLoading = false;
+    renderStoryScreen();
+  }
+}
+
+async function insertCreativeAssistantBlocks() {
+  const scene = getSelectedScene();
+  const draftBlocks = getSelectedCreativeAssistantBlocks();
+
+  if (!scene || !draftBlocks.length) {
+    showToast("先勾选至少一张助手剧情卡片", "error");
+    return;
+  }
+
+  const updatedScene = cloneScene(scene);
+  const selectedIndex = updatedScene.blocks.findIndex((block) => block.id === state.selectedBlockId);
+  const insertIndex = selectedIndex >= 0 ? selectedIndex + 1 : updatedScene.blocks.length;
+  const newBlocks = buildAssistantBlocksForInsertion(scene, draftBlocks);
+
+  if (!newBlocks.length) {
+    showToast("助手结果里没有可识别的剧情卡片", "error");
+    return;
+  }
+
+  updatedScene.blocks.splice(insertIndex, 0, ...newBlocks);
+
+  const success = await persistScene(updatedScene, {
+    selectedSceneId: updatedScene.id,
+    selectedBlockId: newBlocks[0]?.id ?? null,
+    previewSceneId: updatedScene.id,
+    previewBlockIndex: insertIndex,
+    successMessage: `已插入智能助手生成的 ${newBlocks.length} 张卡片`,
+  });
+
+  if (success) {
+    state.creativeAssistantResult = null;
+    state.creativeAssistantSelectedBlockIndexes = null;
+    renderStoryScreen();
+    showToast(`已插入 ${newBlocks.length} 张助手卡片`);
+  }
+}
+
+async function copyCreativeAssistantSummary() {
+  const result = state.creativeAssistantResult;
+  if (!result) {
+    return;
+  }
+  const lines = [
+    result.title,
+    result.summary,
+    ...(result.guidance ?? []).map((item) => `- ${item}`),
+    ...(result.assetPrompts ?? []).map((item) => `素材提示：${item}`),
+  ].filter(Boolean);
+  const copied = await copyTextToClipboard(lines.join("\n"));
+  if (copied) {
+    showToast("助手建议已复制");
+  } else {
+    window.alert(lines.join("\n"));
+  }
+}
+
+async function copyCreativeAssistantBlocks() {
+  const result = state.creativeAssistantResult;
+  const content = buildCreativeAssistantBlocksText(result);
+  if (!content) {
+    showToast("当前没有可复制的剧情卡片", "error");
+    return;
+  }
+  const copied = await copyTextToClipboard(content);
+  if (copied) {
+    showToast("剧情卡片已复制");
+  } else {
+    window.alert(content);
+  }
 }
 
 async function addBlock(blockType) {

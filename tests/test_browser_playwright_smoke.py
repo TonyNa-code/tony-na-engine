@@ -426,6 +426,36 @@ class BrowserPlaywrightSmokeTests(unittest.TestCase):
 
         self.assertGreater(block_cards.count(), initial_count)
 
+    def test_creative_assistant_can_generate_restore_export_and_insert(self) -> None:
+        self.create_blank_project("浏览器烟测项目_Assistant")
+        self.create_first_chapter()
+
+        panel = self.page.locator("#creativeAssistantPanel")
+        block_cards = self.page.locator("#storyBlockList .block-card")
+        initial_count = block_cards.count()
+
+        panel.get_by_role("button", name="生成建议").click()
+        panel.get_by_text("可插入").wait_for(timeout=15000)
+        panel.get_by_text("剧情卡片预览").wait_for(timeout=10000)
+        panel.locator(".creative-assistant-history").wait_for(timeout=10000)
+
+        with self.page.expect_download() as download_info:
+            panel.get_by_role("button", name="导出最新灵感").click()
+        download = download_info.value
+        download_path = self.repo_copy / download.suggested_filename
+        download.save_as(str(download_path))
+        self.assertTrue(download_path.exists())
+        self.assertIn("creative_assistant_idea", download_path.read_text(encoding="utf-8"))
+
+        panel.get_by_role("button", name="恢复").first.click()
+        panel.get_by_role("button", name="插入到当前场景").click()
+        self.page.wait_for_function(
+            """([selector, expected]) => document.querySelectorAll(selector).length > expected""",
+            arg=["#storyBlockList .block-card", initial_count],
+            timeout=15000,
+        )
+        self.assertGreater(block_cards.count(), initial_count)
+
     def test_beginner_flow_can_export_web_build(self) -> None:
         self.create_blank_project("浏览器烟测项目_B")
         self.create_first_chapter()

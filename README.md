@@ -46,6 +46,7 @@ Tony Na Engine 当前更适合这样理解：
 - 新手模式 / 高级模式分层
 - 角色、素材、台词台本、配音工作流
 - 项目巡检、一键发布前修复顺序、自动回归试玩路线测试
+- Tony Na Assistant 智能创作助手：支持零配置本地模板，也支持创作者自带 OpenAI API Key 调用真模型生成剧情、建议、素材提示和可导出的灵感包
 - 正式存档 / 读档、系统菜单
 - 项目级成品 UI 皮肤、UI Kit 部件绑定、九宫格贴图、按钮多状态贴图、布局位置微调与视觉小说文本框设计
 - EXTRA 回想馆、图鉴馆、成就馆、章节回放、结局回放、语音回听
@@ -69,6 +70,17 @@ Tony Na Engine 当前更适合这样理解：
 
 - [`tests`](tests)  
   自动化测试
+
+## 智能创作助手
+
+剧情编辑页内置 `Tony Na Assistant`：
+
+- 默认使用本地模板模式，不需要联网，不会上传项目内容，也不会产生 API 费用
+- 创作者可自带 OpenAI API Key，并在面板里切换到 `OpenAI 真模型`，用于生成更自由的剧情片段、创作建议、场景润色和素材概念提示
+- API Key 不会写入项目文件；只有勾选“只在本浏览器记住 Key”时，才会保存在当前浏览器的 localStorage
+- 真模型不可用或未填写 Key 时，会自动回落到本地模板助手，避免创作流程被卡住
+- 生成结果会进入本地“灵感盒”，可恢复、删除或导出为 `.tn-idea.json`；灵感盒同样只保存在当前浏览器
+- 插入前可以预览、勾选将要写入的剧情卡片，并复制成台本文本，方便创作者先审稿或发给协作者
 
 ## 快速开始
 
@@ -111,41 +123,40 @@ py -3 run_editor.py
 python run_editor.py
 ```
 
-## 下载成 App 形式
+## 下载与导出
 
-如果只是想直接下载可运行包，而不是从源码启动：
+### 编辑器 App
 
-- `编辑器本体`
-  - 可在 GitHub Releases 下载：
-    - `macos.tar.gz`
-    - `windows.zip`
-    - `linux.tar.gz`
-  - 当前支持：
-    - Windows
-    - macOS
-    - Linux
+编辑器预览包通过 GitHub Releases 分发。当前计划提供：
 
-- `做完游戏后的成品`
-  - 可在编辑器的 `预览导出` 页直接导出：
-    - 网页试玩包
-    - Windows 桌面包
-    - macOS 桌面包
-    - Linux 桌面包
-    - 原生 Runtime 包（含独立 App 打包脚手架）
+- `macos.tar.gz`
+- `windows.zip`
+- `linux.tar.gz`
 
-当前说明可以简单理解成：
+预览包用于快速体验编辑器本体，不需要从源码启动。若某个平台包尚未出现在 Release 附件中，以该版本 Release notes 为准。
 
-- 想下载“引擎本体 App”，看 Releases 里的编辑器包
-- 想下载“游戏成品 App”，在项目里用导出功能生成
+### 游戏成品导出
 
-说明：
+打开项目后，可在编辑器的 `预览导出` 页生成游戏成品包：
 
-- `Windows / macOS / Linux 桌面包` 当前主要走 NW.js 桌面 Runtime
-- `原生 Runtime 包` 是正在推进中的新路线，当前已经覆盖标题页主菜单、基础剧情主链、正式存档/读档、系统菜单设置项、文本历史、自动播放、已读快进、项目字体、玩家档案/自动续玩、基础粒子与镜头演出、可选 PyAV/FFmpeg 音画同步内嵌视频播放、OpenCV 画面兜底、系统播放器桥接兜底，以及第一批资料馆和详情查看能力；导出包内会附带发布前自检报告、崩溃日志能力和 PyInstaller 脚本，可在 macOS / Windows / Linux 目标系统继续打成 Preview App
-- `手机端 Runtime` 目前处于实验规划阶段，不走 PyInstaller；更适合先用 WebView / 网页 Runtime 验证触控和音频策略，再决定是否做 Android / iOS 独立原生壳
-- Release 附件应优先使用发布工具生成的清单校验；维护者可运行 `python3 tools/release/prepare_preview_release.py --release-tag v0.1.0-preview` 检查 GitHub Release 页面是否漏传或混入旧包
-- 发布前建议按 [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md) 做一次 Preview 发布体检
-- 最后发布闸门可参考 [`RELEASE_P0.md`](RELEASE_P0.md)，GitHub Release 正文草稿可参考 [`docs/github/preview-release-draft.md`](docs/github/preview-release-draft.md)
+- 网页试玩包
+- Windows 桌面包
+- macOS 桌面包
+- Linux 桌面包
+- 原生 Runtime 包（Preview，含独立 App 打包脚手架）
+
+### 平台状态
+
+- `网页试玩包`：适合快速预览、网页分发和轻量测试。
+- `Windows / macOS / Linux 桌面包`：当前主要基于 NW.js 桌面 Runtime。
+- `原生 Runtime 包`：Preview 路线，已覆盖标题页主菜单、基础剧情主链、正式存档/读档、系统菜单设置项、文本历史、自动播放、已读快进、项目字体、玩家档案/自动续玩、基础粒子与镜头演出、可选 PyAV/FFmpeg 音画同步内嵌视频播放、OpenCV 画面兜底、系统播放器桥接兜底，以及第一批资料馆和详情查看能力。
+- `手机端 Runtime`：实验规划阶段，优先通过 WebView / 网页 Runtime 验证触控、音频策略和界面适配。
+
+### 发布校验
+
+- 预览包如未完成签名 / 公证，系统可能出现安全提醒；具体状态以 Release notes 为准。
+- 发布前检查可参考 [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md) 与 [`RELEASE_P0.md`](RELEASE_P0.md)。
+- GitHub Release 正文草稿可参考 [`docs/github/preview-release-draft.md`](docs/github/preview-release-draft.md)。
 
 ## 测试
 
@@ -253,7 +264,7 @@ py -3 -m unittest discover -s tests -p "test_browser_playwright_smoke.py" -v
 
 ## 其他设计文档
 
-如果需要继续查看更早期的引擎规划和数据设计，可参考：
+更早期的引擎规划和数据设计可参考：
 
 - [`galgame_engine_blueprint.md`](galgame_engine_blueprint.md)
 - [`v1_ui_structure.md`](v1_ui_structure.md)

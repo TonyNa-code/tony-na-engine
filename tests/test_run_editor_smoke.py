@@ -11,6 +11,7 @@ import sys
 import tempfile
 import tarfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 import run_editor
@@ -412,6 +413,101 @@ class RunEditorSmokeTests(unittest.TestCase):
         self.assertEqual(saved_project["gameUiConfig"]["uiOverlayAssetId"], "asset_overlay_grid")
         self.assertEqual(saved_project["gameUiConfig"]["uiOverlayOpacity"], 9)
         self.assertEqual(saved_project["particleCustomPresets"][0]["name"], "暴雪测试")
+
+    def test_creative_assistant_generates_local_insertable_story_blocks(self) -> None:
+        _, chapter_result = self.create_blank_project_with_chapter()
+
+        result = run_editor.build_creative_assistant_result(
+            {
+                "mode": "starter_demo",
+                "prompt": "雨夜校园悬疑恋爱，女主知道一个秘密",
+                "sceneId": chapter_result["sceneId"],
+            }
+        )
+
+        self.assertEqual(result["mode"], "starter_demo")
+        self.assertTrue(result["insertable"])
+        self.assertGreaterEqual(result["blockCount"], 4)
+        self.assertFalse(result["privacy"]["sentToExternalService"])
+        self.assertIn("本地模板助手", result["privacy"]["message"])
+        block_types = [block["type"] for block in result["blocks"]]
+        self.assertIn("dialogue", block_types)
+        self.assertIn("choice", block_types)
+        choice_block = next(block for block in result["blocks"] if block["type"] == "choice")
+        self.assertGreaterEqual(len(choice_block["options"]), 2)
+
+    def test_creative_assistant_openai_provider_uses_model_result(self) -> None:
+        _, chapter_result = self.create_blank_project_with_chapter()
+        model_result = {
+            "title": "模型生成标题",
+            "summary": "模型根据当前场景生成了可插入的开场。",
+            "guidance": ["先用一句旁白建立气氛。", "第二张卡片交给角色抛出钩子。"],
+            "assetPrompts": ["近未来雨夜街角，蓝紫色霓虹，视觉小说背景"],
+            "blocks": [
+                {"type": "narration", "text": "雨声落在透明穹顶上，像一段倒放的倒计时。"},
+                {"type": "dialogue", "speakerId": "heroine", "text": "如果我说，今晚之后一切都会重来呢？"},
+                {
+                    "type": "choice",
+                    "options": [
+                        {"text": "追问时间循环", "gotoSceneId": chapter_result["sceneId"]},
+                        {"text": "先陪她离开", "gotoSceneId": chapter_result["sceneId"]},
+                    ],
+                },
+            ],
+        }
+        response_payload = {
+            "output": [
+                {
+                    "content": [
+                        {
+                            "type": "output_text",
+                            "text": json.dumps(model_result, ensure_ascii=False),
+                        }
+                    ]
+                }
+            ]
+        }
+
+        class FakeResponse:
+            def __enter__(self) -> "FakeResponse":
+                return self
+
+            def __exit__(self, *_args: object) -> bool:
+                return False
+
+            def read(self) -> bytes:
+                return json.dumps(response_payload, ensure_ascii=False).encode("utf-8")
+
+        def fake_urlopen(request, timeout=0):
+            self.assertEqual(timeout, 45)
+            self.assertEqual(request.full_url, run_editor.CREATIVE_ASSISTANT_OPENAI_ENDPOINT)
+            self.assertEqual(request.get_header("Authorization"), "Bearer test-openai-key")
+            body = json.loads(request.data.decode("utf-8"))
+            self.assertEqual(body["model"], "gpt-test")
+            self.assertEqual(body["input"][0]["content"][0]["type"], "input_text")
+            self.assertIn("近未来 AI 少女", body["input"][0]["content"][0]["text"])
+            return FakeResponse()
+
+        with mock.patch("run_editor.urlopen", fake_urlopen):
+            result = run_editor.build_creative_assistant_result(
+                {
+                    "provider": "openai",
+                    "apiKey": "test-openai-key",
+                    "model": "gpt-test",
+                    "mode": "script",
+                    "prompt": "近未来 AI 少女在雨夜发现时间循环",
+                    "sceneId": chapter_result["sceneId"],
+                }
+            )
+
+        self.assertEqual(result["provider"]["mode"], "openai")
+        self.assertEqual(result["provider"]["status"], "model")
+        self.assertEqual(result["provider"]["model"], "gpt-test")
+        self.assertTrue(result["privacy"]["sentToExternalService"])
+        self.assertEqual(result["title"], "模型生成标题")
+        self.assertEqual(result["blockCount"], 3)
+        self.assertEqual(result["blocks"][1]["speakerId"], "heroine")
+        self.assertEqual(result["blocks"][2]["options"][0]["gotoSceneId"], chapter_result["sceneId"])
 
     def test_asset_import_replace_and_delete_with_usage_protection(self) -> None:
         _, chapter_result = self.create_blank_project_with_chapter()

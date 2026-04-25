@@ -23,6 +23,7 @@ from difflib import SequenceMatcher
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlparse
 from urllib.request import Request, urlopen
 
@@ -1424,6 +1425,521 @@ def build_starter_scene(scene_id: str, scene_name: str) -> dict:
             }
         ],
     }
+
+
+CREATIVE_ASSISTANT_MAX_PROMPT_CHARS = 800
+CREATIVE_ASSISTANT_OPENAI_ENDPOINT = "https://api.openai.com/v1/responses"
+CREATIVE_ASSISTANT_DEFAULT_OPENAI_MODEL = "gpt-5.5"
+CREATIVE_ASSISTANT_PROVIDER_LABELS = {
+    "local": "本地模板助手",
+    "openai": "OpenAI 真模型助手",
+}
+CREATIVE_ASSISTANT_MODE_LABELS = {
+    "starter_demo": "试玩 Demo 生成",
+    "script": "剧情片段生成",
+    "advice": "创作诊断建议",
+    "polish": "润色当前场景",
+}
+
+
+class CreativeAssistantModelError(RuntimeError):
+    pass
+
+
+def normalize_creative_assistant_provider(value: object) -> str:
+    provider = str(value or "local").strip().lower()
+    return provider if provider in CREATIVE_ASSISTANT_PROVIDER_LABELS else "local"
+
+
+def normalize_creative_assistant_mode(value: object) -> str:
+    mode = str(value or "starter_demo").strip()
+    return mode if mode in CREATIVE_ASSISTANT_MODE_LABELS else "starter_demo"
+
+
+def clean_creative_prompt(value: object) -> str:
+    prompt = str(value or "").strip()
+    prompt = re.sub(r"\s+", " ", prompt)
+    return prompt[:CREATIVE_ASSISTANT_MAX_PROMPT_CHARS] or "雨夜校园里，一个秘密把两个人重新拉回彼此身边。"
+
+
+def clean_creative_assistant_model(value: object) -> str:
+    model = str(value or "").strip()
+    if not model:
+        return CREATIVE_ASSISTANT_DEFAULT_OPENAI_MODEL
+    if len(model) > 80 or not re.fullmatch(r"[A-Za-z0-9._:-]+", model):
+        return CREATIVE_ASSISTANT_DEFAULT_OPENAI_MODEL
+    return model
+
+
+def pick_creative_assistant_flavor(prompt: str) -> dict:
+    lowered = prompt.lower()
+    has_any = lambda *words: any(word in prompt or word.lower() in lowered for word in words)
+    setting = "雨夜校园" if has_any("雨", "校园", "教室", "学校") else "黄昏街角"
+    if has_any("科幻", "AI", "机器人", "星", "未来"):
+        setting = "近未来城市"
+    if has_any("古风", "仙", "宫", "妖"):
+        setting = "月色古城"
+    mood = "悬疑又温柔" if has_any("悬疑", "秘密", "推理", "失踪") else "清甜但带一点遗憾"
+    if has_any("恐怖", "惊悚", "诡异"):
+        mood = "压抑、诡异、慢慢逼近真相"
+    if has_any("恋爱", "告白", "心动", "青梅竹马"):
+        mood = "暧昧、心动、带一点不敢说出口"
+    conflict = "一个不能立刻说出口的秘密"
+    if has_any("复仇", "背叛"):
+        conflict = "一次被误解多年的背叛"
+    elif has_any("循环", "轮回", "时间"):
+        conflict = "只有主角记得的时间循环"
+    elif has_any("失忆", "记忆"):
+        conflict = "被刻意抹掉的一段记忆"
+    return {"setting": setting, "mood": mood, "conflict": conflict}
+
+
+def collect_creative_assistant_characters(bundle: dict) -> list[dict]:
+    raw_characters = bundle.get("characters", {}).get("characters", [])
+    if not isinstance(raw_characters, list):
+        return []
+    characters = []
+    for character in raw_characters:
+        if not isinstance(character, dict):
+            continue
+        character_id = str(character.get("id") or "").strip()
+        if not character_id:
+            continue
+        characters.append(
+            {
+                "id": character_id,
+                "name": str(character.get("displayName") or character.get("name") or character_id).strip()
+                or character_id,
+            }
+        )
+    return characters
+
+
+def find_creative_assistant_scene(bundle: dict, scene_id: object) -> dict | None:
+    target_scene_id = str(scene_id or "").strip()
+    fallback_scene = None
+    for chapter in bundle.get("chapters", []) or []:
+        if not isinstance(chapter, dict):
+            continue
+        for scene in chapter.get("scenes", []) or []:
+            if not isinstance(scene, dict):
+                continue
+            full_scene = {
+                **scene,
+                "chapterId": chapter.get("chapterId"),
+                "chapterName": chapter.get("name") or chapter.get("chapterId"),
+            }
+            if fallback_scene is None:
+                fallback_scene = full_scene
+            if target_scene_id and str(scene.get("id") or "") == target_scene_id:
+                return full_scene
+    return fallback_scene
+
+
+def build_creative_assistant_blocks(mode: str, prompt: str, scene: dict | None, characters: list[dict]) -> list[dict]:
+    flavor = pick_creative_assistant_flavor(prompt)
+    scene_name = str((scene or {}).get("name") or "这个场景").strip() or "这个场景"
+    target_scene_id = str((scene or {}).get("id") or "").strip()
+    speaker = characters[0] if characters else {"id": "", "name": "角色A"}
+    partner = characters[1] if len(characters) > 1 else {"id": speaker["id"], "name": "另一个人"}
+    speaker_id = speaker.get("id", "")
+    partner_id = partner.get("id", "")
+    speaker_name = speaker.get("name") or "角色A"
+    partner_name = partner.get("name") or "另一个人"
+
+    if mode == "advice":
+        return []
+
+    if mode == "polish":
+        return [
+            {
+                "type": "narration",
+                "text": f"{scene_name} 的空气被压得很低，像有什么话一直悬在两人之间。",
+            },
+            {
+                "type": "dialogue",
+                "speakerId": speaker_id,
+                "expressionId": "",
+                "text": f"我不是想逃避，只是还没想好该怎么把{flavor['conflict']}告诉你。",
+            },
+            {
+                "type": "narration",
+                "text": "这一句之后，场景可以留半拍沉默，再进入选项或下一段情绪推进。",
+            },
+        ]
+
+    return [
+        {
+            "type": "narration",
+            "text": f"{flavor['setting']}里，{scene_name} 像被一层薄薄的光罩住。{flavor['conflict']}，正悄悄改变今晚的走向。",
+        },
+        {
+            "type": "dialogue",
+            "speakerId": speaker_id,
+            "expressionId": "",
+            "text": f"你有没有觉得，今晚的气氛有点不一样？",
+        },
+        {
+            "type": "dialogue",
+            "speakerId": partner_id,
+            "expressionId": "",
+            "text": f"如果我说，我其实一直在等你问这句话呢？",
+        },
+        {
+            "type": "narration",
+            "text": f"{speaker_name} 看向 {partner_name}，那些没来得及说出口的心情，终于在这阵{flavor['mood']}的沉默里浮了上来。",
+        },
+        {
+            "type": "choice",
+            "options": [
+                {"text": "追问那个秘密", "gotoSceneId": target_scene_id, "effects": []},
+                {"text": "先假装什么都没有发生", "gotoSceneId": target_scene_id, "effects": []},
+            ],
+        },
+    ]
+
+
+def build_local_creative_assistant_result(payload: dict | None) -> dict:
+    payload = payload if isinstance(payload, dict) else {}
+    mode = normalize_creative_assistant_mode(payload.get("mode"))
+    prompt = clean_creative_prompt(payload.get("prompt"))
+    bundle = load_project_bundle()
+    project = bundle.get("project", {}) if isinstance(bundle.get("project"), dict) else {}
+    scene = find_creative_assistant_scene(bundle, payload.get("sceneId"))
+    characters = collect_creative_assistant_characters(bundle)
+    flavor = pick_creative_assistant_flavor(prompt)
+    blocks = build_creative_assistant_blocks(mode, prompt, scene, characters)
+    block_count = len(blocks)
+    scene_name = str((scene or {}).get("name") or "当前场景")
+    title = {
+        "starter_demo": "已生成一段可试玩剧情骨架",
+        "script": "已生成一段可插入剧情",
+        "advice": "已生成创作诊断建议",
+        "polish": "已生成当前场景润色片段",
+    }.get(mode, "已生成创作建议")
+    guidance = [
+        f"核心氛围可以先定为：{flavor['mood']}。",
+        f"当前最适合推动的矛盾是：{flavor['conflict']}。",
+        "新手建议：先做 3-5 分钟可通关 Demo，再扩展分支和素材精修。",
+    ]
+    if scene and not (scene.get("blocks") or []):
+        guidance.append("当前场景还是空的，可以直接插入这段作为第一版开场。")
+    elif scene:
+        guidance.append("建议插入到当前选中卡片后面，再用预览检查节奏。")
+    return {
+        "mode": mode,
+        "modeLabel": CREATIVE_ASSISTANT_MODE_LABELS[mode],
+        "title": title,
+        "summary": f"基于「{prompt}」为项目「{project.get('title') or '未命名项目'}」和场景「{scene_name}」生成。",
+        "guidance": guidance,
+        "blocks": blocks,
+        "insertable": block_count > 0,
+        "blockCount": block_count,
+        "assetPrompts": [
+            f"{flavor['setting']}，{flavor['mood']}，适合视觉小说背景概念图",
+            f"{flavor['conflict']}，角色半身立绘，情绪克制，二次元视觉小说风格",
+        ],
+        "provider": {
+            "mode": "local",
+            "label": CREATIVE_ASSISTANT_PROVIDER_LABELS["local"],
+            "status": "ready",
+            "model": "",
+            "fallback": False,
+        },
+        "privacy": {
+            "mode": "local_template",
+            "sentToExternalService": False,
+            "message": "当前为本地模板助手：不会上传项目内容，也不会产生 API 调用费用。",
+        },
+    }
+
+
+def build_creative_assistant_model_context(payload: dict, prompt: str) -> dict:
+    bundle = load_project_bundle()
+    project = bundle.get("project", {}) if isinstance(bundle.get("project"), dict) else {}
+    scene = find_creative_assistant_scene(bundle, payload.get("sceneId"))
+    characters = collect_creative_assistant_characters(bundle)
+    current_blocks = []
+    if scene:
+        for index, block in enumerate(scene.get("blocks", []) or [], start=1):
+            if not isinstance(block, dict):
+                continue
+            block_type = str(block.get("type") or "")
+            if block_type not in {"dialogue", "narration", "choice"}:
+                continue
+            current_blocks.append(
+                {
+                    "index": index,
+                    "type": block_type,
+                    "text": str(block.get("text") or "")[:180],
+                    "options": [
+                        str(option.get("text") or "")[:80]
+                        for option in block.get("options", []) or []
+                        if isinstance(option, dict)
+                    ][:4],
+                }
+            )
+            if len(current_blocks) >= 10:
+                break
+    return {
+        "projectTitle": str(project.get("title") or "未命名项目"),
+        "mode": normalize_creative_assistant_mode(payload.get("mode")),
+        "modeLabel": CREATIVE_ASSISTANT_MODE_LABELS[normalize_creative_assistant_mode(payload.get("mode"))],
+        "prompt": prompt,
+        "scene": {
+            "id": str((scene or {}).get("id") or ""),
+            "name": str((scene or {}).get("name") or "当前场景"),
+            "notes": str((scene or {}).get("notes") or "")[:240],
+        },
+        "characters": characters[:8],
+        "currentBlocks": current_blocks,
+    }
+
+
+def build_creative_assistant_response_schema() -> dict:
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "title": {"type": "string"},
+            "summary": {"type": "string"},
+            "guidance": {"type": "array", "items": {"type": "string"}},
+            "assetPrompts": {"type": "array", "items": {"type": "string"}},
+            "blocks": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": True,
+                    "properties": {
+                        "type": {"type": "string", "enum": ["narration", "dialogue", "choice"]},
+                        "speakerId": {"type": "string"},
+                        "expressionId": {"type": "string"},
+                        "text": {"type": "string"},
+                        "options": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": True,
+                                "properties": {
+                                    "text": {"type": "string"},
+                                    "gotoSceneId": {"type": "string"},
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        },
+        "required": ["title", "summary", "guidance", "assetPrompts", "blocks"],
+    }
+
+
+def extract_openai_response_text(response_payload: dict) -> str:
+    direct_text = response_payload.get("output_text")
+    if isinstance(direct_text, str) and direct_text.strip():
+        return direct_text.strip()
+    for output_item in response_payload.get("output", []) or []:
+        if not isinstance(output_item, dict):
+            continue
+        for content_item in output_item.get("content", []) or []:
+            if not isinstance(content_item, dict):
+                continue
+            text_value = content_item.get("text")
+            if isinstance(text_value, str) and text_value.strip():
+                return text_value.strip()
+    raise CreativeAssistantModelError("模型没有返回可读取的文本。")
+
+
+def sanitize_model_creative_blocks(raw_blocks: object, fallback_scene_id: str) -> list[dict]:
+    if not isinstance(raw_blocks, list):
+        return []
+    blocks: list[dict] = []
+    for raw_block in raw_blocks[:12]:
+        if not isinstance(raw_block, dict):
+            continue
+        block_type = str(raw_block.get("type") or "narration").strip()
+        if block_type not in {"dialogue", "narration", "choice"}:
+            block_type = "narration"
+        if block_type == "choice":
+            raw_options = raw_block.get("options") if isinstance(raw_block.get("options"), list) else []
+            options = []
+            for index, option in enumerate(raw_options[:4], start=1):
+                if not isinstance(option, dict):
+                    continue
+                option_text = str(option.get("text") or f"选项 {index}").strip()[:120] or f"选项 {index}"
+                options.append(
+                    {
+                        "text": option_text,
+                        "gotoSceneId": str(option.get("gotoSceneId") or fallback_scene_id),
+                        "effects": [],
+                    }
+                )
+            if len(options) < 2:
+                options = [
+                    {"text": "继续追问", "gotoSceneId": fallback_scene_id, "effects": []},
+                    {"text": "暂时沉默", "gotoSceneId": fallback_scene_id, "effects": []},
+                ]
+            blocks.append({"type": "choice", "options": options})
+            continue
+        text = str(raw_block.get("text") or "").strip()[:600]
+        if not text:
+            continue
+        block = {"type": block_type, "text": text}
+        if block_type == "dialogue":
+            block["speakerId"] = str(raw_block.get("speakerId") or "")
+            block["expressionId"] = str(raw_block.get("expressionId") or "")
+        blocks.append(block)
+    return blocks
+
+
+def sanitize_model_creative_result(raw_result: object, local_result: dict, model: str) -> dict:
+    if not isinstance(raw_result, dict):
+        raise CreativeAssistantModelError("模型返回的 JSON 不是对象。")
+    fallback_scene_id = ""
+    for block in local_result.get("blocks", []) or []:
+        if isinstance(block, dict) and block.get("type") == "choice":
+            first_option = (block.get("options") or [{}])[0]
+            fallback_scene_id = str(first_option.get("gotoSceneId") or "")
+            break
+    blocks = sanitize_model_creative_blocks(raw_result.get("blocks"), fallback_scene_id)
+    guidance = [str(item).strip()[:260] for item in raw_result.get("guidance", []) or [] if str(item).strip()][:6]
+    asset_prompts = [str(item).strip()[:260] for item in raw_result.get("assetPrompts", []) or [] if str(item).strip()][:4]
+    result = {
+        **local_result,
+        "title": str(raw_result.get("title") or local_result.get("title") or "模型已生成创作建议").strip()[:120],
+        "summary": str(raw_result.get("summary") or local_result.get("summary") or "").strip()[:500],
+        "guidance": guidance or local_result.get("guidance", []),
+        "assetPrompts": asset_prompts or local_result.get("assetPrompts", []),
+        "blocks": blocks,
+        "insertable": len(blocks) > 0,
+        "blockCount": len(blocks),
+        "provider": {
+            "mode": "openai",
+            "label": CREATIVE_ASSISTANT_PROVIDER_LABELS["openai"],
+            "status": "model",
+            "model": model,
+            "fallback": False,
+        },
+        "privacy": {
+            "mode": "openai_byo_key",
+            "sentToExternalService": True,
+            "message": "已使用你提供的 OpenAI API Key 调用真模型；Key 不会写入项目文件。",
+        },
+    }
+    if not result["summary"]:
+        result["summary"] = local_result.get("summary", "")
+    return result
+
+
+def call_openai_creative_assistant(payload: dict, local_result: dict, api_key: str, model: str) -> dict:
+    prompt = clean_creative_prompt(payload.get("prompt"))
+    context = build_creative_assistant_model_context(payload, prompt)
+    request_payload = {
+        "model": model,
+        "instructions": (
+            "你是 Tony Na Engine 内置的视觉小说创作助手。"
+            "请根据用户主题和当前项目上下文，生成适合 galgame/视觉小说编辑器直接插入的内容。"
+            "只生成原创内容；不要输出 Markdown；不要声称已经生成图片或音频。"
+            "blocks 只能使用 narration、dialogue、choice 三类；dialogue 优先使用给定 characters 的 id。"
+            "如果 mode 是 advice，可以让 blocks 为空；其他模式尽量提供 3 到 6 张可插入卡片。"
+        ),
+        "input": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": json.dumps(context, ensure_ascii=False, indent=2),
+                    }
+                ],
+            }
+        ],
+        "max_output_tokens": 1800,
+        "text": {
+            "format": {
+                "type": "json_schema",
+                "name": "tony_na_creative_assistant_result",
+                "schema": build_creative_assistant_response_schema(),
+            }
+        },
+    }
+    request = Request(
+        CREATIVE_ASSISTANT_OPENAI_ENDPOINT,
+        data=json.dumps(request_payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=45) as response:
+            response_data = json.loads(response.read().decode("utf-8"))
+    except HTTPError as error:
+        error_body = ""
+        try:
+            error_body = error.read().decode("utf-8")[:500]
+        except Exception:
+            error_body = ""
+        raise CreativeAssistantModelError(f"OpenAI 返回错误 {error.code}：{error_body or error.reason}") from error
+    except URLError as error:
+        raise CreativeAssistantModelError(f"连接 OpenAI 失败：{error.reason}") from error
+    except TimeoutError as error:
+        raise CreativeAssistantModelError("连接 OpenAI 超时。") from error
+    except Exception as error:
+        raise CreativeAssistantModelError(f"调用 OpenAI 失败：{error}") from error
+    response_text = extract_openai_response_text(response_data)
+    try:
+        raw_result = json.loads(response_text)
+    except json.JSONDecodeError as error:
+        raise CreativeAssistantModelError("模型返回的内容不是有效 JSON。") from error
+    return sanitize_model_creative_result(raw_result, local_result, model)
+
+
+def build_creative_assistant_result(payload: dict | None) -> dict:
+    payload = payload if isinstance(payload, dict) else {}
+    local_result = build_local_creative_assistant_result(payload)
+    provider = normalize_creative_assistant_provider(payload.get("provider"))
+    if provider != "openai":
+        return local_result
+    api_key = str(payload.get("apiKey") or "").strip()
+    model = clean_creative_assistant_model(payload.get("model"))
+    if not api_key:
+        return {
+            **local_result,
+            "provider": {
+                "mode": "openai",
+                "label": CREATIVE_ASSISTANT_PROVIDER_LABELS["openai"],
+                "status": "missing_key",
+                "model": model,
+                "fallback": True,
+            },
+            "privacy": {
+                "mode": "local_fallback_missing_key",
+                "sentToExternalService": False,
+                "message": "未填写 API Key，已自动使用本地模板助手；不会上传项目内容。",
+            },
+            "fallbackReason": "未填写 OpenAI API Key。",
+        }
+    try:
+        return call_openai_creative_assistant(payload, local_result, api_key, model)
+    except CreativeAssistantModelError as error:
+        return {
+            **local_result,
+            "provider": {
+                "mode": "openai",
+                "label": CREATIVE_ASSISTANT_PROVIDER_LABELS["openai"],
+                "status": "fallback",
+                "model": model,
+                "fallback": True,
+            },
+            "privacy": {
+                "mode": "local_fallback_after_model_error",
+                "sentToExternalService": True,
+                "message": "真模型调用失败，已自动回落到本地模板助手；API Key 不会写入项目文件。",
+            },
+            "fallbackReason": str(error),
+        }
 
 
 def save_scene(chapter_id: str, scene_id: str, scene_payload: dict) -> None:
@@ -7958,6 +8474,10 @@ class EditorRequestHandler(SimpleHTTPRequestHandler):
             self.handle_create_starter_kit()
             return
 
+        if parsed.path == "/api/creative-assistant":
+            self.handle_creative_assistant()
+            return
+
         if parsed.path == "/api/duplicate-chapter":
             self.handle_duplicate_chapter()
             return
@@ -8341,6 +8861,27 @@ class EditorRequestHandler(SimpleHTTPRequestHandler):
         except Exception as error:  # pragma: no cover - defensive fallback
             self.send_json(
                 {"ok": False, "error": f"保存时出了意外问题：{error}"},
+                status=HTTPStatus.INTERNAL_SERVER_ERROR,
+            )
+
+    def handle_creative_assistant(self) -> None:
+        try:
+            payload = self.read_json_body()
+            result = build_creative_assistant_result(payload)
+            self.send_json(
+                {
+                    "ok": True,
+                    "savedAt": now_iso(),
+                    "result": result,
+                }
+            )
+        except json.JSONDecodeError:
+            self.send_json({"ok": False, "error": "请求体不是有效 JSON。"}, status=HTTPStatus.BAD_REQUEST)
+        except ValueError as error:
+            self.send_json({"ok": False, "error": str(error)}, status=HTTPStatus.BAD_REQUEST)
+        except Exception as error:  # pragma: no cover - defensive fallback
+            self.send_json(
+                {"ok": False, "error": f"智能创作助手生成失败：{error}"},
                 status=HTTPStatus.INTERNAL_SERVER_ERROR,
             )
 
