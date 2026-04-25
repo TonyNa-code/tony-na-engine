@@ -71,6 +71,7 @@ const ASSET_TYPE_LABELS = {
   voice: "语音",
   video: "视频",
   ui: "界面素材",
+  font: "字体",
 };
 
 const ASSET_PRESET_TAGS = {
@@ -82,6 +83,7 @@ const ASSET_PRESET_TAGS = {
   voice: ["女主", "主角", "日常", "情绪", "告白", "独白"],
   video: ["OP", "ED", "PV", "过场"],
   ui: ["按钮", "对话框", "名字框", "图标", "菜单"],
+  font: ["正文", "标题", "圆体", "宋体", "手写", "授权确认"],
 };
 
 const ASSET_FILTER_MODE_LABELS = {
@@ -1475,6 +1477,8 @@ const DEFAULT_PROJECT_GAME_UI_CONFIG = {
   layoutPreset: "balanced",
   titleLayout: "center",
   fontStyle: "modern",
+  fontFamily: "",
+  fontAssetId: "",
   surfaceStyle: "glass",
   brandMode: "project",
   sidePanelMode: "full",
@@ -9147,6 +9151,8 @@ function getProjectGameUiConfig(project = state.data?.project) {
     layoutPreset: getSafeProjectGameUiLayoutPreset(source.layoutPreset ?? base.layoutPreset),
     titleLayout: getSafeProjectGameUiTitleLayout(source.titleLayout ?? base.titleLayout),
     fontStyle: getSafeProjectGameUiFontStyle(source.fontStyle ?? base.fontStyle),
+    fontFamily: String(source.fontFamily ?? base.fontFamily ?? "").trim().slice(0, 80),
+    fontAssetId: String(source.fontAssetId ?? base.fontAssetId ?? "").trim(),
     surfaceStyle: getSafeProjectGameUiSurfaceStyle(source.surfaceStyle ?? base.surfaceStyle),
     brandMode: getSafeProjectGameUiBrandMode(source.brandMode ?? base.brandMode),
     sidePanelMode: getSafeProjectGameUiSidePanelMode(source.sidePanelMode ?? base.sidePanelMode),
@@ -29566,7 +29572,8 @@ function buildGameUiAssetSelectOptions(selectedAssetId = "", allowedTypes = ["ui
   }
 
   if (!assets.length) {
-    options.push(`<option value="" disabled>当前还没有可用素材，可先去素材库导入 UI 图</option>`);
+    const typeHint = allowedTypes.map((type) => getAssetTypeLabel(type)).join(" / ") || "素材";
+    options.push(`<option value="" disabled>当前还没有可用${escapeHtml(typeHint)}，可先去素材库导入</option>`);
     return options.join("");
   }
 
@@ -29847,6 +29854,22 @@ function renderProjectRuntimeSettingsPanel() {
                       `<option value="${style}" ${gameUiConfig.fontStyle === style ? "selected" : ""}>${escapeHtml(label)}</option>`
                   )
                   .join("")}
+              </select>
+            </label>
+            <label class="playback-setting">
+              <span>系统字体族</span>
+              <input
+                id="projectGameUiFontFamilyInput"
+                type="text"
+                maxlength="80"
+                placeholder="例如 Noto Serif CJK SC"
+                value="${escapeHtml(gameUiConfig.fontFamily)}"
+              />
+            </label>
+            <label class="playback-setting">
+              <span>字体素材</span>
+              <select id="projectGameUiFontAssetSelect">
+                ${buildGameUiAssetSelectOptions(gameUiConfig.fontAssetId, ["font"], "使用系统字体族 / 默认字体")}
               </select>
             </label>
             <label class="playback-setting">
@@ -30170,6 +30193,8 @@ function readProjectGameUiConfigFromInputs() {
       layoutPreset: document.getElementById("projectGameUiLayoutPresetSelect")?.value,
       titleLayout: document.getElementById("projectGameUiTitleLayoutSelect")?.value,
       fontStyle: document.getElementById("projectGameUiFontStyleSelect")?.value,
+      fontFamily: document.getElementById("projectGameUiFontFamilyInput")?.value,
+      fontAssetId: document.getElementById("projectGameUiFontAssetSelect")?.value,
       surfaceStyle: document.getElementById("projectGameUiSurfaceStyleSelect")?.value,
       brandMode: document.getElementById("projectGameUiBrandModeSelect")?.value,
       sidePanelMode: document.getElementById("projectGameUiSidePanelModeSelect")?.value,

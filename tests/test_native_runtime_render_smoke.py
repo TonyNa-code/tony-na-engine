@@ -109,6 +109,8 @@ class NativeRuntimeRenderSmokeTests(unittest.TestCase):
                     "preset": "custom",
                     "titleBackgroundAssetId": "title_background",
                     "titleLogoAssetId": "title_logo",
+                    "fontStyle": "serif",
+                    "fontFamily": "Noto Sans CJK SC",
                     "panelFrameAssetId": "panel_frame",
                     "panelFrameOpacity": 68,
                     "panelFrameSlice": {"top": 8, "right": 8, "bottom": 8, "left": 8},
@@ -314,6 +316,27 @@ class NativeRuntimeRenderSmokeTests(unittest.TestCase):
         for render_step in render_steps:
             render_step()
             self.assert_screen_has_pixels(player)
+
+        player.start_story_from_title()
+        player.render()
+        self.assert_screen_has_pixels(player)
+        self.assertGreaterEqual(len(player.text_history), 1)
+        self.assertTrue(player.font_source_status)
+
+        player.open_text_history_overlay()
+        player.render()
+        self.assert_screen_has_pixels(player)
+        player.close_overlay(preserve_status=True)
+
+        player.toggle_auto_play()
+        self.assertTrue(player.auto_play_enabled)
+        self.assertFalse(player.skip_read_enabled)
+        player.toggle_skip_read()
+        self.assertTrue(player.skip_read_enabled)
+        self.assertFalse(player.auto_play_enabled)
+        player.stop_flow_assist()
+        self.assertFalse(player.auto_play_enabled)
+        self.assertFalse(player.skip_read_enabled)
 
         player.overlay_mode = None
         player.current_choices = [

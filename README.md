@@ -141,7 +141,7 @@ python run_editor.py
 说明：
 
 - `Windows / macOS / Linux 桌面包` 当前主要走 NW.js 桌面 Runtime
-- `原生 Runtime 包` 是正在推进中的新路线，当前已经覆盖标题页主菜单、基础剧情主链、正式存档/读档、系统菜单设置项、玩家档案/自动续玩、基础粒子与镜头演出、视频卡片系统播放器桥接，以及第一批资料馆和详情查看能力；导出包内会附带发布前自检报告、崩溃日志能力和 PyInstaller 脚本，可在 macOS / Windows / Linux 目标系统继续打成 Preview App
+- `原生 Runtime 包` 是正在推进中的新路线，当前已经覆盖标题页主菜单、基础剧情主链、正式存档/读档、系统菜单设置项、文本历史、自动播放、已读快进、项目字体、玩家档案/自动续玩、基础粒子与镜头演出、视频卡片系统播放器桥接，以及第一批资料馆和详情查看能力；导出包内会附带发布前自检报告、崩溃日志能力和 PyInstaller 脚本，可在 macOS / Windows / Linux 目标系统继续打成 Preview App
 - `手机端 Runtime` 目前处于实验规划阶段，不走 PyInstaller；更适合先用 WebView / 网页 Runtime 验证触控和音频策略，再决定是否做 Android / iOS 独立原生壳
 - Release 附件应优先使用发布工具生成的清单校验；维护者可运行 `python3 tools/release/prepare_preview_release.py --release-tag v0.1.0-preview` 检查 GitHub Release 页面是否漏传或混入旧包
 - 发布前建议按 [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md) 做一次 Preview 发布体检

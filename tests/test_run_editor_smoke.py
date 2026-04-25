@@ -302,6 +302,8 @@ class RunEditorSmokeTests(unittest.TestCase):
                 "layoutPreset": "cinematic",
                 "titleLayout": "poster",
                 "fontStyle": "serif",
+                "fontFamily": "Noto Serif CJK SC",
+                "fontAssetId": "font_story_serif",
                 "surfaceStyle": "minimal",
                 "brandMode": "hidden",
                 "sidePanelMode": "hidden",
@@ -379,6 +381,8 @@ class RunEditorSmokeTests(unittest.TestCase):
         self.assertEqual(saved_project["gameUiConfig"]["layoutPreset"], "cinematic")
         self.assertEqual(saved_project["gameUiConfig"]["titleLayout"], "poster")
         self.assertEqual(saved_project["gameUiConfig"]["fontStyle"], "serif")
+        self.assertEqual(saved_project["gameUiConfig"]["fontFamily"], "Noto Serif CJK SC")
+        self.assertEqual(saved_project["gameUiConfig"]["fontAssetId"], "font_story_serif")
         self.assertEqual(saved_project["gameUiConfig"]["brandMode"], "hidden")
         self.assertEqual(saved_project["gameUiConfig"]["sidePanelMode"], "hidden")
         self.assertEqual(saved_project["gameUiConfig"]["sidePanelPosition"], "left")
@@ -420,6 +424,14 @@ class RunEditorSmokeTests(unittest.TestCase):
 
         self.assertEqual(asset["type"], "background")
         self.assertTrue((run_editor.TEMPLATE_DIR / asset["path"]).is_file())
+
+        font_import = run_editor.import_assets(
+            "auto",
+            [build_upload_payload("story_font.ttf", b"fake-font-data")],
+        )
+        font_asset = font_import["assets"][0]
+        self.assertEqual(font_asset["type"], "font")
+        self.assertTrue(font_asset["path"].startswith("assets/fonts/"))
 
         self.save_scene_with_blocks(
             chapter_result["chapterId"],

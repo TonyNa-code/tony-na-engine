@@ -20,6 +20,7 @@ from pathlib import Path
 
 
 ASSET_TYPE_IMAGE = {"background", "sprite", "cg", "ui"}
+ASSET_TYPE_FONT = {"font"}
 DEFAULT_GAME_DATA_NAME = "game_data.json"
 ENGINE_BRAND_LOGO_RELATIVE_PATH = "assets/brand-logo.png"
 NATIVE_VIDEO_OPTIONAL_REQUIREMENTS_NAME = "requirements-native-runtime-video.txt"
@@ -103,6 +104,8 @@ DEFAULT_GAME_UI_CONFIG = {
     "layoutPreset": "balanced",
     "titleLayout": "center",
     "fontStyle": "modern",
+    "fontFamily": "",
+    "fontAssetId": "",
     "surfaceStyle": "glass",
     "brandMode": "project",
     "sidePanelMode": "full",
@@ -240,6 +243,7 @@ DEFAULT_RUNTIME_PLAYER_SETTINGS = {
     "themeMode": "auto",
     "displayMode": "windowed",
     "textSpeed": "normal",
+    "autoPlayDelayMs": 1800,
     "masterVolume": 100,
     "bgmVolume": 85,
     "sfxVolume": 90,
@@ -268,8 +272,10 @@ TEXT_SPEED_LABELS = {
     "fast": "快",
     "instant": "瞬时",
 }
+AUTO_PLAY_DELAY_PRESETS = (900, 1400, 1800, 2400, 3200)
 SYSTEM_MENU_ITEMS = [
     ("continue", "继续"),
+    ("history", "文本历史"),
     ("archives", "资料馆"),
     ("profile", "玩家档案"),
     ("auto-resume", "续玩记录"),
@@ -293,6 +299,7 @@ SETTINGS_MENU_ITEMS = [
     ("themeMode", "界面主题"),
     ("displayMode", "显示模式"),
     ("textSpeed", "文字速度"),
+    ("autoPlayDelayMs", "自动播放间隔"),
     ("masterVolume", "总音量"),
     ("bgmVolume", "BGM 音量"),
     ("sfxVolume", "音效音量"),
@@ -361,6 +368,7 @@ DEPTH_BLUR_ALPHA = {"soft": 24, "medium": 42, "strong": 64}
 SUPPORTED_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".webp"}
 SUPPORTED_AUDIO_EXTENSIONS = {".ogg", ".wav", ".mp3"}
 SUPPORTED_VIDEO_EXTENSIONS = {".mp4", ".webm", ".mov", ".m4v"}
+SUPPORTED_FONT_EXTENSIONS = {".ttf", ".otf", ".ttc"}
 LARGE_IMAGE_WARNING_BYTES = 18 * 1024 * 1024
 LARGE_AUDIO_WARNING_BYTES = 30 * 1024 * 1024
 LARGE_VIDEO_WARNING_BYTES = 300 * 1024 * 1024
@@ -727,6 +735,40 @@ def build_release_check_report(bundle_dir: Path) -> dict:
                 export_url or check_path,
             )
 
+    font_asset_id = str(game_ui_config.get("fontAssetId") or "").strip()
+    if font_asset_id:
+        font_asset = asset_by_id.get(font_asset_id)
+        if not font_asset:
+            add_release_check_issue(
+                issues,
+                "warning",
+                "font_asset_reference_missing",
+                f"项目字体引用了不存在的素材：{font_asset_id}",
+                "重新选择字体素材或清空字体绑定；Runtime 会回退到系统字体。",
+                f"project.gameUiConfig.fontAssetId={font_asset_id}",
+            )
+        else:
+            font_export_url = str(font_asset.get("exportUrl") or "").strip()
+            font_asset_path = bundle_dir / font_export_url if font_export_url else None
+            if font_asset.get("isMissing") or not font_export_url or not font_asset_path or not font_asset_path.is_file():
+                add_release_check_issue(
+                    issues,
+                    "warning",
+                    "font_asset_file_missing",
+                    f"项目字体文件不可用：{font_asset.get('name') or font_asset_id}",
+                    "重新导入字体文件，或改用系统字体族。",
+                    font_export_url or font_asset_id,
+                )
+            elif font_asset_path.suffix.lower() not in SUPPORTED_FONT_EXTENSIONS:
+                add_release_check_issue(
+                    issues,
+                    "warning",
+                    "font_extension_risk",
+                    f"字体格式可能不稳定：{font_asset.get('name') or font_asset_id} ({font_asset_path.suffix or '无扩展名'})",
+                    "建议使用 ttf、otf 或 ttc，并确认字体授权允许随游戏分发。",
+                    font_export_url,
+                )
+
     for asset in assets:
         if not isinstance(asset, dict):
             continue
@@ -774,6 +816,15 @@ def build_release_check_report(bundle_dir: Path) -> dict:
                 "audio_extension_risk",
                 f"音频素材格式可能不稳定：{asset_name} ({extension or '无扩展名'})",
                 "建议使用 ogg、wav 或 mp3，并在目标系统实机听一遍。",
+                export_url,
+            )
+        if asset_type == "font" and extension not in SUPPORTED_FONT_EXTENSIONS:
+            add_release_check_issue(
+                issues,
+                "warning",
+                "font_extension_risk",
+                f"字体素材格式可能不稳定：{asset_name} ({extension or '无扩展名'})",
+                "建议使用 ttf、otf 或 ttc，并确认字体授权允许随游戏分发。",
                 export_url,
             )
         if asset_type == "video":
@@ -2006,6 +2057,8 @@ def get_project_game_ui_config(project: dict | None) -> dict:
             base["titleLayout"],
         ),
         "fontStyle": get_safe_option(source.get("fontStyle"), {"modern", "serif", "rounded"}, base["fontStyle"]),
+        "fontFamily": str(source.get("fontFamily") or base.get("fontFamily") or "").strip()[:80],
+        "fontAssetId": str(source.get("fontAssetId") or base.get("fontAssetId") or "").strip(),
         "surfaceStyle": get_safe_option(
             source.get("surfaceStyle"),
             {"glass", "solid", "minimal"},
@@ -2408,6 +2461,12 @@ def sanitize_runtime_player_settings(value: dict | None) -> dict:
         "themeMode": theme_mode,
         "displayMode": display_mode,
         "textSpeed": text_speed,
+        "autoPlayDelayMs": clamp_int(
+            source.get("autoPlayDelayMs"),
+            min(AUTO_PLAY_DELAY_PRESETS),
+            max(AUTO_PLAY_DELAY_PRESETS),
+            DEFAULT_RUNTIME_PLAYER_SETTINGS["autoPlayDelayMs"],
+        ),
         "masterVolume": clamp_int(source.get("masterVolume"), 0, 100, DEFAULT_RUNTIME_PLAYER_SETTINGS["masterVolume"]),
         "bgmVolume": clamp_int(source.get("bgmVolume"), 0, 100, DEFAULT_RUNTIME_PLAYER_SETTINGS["bgmVolume"]),
         "sfxVolume": clamp_int(source.get("sfxVolume"), 0, 100, DEFAULT_RUNTIME_PLAYER_SETTINGS["sfxVolume"]),
@@ -2621,6 +2680,7 @@ class NativeRuntimePlayer:
         self.active_display_mode = "windowed"
         pygame.display.set_caption(f"{self.project.get('title') or 'Tony Na Engine'} · 原生 Runtime")
 
+        self.font_source_status = "系统字体"
         self.font_small = self._create_font(22)
         self.font_body = self._create_font(30)
         self.font_title = self._create_font(36, bold=True)
@@ -2649,6 +2709,14 @@ class NativeRuntimePlayer:
         self.overlay_hotspots: list[dict] = []
         self.video_hotspots: list[dict] = []
         self.video_preview_frame_cache: dict[str, dict] = {}
+        self.text_history: list[dict] = []
+        self.text_history_seen_keys: set[str] = set()
+        self.read_text_keys: set[str] = set()
+        self.history_scroll_index = 0
+        self.auto_play_enabled = False
+        self.auto_play_deadline_ms = 0
+        self.skip_read_enabled = False
+        self.skip_deadline_ms = 0
         self.system_menu_index = 0
         self.title_menu_index = 0
         self.settings_menu_index = 0
@@ -2695,24 +2763,54 @@ class NativeRuntimePlayer:
         self.record_player_session_start()
         self.open_title_screen()
 
+    def get_project_font_asset_path(self) -> Path | None:
+        font_asset_id = str(self.game_ui_config.get("fontAssetId") or "").strip()
+        if not font_asset_id:
+            return None
+        asset = self.assets_by_id.get(font_asset_id)
+        asset_path = get_asset_runtime_path(self.bundle_dir, asset)
+        if not asset_path or asset_path.suffix.lower() not in SUPPORTED_FONT_EXTENSIONS:
+            return None
+        return asset_path
+
+    def get_font_candidate_names(self) -> list[str]:
+        explicit_family = str(self.game_ui_config.get("fontFamily") or "").strip()
+        font_style = str(self.game_ui_config.get("fontStyle") or "modern")
+        style_candidates = {
+            "serif": ["Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", "SimSun", "STSong"],
+            "rounded": ["PingFang SC", "Microsoft YaHei UI", "Noto Sans CJK SC", "Arial Rounded MT Bold"],
+            "modern": ["PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC"],
+        }.get(font_style, [])
+        fallback_candidates = ["WenQuanYi Zen Hei", "SimHei", "Arial Unicode MS", "Arial"]
+        candidates = []
+        for name in [explicit_family, *style_candidates, *fallback_candidates]:
+            if name and name not in candidates:
+                candidates.append(name)
+        return candidates
+
     def _create_font(self, size: int, bold: bool = False):
-        candidates = [
-            "PingFang SC",
-            "Hiragino Sans GB",
-            "Microsoft YaHei",
-            "Noto Sans CJK SC",
-            "Source Han Sans SC",
-            "WenQuanYi Zen Hei",
-            "SimHei",
-            "Arial Unicode MS",
-        ]
+        font_asset_path = self.get_project_font_asset_path()
+        if font_asset_path:
+            try:
+                font = self.pygame.font.Font(str(font_asset_path), size)
+                if bold and hasattr(font, "set_bold"):
+                    font.set_bold(True)
+                self.font_source_status = f"项目字体：{font_asset_path.name}"
+                return font
+            except Exception:
+                self.font_source_status = "项目字体加载失败，已回退系统字体"
+
+        candidates = self.get_font_candidate_names()
         for name in candidates:
             try:
                 font = self.pygame.font.SysFont(name, size, bold=bold)
                 if font:
+                    if not self.font_source_status.startswith("项目字体加载失败"):
+                        self.font_source_status = f"系统字体：{name}"
                     return font
             except Exception:
                 continue
+        self.font_source_status = "Pygame 默认字体"
         return self.pygame.font.Font(None, size)
 
     def _initialize_audio(self) -> None:
@@ -3373,6 +3471,8 @@ class NativeRuntimePlayer:
         self.current_line_full_text = str(text or "")
         self.current_line_revealed_chars = 0
         self.current_line_started_at_ms = self.pygame.time.get_ticks()
+        self.auto_play_deadline_ms = 0
+        self.skip_deadline_ms = 0
         if self.runtime_settings.get("textSpeed") == "instant":
             self.reveal_current_line_immediately()
 
@@ -3396,6 +3496,109 @@ class NativeRuntimePlayer:
     def get_current_line_render_text(self) -> str:
         self.update_current_line_reveal()
         return self.current_line_full_text[: self.current_line_revealed_chars]
+
+    def build_text_history_key(self, scene: dict | None, block_index: int, block_type: str) -> str:
+        scene_id = str((scene or {}).get("id") or self.current_scene_id or "")
+        return f"{scene_id}:{int(block_index)}:{block_type}"
+
+    def get_line_speaker_name(self, line: dict) -> str:
+        speaker_id = line.get("speakerId")
+        if line.get("type") == "dialogue":
+            character = self.characters_by_id.get(speaker_id) or {}
+            return str(character.get("displayName") or speaker_id or "角色")
+        if line.get("speakerName"):
+            return str(line.get("speakerName") or "")
+        if line.get("blockLabel"):
+            return str(line.get("blockLabel") or "")
+        return "旁白"
+
+    def record_text_history(self, line: dict, scene: dict | None, block_index: int) -> None:
+        text = str(line.get("text") or "").strip()
+        if not text:
+            return
+        block_type = str(line.get("type") or "")
+        history_key = self.build_text_history_key(scene, block_index, block_type)
+        line["historyKey"] = history_key
+        if history_key in self.text_history_seen_keys:
+            return
+        self.text_history_seen_keys.add(history_key)
+        self.text_history.append(
+            {
+                "key": history_key,
+                "sceneName": str((scene or {}).get("name") or self.get_current_scene_name()),
+                "speakerName": self.get_line_speaker_name(line),
+                "text": text,
+                "blockType": block_type,
+            }
+        )
+        self.text_history = self.text_history[-120:]
+        self.history_scroll_index = max(0, len(self.text_history) - 1)
+
+    def mark_current_line_read(self) -> None:
+        if not self.current_line:
+            return
+        history_key = str(self.current_line.get("historyKey") or "")
+        if history_key:
+            self.read_text_keys.add(history_key)
+
+    def open_text_history_overlay(self) -> None:
+        self.overlay_mode = "history"
+        self.history_scroll_index = max(0, len(self.text_history) - 1)
+        self.status_message = "文本历史已打开。"
+
+    def toggle_auto_play(self) -> None:
+        self.auto_play_enabled = not self.auto_play_enabled
+        if self.auto_play_enabled:
+            self.skip_read_enabled = False
+            self.auto_play_deadline_ms = 0
+            self.status_message = "自动播放已开启。"
+        else:
+            self.status_message = "自动播放已关闭。"
+
+    def toggle_skip_read(self) -> None:
+        self.skip_read_enabled = not self.skip_read_enabled
+        if self.skip_read_enabled:
+            self.auto_play_enabled = False
+            self.skip_deadline_ms = 0
+            self.status_message = "已读快进已开启，遇到未读文本或选项会停下。"
+        else:
+            self.status_message = "已读快进已关闭。"
+
+    def stop_flow_assist(self) -> None:
+        self.auto_play_enabled = False
+        self.skip_read_enabled = False
+        self.auto_play_deadline_ms = 0
+        self.skip_deadline_ms = 0
+
+    def update_flow_assist(self) -> None:
+        if self.overlay_mode or self.current_choices or self.finished or not self.current_line:
+            return
+        if self.current_line.get("type") == "video_play":
+            return
+        now_ms = self.pygame.time.get_ticks()
+        if self.skip_read_enabled:
+            history_key = str(self.current_line.get("historyKey") or "")
+            if history_key not in self.read_text_keys:
+                self.skip_read_enabled = False
+                self.status_message = "已读快进已停下：这里是未读文本。"
+                return
+            if not self.is_current_line_fully_visible():
+                self.reveal_current_line_immediately()
+            if self.skip_deadline_ms <= 0:
+                self.skip_deadline_ms = now_ms + 90
+                return
+            if now_ms >= self.skip_deadline_ms:
+                self.advance_current_line_if_allowed()
+                self.skip_deadline_ms = 0
+            return
+        if self.auto_play_enabled and self.is_current_line_fully_visible():
+            if self.auto_play_deadline_ms <= 0:
+                delay_ms = int(self.runtime_settings.get("autoPlayDelayMs") or DEFAULT_RUNTIME_PLAYER_SETTINGS["autoPlayDelayMs"])
+                self.auto_play_deadline_ms = now_ms + max(400, delay_ms)
+                return
+            if now_ms >= self.auto_play_deadline_ms:
+                self.advance_current_line_if_allowed()
+                self.auto_play_deadline_ms = 0
 
     def handle_scene_finished(self, scene: dict | None) -> None:
         self.unlock_relation_entries_for_scene(scene)
@@ -3847,6 +4050,9 @@ class NativeRuntimePlayer:
         if item_key == "continue":
             self.close_overlay()
             return True
+        if item_key == "history":
+            self.open_text_history_overlay()
+            return True
         if item_key == "archives":
             self.open_archive_overlay()
             return True
@@ -3966,6 +4172,11 @@ class NativeRuntimePlayer:
             self.runtime_settings["textSpeed"] = options[(current_index + direction) % len(options)]
             if self.current_line and not self.is_current_line_fully_visible():
                 self.start_current_line_display(self.current_line_full_text)
+        elif setting_key == "autoPlayDelayMs":
+            current = int(self.runtime_settings.get("autoPlayDelayMs") or DEFAULT_RUNTIME_PLAYER_SETTINGS["autoPlayDelayMs"])
+            options = list(AUTO_PLAY_DELAY_PRESETS)
+            current_index = min(range(len(options)), key=lambda index: abs(options[index] - current))
+            self.runtime_settings["autoPlayDelayMs"] = options[(current_index + direction) % len(options)]
         elif setting_key in {"masterVolume", "bgmVolume", "sfxVolume", "voiceVolume"}:
             current_value = int(self.runtime_settings.get(setting_key) or DEFAULT_RUNTIME_PLAYER_SETTINGS[setting_key])
             self.runtime_settings[setting_key] = clamp_int(current_value + direction * 5, 0, 100, current_value)
@@ -3987,6 +4198,8 @@ class NativeRuntimePlayer:
         if setting_key == "textSpeed":
             speed_key = str(self.runtime_settings.get("textSpeed") or "normal")
             return TEXT_SPEED_LABELS.get(speed_key, speed_key)
+        if setting_key == "autoPlayDelayMs":
+            return f"{int(self.runtime_settings.get('autoPlayDelayMs') or DEFAULT_RUNTIME_PLAYER_SETTINGS['autoPlayDelayMs']) / 1000:.1f} 秒"
         return f"{int(self.runtime_settings.get(setting_key) or 0)}%"
 
     def activate_archive_entry(self, entry: dict | None) -> bool:
@@ -4387,6 +4600,7 @@ class NativeRuntimePlayer:
         if block_type == "choice":
             self.current_choices = block.get("options", []) or []
             self.current_choice_index = 0
+            self.stop_flow_assist()
             return
         if block_type in {"dialogue", "narration"}:
             line_text = str(block.get("text") or "")
@@ -4398,6 +4612,7 @@ class NativeRuntimePlayer:
                 "blockLabel": get_block_label(block_type),
             }
             self.sync_archive_progress_for_pause(scene, block, self.current_block_index)
+            self.record_text_history(self.current_line, scene, self.current_block_index)
             self.start_current_line_display(line_text)
             if block_type == "dialogue":
                 self.sync_expression_for_dialogue(block)
@@ -4514,6 +4729,7 @@ class NativeRuntimePlayer:
                     "blockLabel": get_block_label(block_type),
                 }
                 self.stop_voice()
+                self.record_text_history(self.current_line, scene, self.current_block_index)
                 self.start_current_line_display(text)
                 self.reveal_current_line_immediately()
                 self.status_message = "视频卡片：按 V 播放，Enter 继续"
@@ -4536,6 +4752,7 @@ class NativeRuntimePlayer:
                     "blockLabel": get_block_label(block_type),
                 }
                 self.stop_voice()
+                self.record_text_history(self.current_line, scene, self.current_block_index)
                 self.start_current_line_display(text)
                 self.reveal_current_line_immediately()
                 self.status_message = "片尾字幕：按继续推进"
@@ -4563,6 +4780,7 @@ class NativeRuntimePlayer:
                 options = block.get("options", []) or []
                 self.current_choices = options
                 self.current_choice_index = 0
+                self.stop_flow_assist()
                 self.status_message = f"当前为选项卡：{len(options)} 个分支"
                 return
 
@@ -4576,6 +4794,7 @@ class NativeRuntimePlayer:
                     "blockLabel": get_block_label(block_type),
                 }
                 self.sync_archive_progress_for_pause(scene, block, self.current_block_index)
+                self.record_text_history(self.current_line, scene, self.current_block_index)
                 self.start_current_line_display(line_text)
                 if block_type == "dialogue":
                     self.sync_expression_for_dialogue(block)
@@ -4844,6 +5063,7 @@ class NativeRuntimePlayer:
             if not self.is_current_line_fully_visible():
                 self.reveal_current_line_immediately()
                 return
+            self.mark_current_line_read()
             self.current_line = None
             self.current_block_index += 1
             self.advance_until_pause()
@@ -5029,10 +5249,18 @@ class NativeRuntimePlayer:
         controls = (
             "↑↓：选择 · Enter：确认 · F11：全屏 · Esc：退出"
             if self.overlay_mode == "title"
-            else "F1：系统 · F6：正式存档 · F7：读档 · F5：快存 · F8：快读 · F11：全屏 · Esc：关闭/退出"
+            else "F1：系统 · H：历史 · A：自动 · S：已读快进 · F6/F7：存读 · F11：全屏"
         )
         control_surface = self.font_ui.render(controls, True, palette["muted"])
         self.screen.blit(control_surface, (self.width - control_surface.get_width() - 36, 30))
+        mode_labels = []
+        if self.auto_play_enabled:
+            mode_labels.append("AUTO")
+        if self.skip_read_enabled:
+            mode_labels.append("SKIP READ")
+        if mode_labels:
+            mode_surface = self.font_ui.render(" · ".join(mode_labels), True, palette["accent"])
+            self.screen.blit(mode_surface, (self.width - mode_surface.get_width() - 36, 52))
 
     def render_dialogue(self) -> None:
         line = self.current_line or {}
@@ -5294,6 +5522,8 @@ class NativeRuntimePlayer:
             self.render_save_dialog_overlay()
         elif self.overlay_mode == "system":
             self.render_system_menu_overlay()
+        elif self.overlay_mode == "history":
+            self.render_text_history_overlay()
         elif self.overlay_mode == "profile":
             self.render_profile_overlay()
         elif self.overlay_mode == "auto-resume":
@@ -5688,9 +5918,48 @@ class NativeRuntimePlayer:
             (panel.left + 26, panel.bottom - 44),
         )
 
+    def render_text_history_overlay(self) -> None:
+        palette = self.get_active_palette()
+        panel = self.pygame.Rect(0, 0, min(self.width - 88, 860), min(self.height - 96, 620))
+        panel.center = (self.width // 2, self.height // 2)
+        self.pygame.draw.rect(self.screen, (*palette["panel"], 246), panel, border_radius=28)
+        self.pygame.draw.rect(self.screen, with_alpha(palette["panelBorder"], 72), panel, 2, border_radius=28)
+        self.draw_game_ui_panel_frame(panel, "system")
+        self.screen.blit(self.font_title.render("文本历史", True, palette["text"]), (panel.left + 28, panel.top + 24))
+        subtitle = f"已记录 {len(self.text_history)} 条 · 字体：{self.font_source_status}"
+        self.screen.blit(self.font_ui.render(subtitle[:72], True, palette["muted"]), (panel.left + 28, panel.top + 60))
+
+        list_rect = self.pygame.Rect(panel.left + 28, panel.top + 98, panel.width - 56, panel.height - 164)
+        self.pygame.draw.rect(self.screen, with_alpha(palette["accent"], 16), list_rect, border_radius=20)
+        self.pygame.draw.rect(self.screen, with_alpha(palette["panelBorder"], 24), list_rect, 1, border_radius=20)
+        if not self.text_history:
+            self.blit_text_center(self.font_body, "还没有历史文本", list_rect.centerx, list_rect.centery - 18, palette["muted"])
+        else:
+            visible_count = max(1, list_rect.height // 104)
+            max_start = max(0, len(self.text_history) - visible_count)
+            start = max(0, min(max_start, self.history_scroll_index - visible_count + 1))
+            y = list_rect.top + 16
+            for item in self.text_history[start : start + visible_count]:
+                speaker = str(item.get("speakerName") or "旁白")
+                scene_name = str(item.get("sceneName") or "")
+                header = f"{speaker} · {scene_name}" if scene_name else speaker
+                self.screen.blit(self.font_ui.render(header[:56], True, palette["accent"]), (list_rect.left + 18, y))
+                text_rect = self.pygame.Rect(list_rect.left + 18, y + 24, list_rect.width - 36, 62)
+                self.blit_wrapped_text(self.font_ui, str(item.get("text") or ""), text_rect, palette["text"], line_gap=4, max_lines=3)
+                y += 104
+
+        close_rect = self.pygame.Rect(panel.right - 138, panel.bottom - 56, 108, 34)
+        self.pygame.draw.rect(self.screen, with_alpha(palette["panel"], 58), close_rect, border_radius=14)
+        self.pygame.draw.rect(self.screen, with_alpha(palette["panelBorder"], 42), close_rect, 1, border_radius=14)
+        self.draw_game_ui_button_frame(close_rect, self.get_game_ui_button_state(close_rect))
+        self.blit_text_center(self.font_ui, "关闭", close_rect.centerx, close_rect.top + 8, palette["text"])
+        self.overlay_hotspots.append({"kind": "close", "rect": close_rect})
+        hint = "↑↓ 滚动 · PageUp/PageDown 快速滚动 · Esc 关闭"
+        self.screen.blit(self.font_ui.render(hint, True, palette["muted"]), (panel.left + 28, panel.bottom - 44))
+
     def render_settings_overlay(self) -> None:
         palette = self.get_active_palette()
-        panel = self.pygame.Rect(0, 0, 560, 486)
+        panel = self.pygame.Rect(0, 0, min(self.width - 72, 600), min(self.height - 48, 500))
         panel.center = (self.width // 2, self.height // 2)
         self.pygame.draw.rect(self.screen, (*palette["panel"], 246), panel, border_radius=28)
         self.pygame.draw.rect(
@@ -5703,14 +5972,20 @@ class NativeRuntimePlayer:
         self.draw_game_ui_panel_frame(panel, "system")
         self.screen.blit(self.font_title.render("体验设置", True, palette["text"]), (panel.left + 28, panel.top + 24))
         self.screen.blit(
-            self.font_ui.render("主题 / 显示模式 / 文字速度 / 四路音量", True, palette["muted"]),
+            self.font_ui.render("主题 / 显示模式 / 文字速度 / 自动播放 / 四路音量", True, palette["muted"]),
             (panel.left + 28, panel.top + 58),
         )
 
         button_top = panel.top + 96
         row_height = 44
-        for index, (setting_key, setting_label) in enumerate(SETTINGS_MENU_ITEMS):
-            row_rect = self.pygame.Rect(panel.left + 24, button_top + index * row_height, panel.width - 48, 36)
+        available_height = max(row_height, panel.bottom - 70 - button_top)
+        visible_count = max(1, min(len(SETTINGS_MENU_ITEMS), available_height // row_height))
+        max_start = max(0, len(SETTINGS_MENU_ITEMS) - visible_count)
+        visible_start = max(0, min(max_start, self.settings_menu_index - visible_count + 1))
+        visible_items = SETTINGS_MENU_ITEMS[visible_start : visible_start + visible_count]
+        for offset, (setting_key, setting_label) in enumerate(visible_items):
+            index = visible_start + offset
+            row_rect = self.pygame.Rect(panel.left + 24, button_top + offset * row_height, panel.width - 48, 36)
             is_active = index == self.settings_menu_index
             self.pygame.draw.rect(
                 self.screen,
@@ -5734,6 +6009,8 @@ class NativeRuntimePlayer:
             self.screen.blit(self.font_ui.render("▶", True, palette["text"]), (row_rect.right - 16, row_rect.top + 9))
             self.overlay_hotspots.append({"kind": "settings-item", "value": setting_key, "rect": row_rect})
 
+        range_label = f"{visible_start + 1}-{visible_start + len(visible_items)}/{len(SETTINGS_MENU_ITEMS)}"
+        self.screen.blit(self.font_ui.render(range_label, True, palette["muted"]), (panel.right - 96, panel.top + 62))
         hint = "↑↓ 切换 · ←→ 调整 · Enter 切换 · Esc 返回"
         self.screen.blit(self.font_ui.render(hint, True, palette["muted"]), (panel.left + 28, panel.bottom - 44))
 
@@ -6107,6 +6384,15 @@ class NativeRuntimePlayer:
                 return True
             if self.overlay_mode:
                 return self.handle_overlay_event(event)
+            if event.key == self.pygame.K_h:
+                self.open_text_history_overlay()
+                return True
+            if event.key == self.pygame.K_a:
+                self.toggle_auto_play()
+                return True
+            if event.key == self.pygame.K_s:
+                self.toggle_skip_read()
+                return True
 
         if self.overlay_mode and event.type == self.pygame.MOUSEBUTTONDOWN and event.button == 1:
             return self.handle_overlay_event(event)
@@ -6135,6 +6421,8 @@ class NativeRuntimePlayer:
             return self.handle_save_dialog_event(event)
         if self.overlay_mode == "system":
             return self.handle_system_menu_event(event)
+        if self.overlay_mode == "history":
+            return self.handle_text_history_overlay_event(event)
         if self.overlay_mode == "profile":
             return self.handle_profile_overlay_event(event)
         if self.overlay_mode == "auto-resume":
@@ -6247,6 +6535,31 @@ class NativeRuntimePlayer:
             for target in self.overlay_hotspots:
                 if target["kind"] == "system-item" and target["rect"].collidepoint(event.pos):
                     return self.activate_system_menu_item(str(target["value"]))
+        return True
+
+    def handle_text_history_overlay_event(self, event) -> bool:
+        pygame = self.pygame
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_UP:
+                self.history_scroll_index = max(0, self.history_scroll_index - 1)
+                return True
+            if event.key == pygame.K_DOWN:
+                self.history_scroll_index = min(max(0, len(self.text_history) - 1), self.history_scroll_index + 1)
+                return True
+            if event.key == pygame.K_PAGEUP:
+                self.history_scroll_index = max(0, self.history_scroll_index - 5)
+                return True
+            if event.key == pygame.K_PAGEDOWN:
+                self.history_scroll_index = min(max(0, len(self.text_history) - 1), self.history_scroll_index + 5)
+                return True
+            if event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                self.close_overlay()
+                return True
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            for target in self.overlay_hotspots:
+                if target.get("kind") == "close" and target["rect"].collidepoint(event.pos):
+                    self.close_overlay()
+                    return True
         return True
 
     def handle_profile_overlay_event(self, event) -> bool:
@@ -6420,6 +6733,7 @@ class NativeRuntimePlayer:
                     break
             self.update_stage_visual_effects(dt_seconds)
             self.update_particle_effect(dt_seconds)
+            self.update_flow_assist()
             self.render()
 
         self.record_player_session_end()

@@ -80,6 +80,8 @@ DEFAULT_GAME_UI_CONFIG = {
     "layoutPreset": "balanced",
     "titleLayout": "center",
     "fontStyle": "modern",
+    "fontFamily": "",
+    "fontAssetId": "",
     "surfaceStyle": "glass",
     "brandMode": "project",
     "sidePanelMode": "full",
@@ -133,6 +135,7 @@ ASSET_DIRECTORIES = {
     "voice": Path("assets/voice"),
     "video": Path("assets/video"),
     "ui": Path("assets/ui"),
+    "font": Path("assets/fonts"),
 }
 ASSET_ID_PREFIXES = {
     "background": "bg",
@@ -143,6 +146,7 @@ ASSET_ID_PREFIXES = {
     "voice": "voice",
     "video": "video",
     "ui": "ui",
+    "font": "font",
 }
 BLOCK_LABELS = {
     "background": "切换背景",
@@ -172,6 +176,7 @@ BLOCK_LABELS = {
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".avif"}
 AUDIO_EXTENSIONS = {".mp3", ".ogg", ".wav", ".m4a", ".aac", ".flac"}
 VIDEO_EXTENSIONS = {".mp4", ".webm", ".mov", ".m4v"}
+FONT_EXTENSIONS = {".ttf", ".otf", ".ttc"}
 EXPORT_TARGET_WEB = "web"
 EXPORT_TARGET_NATIVE_RUNTIME = "native_runtime"
 EXPORT_TARGET_WINDOWS_NWJS = "windows_nwjs"
@@ -696,6 +701,8 @@ def sanitize_game_ui_config(value: object) -> dict:
             {"modern", "serif", "rounded"},
             defaults["fontStyle"],
         ),
+        "fontFamily": str(source.get("fontFamily") or defaults["fontFamily"]).strip()[:80],
+        "fontAssetId": str(source.get("fontAssetId") or defaults["fontAssetId"]).strip(),
         "surfaceStyle": sanitize_choice(
             source.get("surfaceStyle"),
             {"glass", "solid", "minimal"},
@@ -2472,6 +2479,9 @@ def choose_smart_asset_type(file_name: str, fallback_asset_type: str | None = No
 
     if ext in VIDEO_EXTENSIONS:
         return "video"
+
+    if ext in FONT_EXTENSIONS:
+        return "font"
 
     if ext in AUDIO_EXTENSIONS:
         if has_any("voice", "cv", "line", "vo"):
