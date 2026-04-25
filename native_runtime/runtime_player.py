@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import importlib.util
 import json
 import math
@@ -440,6 +441,15 @@ def is_optional_python_module_available(module_name: str) -> bool:
         return False
 
 
+def import_optional_python_module(module_name: str):
+    if not module_name:
+        return None
+    try:
+        return importlib.import_module(module_name)
+    except Exception:
+        return None
+
+
 def get_native_video_backend_options(bundle_dir: Path | None = None) -> list[dict]:
     candidate_root = bundle_dir or Path(".")
     optional_requirements_name = next(
@@ -493,6 +503,45 @@ def open_external_video(video_path: Path) -> tuple[bool, str]:
     except Exception as error:
         return False, f"打开视频失败：{error}"
     return True, f"已交给{get_external_video_opener_label()}播放。"
+
+
+def load_opencv_video_frame_surface(
+    pygame,
+    video_path: Path,
+    start_time_seconds: float = 0.0,
+    cv2_module=None,
+) -> tuple[object | None, str]:
+    cv2 = cv2_module if cv2_module is not None else import_optional_python_module("cv2")
+    if cv2 is None:
+        return None, "未安装 OpenCV：使用桥接卡"
+    if not video_path.is_file():
+        return None, "视频文件不存在"
+
+    capture = None
+    try:
+        capture = cv2.VideoCapture(str(video_path))
+        if hasattr(capture, "isOpened") and not capture.isOpened():
+            return None, "OpenCV 无法打开视频"
+        if start_time_seconds > 0 and hasattr(cv2, "CAP_PROP_POS_MSEC") and hasattr(capture, "set"):
+            capture.set(cv2.CAP_PROP_POS_MSEC, float(start_time_seconds) * 1000.0)
+        ok, frame = capture.read()
+        if not ok or frame is None:
+            return None, "OpenCV 未读取到画面帧"
+        if hasattr(cv2, "cvtColor") and hasattr(cv2, "COLOR_BGR2RGB"):
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        height, width = frame.shape[:2]
+        if width <= 0 or height <= 0:
+            return None, "视频帧尺寸无效"
+        surface = pygame.image.frombuffer(frame.tobytes(), (int(width), int(height)), "RGB").copy()
+        return surface, "OpenCV 帧预览"
+    except Exception as error:
+        return None, f"OpenCV 帧预览失败：{error}"
+    finally:
+        if capture is not None and hasattr(capture, "release"):
+            try:
+                capture.release()
+            except Exception:
+                pass
 
 
 def validate_bundle(bundle_dir: Path) -> None:
@@ -2239,6 +2288,7 @@ class NativeRuntimePlayer:
         self.overlay_focus_index = 0
         self.overlay_hotspots: list[dict] = []
         self.video_hotspots: list[dict] = []
+        self.video_preview_frame_cache: dict[str, dict] = {}
         self.system_menu_index = 0
         self.title_menu_index = 0
         self.settings_menu_index = 0
@@ -4278,8 +4328,26 @@ class NativeRuntimePlayer:
             )
         if not bool(block.get("skippable", True)):
             lines.append("不可跳过提示：需要先按 V 唤起视频，再回到窗口按 Enter 确认继续。")
-        lines.append("后续如果接入 FFmpeg/OpenCV 等解码后端，这里可以升级为窗口内嵌播放。")
+        lines.append("如果安装可选 OpenCV 依赖，视频卡片会尝试显示剪辑起点附近的一帧预览。")
         return "\n".join(lines)
+
+    def get_video_preview_cache_key(self, line: dict) -> str:
+        video_path_value = str(line.get("videoAssetPath") or "").strip()
+        if not video_path_value:
+            return ""
+        start_time = normalize_video_time_seconds(line.get("videoStartTimeSeconds"))
+        return f"{Path(video_path_value).resolve()}::{start_time:.3f}"
+
+    def get_video_preview_frame_result(self, line: dict) -> dict:
+        cache_key = self.get_video_preview_cache_key(line)
+        if not cache_key:
+            return {"surface": None, "status": "视频文件缺失"}
+        if cache_key not in self.video_preview_frame_cache:
+            video_path_value = str(line.get("videoAssetPath") or "").strip()
+            start_time = normalize_video_time_seconds(line.get("videoStartTimeSeconds"))
+            surface, status = load_opencv_video_frame_surface(self.pygame, Path(video_path_value), start_time)
+            self.video_preview_frame_cache[cache_key] = {"surface": surface, "status": status}
+        return self.video_preview_frame_cache[cache_key]
 
     def open_current_video(self) -> None:
         if not self.current_line or self.current_line.get("type") != "video_play":
@@ -4662,10 +4730,13 @@ class NativeRuntimePlayer:
         title = str(line.get("videoTitle") or "视频播放")
         self.screen.blit(self.font_title.render(title[:34], True, palette["text"]), (panel.left + 30, panel.top + 52))
 
+        preview_result = self.get_video_preview_frame_result(line)
+        preview_frame = preview_result.get("surface")
+        preview_status = str(preview_result.get("status") or "")
         status_labels = [
             "已唤起播放器" if line.get("videoOpened") else "等待播放",
             "不可跳过" if line.get("videoSkippable") is False else "可跳过",
-            "系统播放器桥接",
+            "帧预览可用" if preview_frame else "桥接卡预览",
         ]
         pill_right = panel.right - 30
         for label in reversed(status_labels):
@@ -4683,20 +4754,42 @@ class NativeRuntimePlayer:
         self.pygame.draw.rect(self.screen, with_alpha(palette["panelBorder"], 36), preview_rect, 1, border_radius=24)
         self.draw_game_ui_panel_frame(preview_rect)
 
-        glow_surface = self.pygame.Surface((preview_rect.width, preview_rect.height), self.pygame.SRCALPHA)
-        self.pygame.draw.circle(
-            glow_surface,
-            with_alpha(palette["accent"], 24),
-            (int(preview_rect.width * 0.28), int(preview_rect.height * 0.35)),
-            max(80, preview_rect.height // 2),
-        )
-        self.pygame.draw.circle(
-            glow_surface,
-            with_alpha(palette["accentAlt"], 20),
-            (int(preview_rect.width * 0.78), int(preview_rect.height * 0.18)),
-            max(70, preview_rect.height // 3),
-        )
-        self.screen.blit(glow_surface, preview_rect.topleft)
+        if preview_frame:
+            image_width, image_height = preview_frame.get_size()
+            image_area = preview_rect.inflate(-6, -6)
+            fit_mode = str(line.get("videoFit") or "contain")
+            if fit_mode == "cover":
+                scale = max(image_area.width / max(1, image_width), image_area.height / max(1, image_height))
+            else:
+                scale = min(image_area.width / max(1, image_width), image_area.height / max(1, image_height))
+            scaled = self.pygame.transform.smoothscale(
+                preview_frame,
+                (max(1, int(image_width * scale)), max(1, int(image_height * scale))),
+            )
+            previous_clip = self.screen.get_clip()
+            self.screen.set_clip(preview_rect)
+            self.screen.blit(scaled, scaled.get_rect(center=preview_rect.center))
+            self.screen.set_clip(previous_clip)
+            overlay = self.pygame.Surface((preview_rect.width, preview_rect.height), self.pygame.SRCALPHA)
+            overlay.fill((5, 8, 16, 72))
+            self.screen.blit(overlay, preview_rect.topleft)
+        else:
+            glow_surface = self.pygame.Surface((preview_rect.width, preview_rect.height), self.pygame.SRCALPHA)
+            self.pygame.draw.circle(
+                glow_surface,
+                with_alpha(palette["accent"], 24),
+                (int(preview_rect.width * 0.28), int(preview_rect.height * 0.35)),
+                max(80, preview_rect.height // 2),
+            )
+            self.pygame.draw.circle(
+                glow_surface,
+                with_alpha(palette["accentAlt"], 20),
+                (int(preview_rect.width * 0.78), int(preview_rect.height * 0.18)),
+                max(70, preview_rect.height // 3),
+            )
+            self.screen.blit(glow_surface, preview_rect.topleft)
+        self.pygame.draw.rect(self.screen, with_alpha(palette["panelBorder"], 42), preview_rect, 1, border_radius=24)
+        self.draw_game_ui_panel_frame(preview_rect)
 
         play_radius = max(34, min(62, preview_rect.height // 5))
         self.pygame.draw.circle(self.screen, with_alpha(palette["accent"], 58), preview_rect.center, play_radius)
@@ -4711,10 +4804,14 @@ class NativeRuntimePlayer:
 
         file_label = str(line.get("videoFileName") or "视频文件未找到")
         bridge_hint = "按 V 唤起系统播放器；播放结束后回到这个窗口继续。"
+        if preview_frame:
+            bridge_hint = "已读取视频画面帧；按 V 使用系统播放器完整播放。"
+        elif preview_status:
+            bridge_hint = f"{preview_status}；按 V 唤起系统播放器。"
         if not line.get("videoAssetPath"):
             bridge_hint = "视频文件缺失。可以继续剧情，但正式发布前需要重新导出素材。"
         self.blit_text_center(self.font_body, file_label[:42], preview_rect.centerx, preview_rect.bottom - 72, palette["text"])
-        self.blit_text_center(self.font_ui, bridge_hint, preview_rect.centerx, preview_rect.bottom - 40, palette["muted"])
+        self.blit_text_center(self.font_ui, bridge_hint[:58], preview_rect.centerx, preview_rect.bottom - 40, palette["muted"])
 
         meta_top = preview_rect.bottom + 18
         clip_label = str(line.get("videoClipLabel") or "整段播放")

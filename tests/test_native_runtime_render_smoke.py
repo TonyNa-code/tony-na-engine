@@ -16,7 +16,7 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - CI installs pygame-ce for this suite.
     pygame = None
 
-from native_runtime.runtime_player import NativeRuntimePlayer
+from native_runtime.runtime_player import NativeRuntimePlayer, load_opencv_video_frame_surface
 
 
 UI_ASSET_IDS = [
@@ -171,6 +171,80 @@ class NativeRuntimeRenderSmokeTests(unittest.TestCase):
         image_to_bytes = getattr(pygame.image, "tobytes", pygame.image.tostring)
         frame_bytes = image_to_bytes(player.screen, "RGB")
         self.assertTrue(any(channel != 0 for channel in frame_bytes))
+
+    def test_optional_opencv_video_frame_loader_builds_surface(self) -> None:
+        class FakeFrame:
+            shape = (2, 3, 3)
+
+            def tobytes(self) -> bytes:
+                return bytes(
+                    [
+                        255,
+                        0,
+                        0,
+                        0,
+                        255,
+                        0,
+                        0,
+                        0,
+                        255,
+                        255,
+                        255,
+                        255,
+                        80,
+                        120,
+                        180,
+                        16,
+                        24,
+                        32,
+                    ]
+                )
+
+        class FakeCapture:
+            def __init__(self, video_path: str) -> None:
+                self.video_path = video_path
+                self.seek_calls: list[tuple[int, float]] = []
+                self.released = False
+
+            def isOpened(self) -> bool:
+                return True
+
+            def set(self, prop: int, value: float) -> None:
+                self.seek_calls.append((prop, value))
+
+            def read(self) -> tuple[bool, FakeFrame]:
+                return True, FakeFrame()
+
+            def release(self) -> None:
+                self.released = True
+
+        class FakeCv2:
+            CAP_PROP_POS_MSEC = 101
+            COLOR_BGR2RGB = 202
+            last_capture: FakeCapture | None = None
+
+            @classmethod
+            def VideoCapture(cls, video_path: str) -> FakeCapture:
+                cls.last_capture = FakeCapture(video_path)
+                return cls.last_capture
+
+            @staticmethod
+            def cvtColor(frame: FakeFrame, color_code: int) -> FakeFrame:
+                self.assertEqual(color_code, FakeCv2.COLOR_BGR2RGB)
+                return frame
+
+        video_path = self.bundle_dir / "assets" / "video" / "preview.mp4"
+        video_path.parent.mkdir(parents=True, exist_ok=True)
+        video_path.write_bytes(b"fake-video-container")
+
+        surface, status = load_opencv_video_frame_surface(pygame, video_path, 1.5, cv2_module=FakeCv2)
+
+        self.assertEqual(status, "OpenCV 帧预览")
+        self.assertIsNotNone(surface)
+        self.assertEqual(surface.get_size(), (3, 2))
+        self.assertIsNotNone(FakeCv2.last_capture)
+        self.assertEqual(FakeCv2.last_capture.seek_calls, [(FakeCv2.CAP_PROP_POS_MSEC, 1500.0)])
+        self.assertTrue(FakeCv2.last_capture.released)
 
     def test_native_runtime_renders_ui_skin_overlays_headlessly(self) -> None:
         data_path = self.write_game_data()

@@ -92,7 +92,9 @@ python3 runtime_player.py --describe-video-backends .
 python3 -m pip install -r requirements-native-runtime-video.txt
 ```
 
-这条路线目前只作为实验性候选：OpenCV 可以帮助解码画面帧，但不负责音频播放和音画同步；正式商业级内嵌 OP / ED 仍需要继续评估 FFmpeg/PyAV/平台原生播放器等方案。
+安装后，视频卡片会优先尝试读取剪辑起点附近的一帧作为窗口内预览图；如果读取失败，会自动回落到默认的影院式桥接卡片，不影响玩家按 `V` 调用系统播放器。
+
+这条路线目前仍是实验性候选：OpenCV 可以帮助解码画面帧，但不负责音频播放和音画同步；正式商业级内嵌 OP / ED 仍需要继续评估 FFmpeg/PyAV/平台原生播放器等方案。
 
 ## 快速启动
 
