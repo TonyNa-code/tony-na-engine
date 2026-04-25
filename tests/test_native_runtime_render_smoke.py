@@ -1,0 +1,199 @@
+from __future__ import annotations
+
+import json
+import os
+import tempfile
+import unittest
+import warnings
+from pathlib import Path
+
+os.environ.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")
+os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
+os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+
+try:
+    import pygame
+except ModuleNotFoundError:  # pragma: no cover - CI installs pygame-ce for this suite.
+    pygame = None
+
+from native_runtime.runtime_player import NativeRuntimePlayer
+
+
+UI_ASSET_IDS = [
+    "title_background",
+    "title_logo",
+    "panel_frame",
+    "button_frame",
+    "button_hover_frame",
+    "button_pressed_frame",
+    "button_disabled_frame",
+    "save_slot_frame",
+    "system_panel_frame",
+    "ui_overlay",
+]
+
+
+@unittest.skipIf(pygame is None, "pygame-ce is not installed")
+class NativeRuntimeRenderSmokeTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.original_home = os.environ.get("HOME")
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp_dir.name)
+        os.environ["HOME"] = str(self.root / "home")
+        self.bundle_dir = self.root / "bundle"
+        self.bundle_dir.mkdir(parents=True)
+        pygame.init()
+
+    def tearDown(self) -> None:
+        try:
+            pygame.quit()
+        finally:
+            if self.original_home is None:
+                os.environ.pop("HOME", None)
+            else:
+                os.environ["HOME"] = self.original_home
+            self.temp_dir.cleanup()
+
+    def write_ui_asset(self, asset_id: str, color: tuple[int, int, int, int]) -> dict:
+        asset_path = self.bundle_dir / "assets" / "ui" / f"{asset_id}.png"
+        asset_path.parent.mkdir(parents=True, exist_ok=True)
+        surface = pygame.Surface((32, 32), pygame.SRCALPHA)
+        surface.fill((0, 0, 0, 0))
+        pygame.draw.rect(surface, color, surface.get_rect(), border_radius=6)
+        pygame.draw.rect(surface, (255, 255, 255, 210), surface.get_rect(), width=3, border_radius=6)
+        pygame.image.save(surface, str(asset_path))
+        return {
+            "id": asset_id,
+            "type": "ui",
+            "name": asset_id.replace("_", " ").title(),
+            "exportUrl": asset_path.relative_to(self.bundle_dir).as_posix(),
+            "tags": [],
+        }
+
+    def write_game_data(self) -> Path:
+        assets = [
+            self.write_ui_asset(asset_id, (70 + index * 11, 92 + index * 7, 180, 235))
+            for index, asset_id in enumerate(UI_ASSET_IDS)
+        ]
+        game_data = {
+            "project": {
+                "projectId": "native_render_smoke",
+                "title": "Native Render Smoke",
+                "entrySceneId": "scene_start",
+                "resolution": {"width": 720, "height": 405},
+                "runtimeSettings": {"formalSaveSlotCount": 12},
+                "dialogBoxConfig": {
+                    "preset": "moonlight",
+                    "backgroundOpacity": 88,
+                    "borderOpacity": 28,
+                    "borderWidth": 1,
+                },
+                "gameUiConfig": {
+                    "preset": "custom",
+                    "titleBackgroundAssetId": "title_background",
+                    "titleLogoAssetId": "title_logo",
+                    "panelFrameAssetId": "panel_frame",
+                    "panelFrameOpacity": 68,
+                    "panelFrameSlice": {"top": 8, "right": 8, "bottom": 8, "left": 8},
+                    "buttonFrameAssetId": "button_frame",
+                    "buttonHoverFrameAssetId": "button_hover_frame",
+                    "buttonPressedFrameAssetId": "button_pressed_frame",
+                    "buttonDisabledFrameAssetId": "button_disabled_frame",
+                    "buttonFrameOpacity": 72,
+                    "buttonFrameSlice": {"top": 8, "right": 8, "bottom": 8, "left": 8},
+                    "saveSlotFrameAssetId": "save_slot_frame",
+                    "systemPanelFrameAssetId": "system_panel_frame",
+                    "uiOverlayAssetId": "ui_overlay",
+                    "uiOverlayOpacity": 12,
+                },
+            },
+            "assets": {"assets": assets},
+            "characters": {
+                "characters": [
+                    {
+                        "id": "heroine",
+                        "displayName": "Heroine",
+                        "defaultPosition": "center",
+                        "expressions": [],
+                    }
+                ]
+            },
+            "variables": {"variables": []},
+            "chapters": [
+                {
+                    "id": "chapter_1",
+                    "name": "Chapter 1",
+                    "scenes": [
+                        {
+                            "id": "scene_start",
+                            "name": "Opening",
+                            "blocks": [
+                                {"id": "block_bg", "type": "background", "assetId": "title_background"},
+                                {
+                                    "id": "block_line",
+                                    "type": "dialogue",
+                                    "speakerId": "heroine",
+                                    "text": "Native Runtime render smoke.",
+                                },
+                                {
+                                    "id": "block_choice",
+                                    "type": "choice",
+                                    "options": [
+                                        {"text": "Continue", "gotoSceneId": ""},
+                                        {"text": "Open archive", "gotoSceneId": ""},
+                                    ],
+                                },
+                            ],
+                        }
+                    ],
+                }
+            ],
+            "buildInfo": {"exportTargetLabel": "Headless Native Runtime"},
+        }
+        data_path = self.bundle_dir / "game_data.json"
+        data_path.write_text(json.dumps(game_data, ensure_ascii=False), encoding="utf-8")
+        return data_path
+
+    def assert_screen_has_pixels(self, player: NativeRuntimePlayer) -> None:
+        image_to_bytes = getattr(pygame.image, "tobytes", pygame.image.tostring)
+        frame_bytes = image_to_bytes(player.screen, "RGB")
+        self.assertTrue(any(channel != 0 for channel in frame_bytes))
+
+    def test_native_runtime_renders_ui_skin_overlays_headlessly(self) -> None:
+        data_path = self.write_game_data()
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message="The system font .*", category=UserWarning)
+            player = NativeRuntimePlayer(pygame, data_path)
+
+        render_steps = [
+            lambda: player.render(),
+            lambda: (player.open_save_dialog("save"), player.render()),
+            lambda: (player.open_save_dialog("load"), player.render()),
+            lambda: (player.open_system_menu(), player.render()),
+            lambda: (player.open_settings_overlay(), player.render()),
+            lambda: (player.open_profile_overlay(), player.render()),
+            lambda: (player.open_auto_resume_overlay(), player.render()),
+            lambda: (player.open_archive_overlay("chapters"), player.render()),
+        ]
+        for render_step in render_steps:
+            render_step()
+            self.assert_screen_has_pixels(player)
+
+        player.overlay_mode = None
+        player.current_choices = [
+            {"text": "Continue", "gotoSceneId": ""},
+            {"text": "Open archive", "gotoSceneId": ""},
+        ]
+        player.current_choice_index = 1
+        player.render()
+        self.assert_screen_has_pixels(player)
+
+        selected_entry = player.get_selected_archive_entry()
+        if selected_entry:
+            player.open_archive_detail(selected_entry)
+            player.render()
+            self.assert_screen_has_pixels(player)
+
+
+if __name__ == "__main__":
+    unittest.main()
