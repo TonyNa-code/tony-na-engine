@@ -20,6 +20,7 @@
   <a href="#快速开始">快速开始</a> ·
   <a href="#当前已经有的核心能力">核心能力</a> ·
   <a href="#功能状态">功能状态</a> ·
+  <a href="#界面预览">界面预览</a> ·
   <a href="#发布状态">发布状态</a> ·
   <a href="CONTRIBUTING.md">参与贡献</a>
 </p>
@@ -69,6 +70,13 @@ Tony Na Engine 当前更适合这样理解：
 | 网页 / 桌面导出 | Preview | 网页试玩包与三平台桌面包可用；签名、公证和安装器状态以 Release notes 为准。 |
 | 原生 Runtime | Preview | 已覆盖核心播放链、存档、设置、历史文本、自动播放、视频兜底与第一批资料馆。 |
 | 手机端 Runtime | 实验规划 | 当前处于触控、音频策略和界面适配验证阶段。 |
+
+## 界面预览
+
+| 剧情编辑与智能助手 | 试玩与导出 |
+| --- | --- |
+| ![Tony Na Engine story editor with assistant](docs/github/screenshot-story-assistant.png) | ![Tony Na Engine preview and export screen](docs/github/screenshot-preview-export.png) |
+| 剧情页支持可视化卡片、场景结构、Tony Na Assistant、灵感盒和勾选式插入。 | 试玩页集中处理预览、设置、发布前问题提示和多平台导出入口。 |
 
 ## 仓库结构
 
