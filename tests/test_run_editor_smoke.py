@@ -566,6 +566,7 @@ class RunEditorSmokeTests(unittest.TestCase):
         self.assertEqual(video_bridge_payload["summary"]["videoAssetCount"], 1)
         self.assertEqual(video_bridge_payload["summary"]["videoBlockCount"], 1)
         self.assertEqual(video_bridge_payload["entries"][0]["externalPlaybackMode"], "system_player_bridge")
+        self.assertEqual(video_bridge_payload["entries"][0]["nativePreviewMode"], "cinematic_bridge_card")
         self.assertTrue(video_bridge_payload["entries"][0]["exists"])
         self.assertTrue(video_bridge_payload["entries"][0]["extensionSupported"])
         self.assertEqual(video_bridge_payload["entries"][0]["usages"][0]["title"], "Opening Movie")

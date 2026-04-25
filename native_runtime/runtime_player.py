@@ -267,6 +267,7 @@ SETTINGS_MENU_ITEMS = [
     ("sfxVolume", "音效音量"),
     ("voiceVolume", "语音音量"),
 ]
+NATIVE_VIDEO_PREVIEW_MODE = "cinematic_bridge_card"
 ARCHIVE_MENU_ITEMS = {
     "chapters": "章节回放",
     "music": "音乐鉴赏",
@@ -781,6 +782,7 @@ def build_native_video_bridge_report(bundle_dir: Path) -> dict:
                 "extension": extension,
                 "extensionSupported": extension in SUPPORTED_VIDEO_EXTENSIONS,
                 "externalPlaybackMode": "system_player_bridge",
+                "nativePreviewMode": NATIVE_VIDEO_PREVIEW_MODE,
                 "openerAvailable": opener_available,
                 "openerLabel": get_external_video_opener_label() if opener_available else "",
                 "usages": video_usages.get(asset_id, []),
@@ -1374,6 +1376,31 @@ def get_safe_frame_slice(value, fallback: dict) -> dict:
 def with_alpha(color, opacity_percent: int) -> tuple[int, int, int, int]:
     alpha = clamp_int(opacity_percent, 0, 100, 100)
     return (*color, int(round(alpha * 2.55)))
+
+
+def normalize_video_time_seconds(value, fallback: float = 0.0) -> float:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        numeric = fallback
+    if not math.isfinite(numeric):
+        numeric = fallback
+    return max(0.0, numeric)
+
+
+def format_video_timestamp(seconds: float | int | None) -> str:
+    total_seconds = normalize_video_time_seconds(seconds)
+    minutes = int(total_seconds // 60)
+    seconds_remainder = total_seconds - minutes * 60
+    if seconds_remainder.is_integer():
+        return f"{minutes}:{int(seconds_remainder):02d}"
+    return f"{minutes}:{seconds_remainder:04.1f}"
+
+
+def build_video_clip_label(start_time: float, end_time: float) -> str:
+    if start_time <= 0 and end_time <= 0:
+        return "整段播放"
+    return f"{format_video_timestamp(start_time)} -> {format_video_timestamp(end_time) if end_time > 0 else '结尾'}"
 
 
 def get_safe_project_dialog_box_preset(value) -> str:
@@ -2089,6 +2116,7 @@ class NativeRuntimePlayer:
         self.overlay_page = 0
         self.overlay_focus_index = 0
         self.overlay_hotspots: list[dict] = []
+        self.video_hotspots: list[dict] = []
         self.system_menu_index = 0
         self.title_menu_index = 0
         self.settings_menu_index = 0
@@ -3928,6 +3956,10 @@ class NativeRuntimePlayer:
                 asset_id = str(block.get("assetId") or "")
                 asset = self.assets_by_id.get(asset_id) or {}
                 asset_path = get_asset_runtime_path(self.bundle_dir, asset)
+                start_time = normalize_video_time_seconds(block.get("startTimeSeconds"))
+                end_time = normalize_video_time_seconds(block.get("endTimeSeconds"))
+                if end_time <= start_time:
+                    end_time = 0.0
                 text = self.build_native_video_prompt(block, asset, asset_path)
                 self.current_line = {
                     "type": block_type,
@@ -3937,13 +3969,22 @@ class NativeRuntimePlayer:
                     "voiceAssetId": None,
                     "videoAssetId": asset_id,
                     "videoAssetPath": str(asset_path) if asset_path else "",
+                    "videoTitle": str(block.get("title") or asset.get("name") or "视频播放"),
+                    "videoFileName": asset_path.name if asset_path else "",
+                    "videoStartTimeSeconds": start_time,
+                    "videoEndTimeSeconds": end_time,
+                    "videoClipLabel": build_video_clip_label(start_time, end_time),
+                    "videoFit": str(block.get("fit") or "contain"),
+                    "videoVolume": clamp_int(block.get("volume"), 0, 100, 100),
+                    "videoSkippable": bool(block.get("skippable", True)),
+                    "videoPreviewMode": NATIVE_VIDEO_PREVIEW_MODE,
                     "videoOpened": False,
                     "blockLabel": get_block_label(block_type),
                 }
                 self.stop_voice()
                 self.start_current_line_display(text)
                 self.reveal_current_line_immediately()
-                self.status_message = "视频卡片：按 V 用系统播放器播放，Enter 继续"
+                self.status_message = "视频卡片：按 V 播放，Enter 继续"
                 return
 
             if block_type == "credits_roll":
@@ -4083,10 +4124,14 @@ class NativeRuntimePlayer:
 
     def build_native_video_prompt(self, block: dict, asset: dict, asset_path: Path | None) -> str:
         title = str(block.get("title") or asset.get("name") or "视频播放")
+        start_time = normalize_video_time_seconds(block.get("startTimeSeconds"))
+        end_time = normalize_video_time_seconds(block.get("endTimeSeconds"))
+        if end_time <= start_time:
+            end_time = 0.0
         lines = [
             title,
             "",
-            "原生 Runtime Preview 会用系统默认视频播放器桥接这段视频。",
+            "原生 Runtime Preview 会显示影院式视频卡片，并用系统默认视频播放器桥接这段视频。",
         ]
         if asset_path:
             lines.extend(
@@ -4103,16 +4148,14 @@ class NativeRuntimePlayer:
                 ]
             )
 
-        start_time = block.get("startTimeSeconds")
-        end_time = block.get("endTimeSeconds")
-        has_clip_range = start_time not in (None, "", 0, 0.0) or end_time not in (None, "", 0, 0.0)
+        has_clip_range = start_time > 0 or end_time > 0
         if has_clip_range:
             lines.append(
-                f"剪辑提示：编辑器设置了 {start_time or 0}s 到 {end_time or '结尾'}s；"
+                f"剪辑提示：编辑器设置了 {build_video_clip_label(start_time, end_time)}；"
                 "系统播放器桥接不会强制裁切，正式 OP/ED 建议优先用网页/NW.js 包或预先导出剪辑后的视频。"
             )
         if not bool(block.get("skippable", True)):
-            lines.append("不可跳过提示：系统播放器桥无法检测真实播放结束，Preview 中需要人工确认后继续。")
+            lines.append("不可跳过提示：需要先按 V 唤起视频，再回到窗口按 Enter 确认继续。")
         lines.append("后续如果接入 FFmpeg/OpenCV 等解码后端，这里可以升级为窗口内嵌播放。")
         return "\n".join(lines)
 
@@ -4127,6 +4170,38 @@ class NativeRuntimePlayer:
         self.current_line["videoOpened"] = bool(success)
         self.status_message = message
         self.reveal_current_line_immediately()
+
+    def can_advance_current_line(self) -> bool:
+        if not self.current_line or self.current_line.get("type") != "video_play":
+            return True
+        requires_confirmation = (
+            self.current_line.get("videoSkippable") is False
+            and bool(self.current_line.get("videoAssetPath"))
+            and not bool(self.current_line.get("videoOpened"))
+        )
+        if not requires_confirmation:
+            return True
+        self.status_message = "这段视频标记为不可跳过，请先按 V 播放，再回到窗口确认继续。"
+        return False
+
+    def advance_current_line_if_allowed(self) -> None:
+        if self.can_advance_current_line():
+            self.advance_dialogue()
+
+    def handle_video_card_mouse_event(self, event) -> bool:
+        for target in self.video_hotspots:
+            if not target["rect"].collidepoint(event.pos):
+                continue
+            if target.get("disabled"):
+                self.can_advance_current_line()
+                return True
+            if target.get("kind") == "play-video":
+                self.open_current_video()
+                return True
+            if target.get("kind") == "continue-video":
+                self.advance_current_line_if_allowed()
+                return True
+        return True
 
     def apply_variable_set(self, block: dict) -> None:
         variable_id = block.get("variableId")
@@ -4326,6 +4401,8 @@ class NativeRuntimePlayer:
         self.render_status_bar()
         if self.current_choices:
             self.render_choices()
+        elif self.current_line and self.current_line.get("type") == "video_play":
+            self.render_video_card()
         elif self.current_line:
             self.render_dialogue()
         elif self.finished:
@@ -4448,6 +4525,143 @@ class NativeRuntimePlayer:
             )
 
         self.screen.blit(meta_surface, (text_left, meta_top))
+
+    def render_video_card(self) -> None:
+        line = self.current_line or {}
+        palette = self.get_active_palette()
+        panel = self.pygame.Rect(0, 0, min(self.width - 88, 1040), min(self.height - 118, 610))
+        panel.center = (self.width // 2, self.height // 2 + 18)
+        self.pygame.draw.rect(self.screen, (*palette["panel"], 244), panel, border_radius=30)
+        self.pygame.draw.rect(self.screen, with_alpha(palette["panelBorder"], 76), panel, 2, border_radius=30)
+        self.draw_game_ui_panel_frame(panel, "system")
+
+        kicker = self.font_ui.render("NATIVE VIDEO BRIDGE", True, palette["accent"])
+        self.screen.blit(kicker, (panel.left + 30, panel.top + 24))
+        title = str(line.get("videoTitle") or "视频播放")
+        self.screen.blit(self.font_title.render(title[:34], True, palette["text"]), (panel.left + 30, panel.top + 52))
+
+        status_labels = [
+            "已唤起播放器" if line.get("videoOpened") else "等待播放",
+            "不可跳过" if line.get("videoSkippable") is False else "可跳过",
+            "系统播放器桥接",
+        ]
+        pill_right = panel.right - 30
+        for label in reversed(status_labels):
+            label_surface = self.font_ui.render(label, True, palette["text"])
+            pill_width = label_surface.get_width() + 22
+            pill_rect = self.pygame.Rect(pill_right - pill_width, panel.top + 28, pill_width, 28)
+            fill_color = palette["accent"] if label == "已唤起播放器" else palette["panel"]
+            self.pygame.draw.rect(self.screen, with_alpha(fill_color, 62), pill_rect, border_radius=14)
+            self.pygame.draw.rect(self.screen, with_alpha(palette["accentAlt"], 42), pill_rect, 1, border_radius=14)
+            self.screen.blit(label_surface, (pill_rect.left + 11, pill_rect.top + 5))
+            pill_right = pill_rect.left - 8
+
+        preview_rect = self.pygame.Rect(panel.left + 30, panel.top + 96, panel.width - 60, max(170, panel.height - 274))
+        self.pygame.draw.rect(self.screen, (5, 8, 16), preview_rect, border_radius=24)
+        self.pygame.draw.rect(self.screen, with_alpha(palette["panelBorder"], 36), preview_rect, 1, border_radius=24)
+        self.draw_game_ui_panel_frame(preview_rect)
+
+        glow_surface = self.pygame.Surface((preview_rect.width, preview_rect.height), self.pygame.SRCALPHA)
+        self.pygame.draw.circle(
+            glow_surface,
+            with_alpha(palette["accent"], 24),
+            (int(preview_rect.width * 0.28), int(preview_rect.height * 0.35)),
+            max(80, preview_rect.height // 2),
+        )
+        self.pygame.draw.circle(
+            glow_surface,
+            with_alpha(palette["accentAlt"], 20),
+            (int(preview_rect.width * 0.78), int(preview_rect.height * 0.18)),
+            max(70, preview_rect.height // 3),
+        )
+        self.screen.blit(glow_surface, preview_rect.topleft)
+
+        play_radius = max(34, min(62, preview_rect.height // 5))
+        self.pygame.draw.circle(self.screen, with_alpha(palette["accent"], 58), preview_rect.center, play_radius)
+        self.pygame.draw.circle(self.screen, with_alpha(palette["accentAlt"], 82), preview_rect.center, play_radius, 2)
+        triangle_size = play_radius * 0.72
+        triangle = [
+            (int(preview_rect.centerx - triangle_size * 0.28), int(preview_rect.centery - triangle_size * 0.48)),
+            (int(preview_rect.centerx - triangle_size * 0.28), int(preview_rect.centery + triangle_size * 0.48)),
+            (int(preview_rect.centerx + triangle_size * 0.52), preview_rect.centery),
+        ]
+        self.pygame.draw.polygon(self.screen, palette["text"], triangle)
+
+        file_label = str(line.get("videoFileName") or "视频文件未找到")
+        bridge_hint = "按 V 唤起系统播放器；播放结束后回到这个窗口继续。"
+        if not line.get("videoAssetPath"):
+            bridge_hint = "视频文件缺失。可以继续剧情，但正式发布前需要重新导出素材。"
+        self.blit_text_center(self.font_body, file_label[:42], preview_rect.centerx, preview_rect.bottom - 72, palette["text"])
+        self.blit_text_center(self.font_ui, bridge_hint, preview_rect.centerx, preview_rect.bottom - 40, palette["muted"])
+
+        meta_top = preview_rect.bottom + 18
+        clip_label = str(line.get("videoClipLabel") or "整段播放")
+        meta_rows = [
+            ("剪辑范围", clip_label),
+            ("画面适配", str(line.get("videoFit") or "contain")),
+            ("音量", f"{int(line.get('videoVolume') or 100)}%"),
+        ]
+        meta_left = panel.left + 34
+        meta_width = max(130, (panel.width - 68) // len(meta_rows))
+        for index, (label, value) in enumerate(meta_rows):
+            row_rect = self.pygame.Rect(meta_left + index * meta_width, meta_top, meta_width - 12, 42)
+            self.pygame.draw.rect(self.screen, with_alpha(palette["panel"], 42), row_rect, border_radius=14)
+            self.pygame.draw.rect(self.screen, with_alpha(palette["panelBorder"], 20), row_rect, 1, border_radius=14)
+            self.screen.blit(self.font_ui.render(label, True, palette["muted"]), (row_rect.left + 12, row_rect.top + 6))
+            value_surface = self.font_ui.render(value, True, palette["text"])
+            self.screen.blit(value_surface, (row_rect.right - value_surface.get_width() - 12, row_rect.top + 22))
+
+        timeline_rect = self.pygame.Rect(panel.left + 34, meta_top + 56, panel.width - 68, 8)
+        self.pygame.draw.rect(self.screen, with_alpha(palette["panelBorder"], 26), timeline_rect, border_radius=4)
+        start_time = float(line.get("videoStartTimeSeconds") or 0)
+        end_time = float(line.get("videoEndTimeSeconds") or 0)
+        if start_time > 0 or end_time > 0:
+            virtual_duration = max(end_time, start_time + 12, 30)
+            start_x = timeline_rect.left + int(timeline_rect.width * min(start_time / virtual_duration, 1))
+            end_ratio = min((end_time or virtual_duration) / virtual_duration, 1)
+            end_x = timeline_rect.left + int(timeline_rect.width * end_ratio)
+            selected_rect = self.pygame.Rect(start_x, timeline_rect.top, max(8, end_x - start_x), timeline_rect.height)
+            self.pygame.draw.rect(self.screen, with_alpha(palette["accent"], 82), selected_rect, border_radius=4)
+        else:
+            self.pygame.draw.rect(self.screen, with_alpha(palette["accent"], 58), timeline_rect, border_radius=4)
+
+        self.video_hotspots = []
+        button_y = panel.bottom - 54
+        buttons = [
+            ("play-video", "V 播放/重新打开", panel.left + 34, 168, False),
+            (
+                "continue-video",
+                "Enter 继续",
+                panel.right - 154,
+                120,
+                line.get("videoSkippable") is False and bool(line.get("videoAssetPath")) and not bool(line.get("videoOpened")),
+            ),
+        ]
+        for action, label, left, width, disabled in buttons:
+            button_rect = self.pygame.Rect(left, button_y, width, 36)
+            active = action == "play-video" and not disabled
+            self.pygame.draw.rect(
+                self.screen,
+                with_alpha(palette["accent"] if active else palette["panel"], 72 if active else 48),
+                button_rect,
+                border_radius=15,
+            )
+            self.pygame.draw.rect(
+                self.screen,
+                with_alpha(palette["accentAlt"] if active else palette["panelBorder"], 80 if active else 32),
+                button_rect,
+                1,
+                border_radius=15,
+            )
+            self.draw_game_ui_button_frame(
+                button_rect,
+                self.get_game_ui_button_state(button_rect, active=active, disabled=disabled),
+            )
+            self.blit_text_center(self.font_ui, label, button_rect.centerx, button_rect.top + 9, palette["muted"] if disabled else palette["text"])
+            self.video_hotspots.append({"kind": action, "rect": button_rect, "disabled": disabled})
+
+        hint = "不可跳过视频需要先播放一次，再确认继续。" if buttons[1][4] else "也可以按 Space / Enter 继续。"
+        self.screen.blit(self.font_ui.render(hint, True, palette["muted"]), (panel.left + 34, panel.bottom - 86))
 
     def render_choices(self) -> None:
         option_count = len(self.current_choices or [])
@@ -5321,15 +5535,18 @@ class NativeRuntimePlayer:
         if self.current_choices:
             return self.handle_choice_event(event)
 
+        if self.current_line and self.current_line.get("type") == "video_play" and event.type == self.pygame.MOUSEBUTTONDOWN and event.button == 1:
+            return self.handle_video_card_mouse_event(event)
+
         if self.current_line or self.finished:
             if event.type == self.pygame.KEYDOWN and event.key in (self.pygame.K_RETURN, self.pygame.K_SPACE):
                 if self.finished:
                     return False
-                self.advance_dialogue()
+                self.advance_current_line_if_allowed()
             elif event.type == self.pygame.MOUSEBUTTONDOWN and event.button == 1:
                 if self.finished:
                     return False
-                self.advance_dialogue()
+                self.advance_current_line_if_allowed()
         return True
 
     def handle_overlay_event(self, event) -> bool:

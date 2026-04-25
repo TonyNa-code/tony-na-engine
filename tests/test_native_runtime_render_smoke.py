@@ -70,11 +70,24 @@ class NativeRuntimeRenderSmokeTests(unittest.TestCase):
             "tags": [],
         }
 
+    def write_video_asset(self) -> dict:
+        asset_path = self.bundle_dir / "assets" / "video" / "opening.mp4"
+        asset_path.parent.mkdir(parents=True, exist_ok=True)
+        asset_path.write_bytes(b"fake-video-data")
+        return {
+            "id": "opening_video",
+            "type": "video",
+            "name": "Opening Video",
+            "exportUrl": asset_path.relative_to(self.bundle_dir).as_posix(),
+            "tags": ["OP"],
+        }
+
     def write_game_data(self) -> Path:
         assets = [
             self.write_ui_asset(asset_id, (70 + index * 11, 92 + index * 7, 180, 235))
             for index, asset_id in enumerate(UI_ASSET_IDS)
         ]
+        assets.append(self.write_video_asset())
         game_data = {
             "project": {
                 "projectId": "native_render_smoke",
@@ -187,6 +200,31 @@ class NativeRuntimeRenderSmokeTests(unittest.TestCase):
         player.current_choice_index = 1
         player.render()
         self.assert_screen_has_pixels(player)
+
+        video_path = self.bundle_dir / "assets" / "video" / "opening.mp4"
+        player.current_choices = None
+        player.current_line = {
+            "type": "video_play",
+            "speakerName": "视频",
+            "text": "Video card",
+            "videoAssetId": "opening_video",
+            "videoAssetPath": str(video_path),
+            "videoTitle": "Opening Video",
+            "videoFileName": video_path.name,
+            "videoStartTimeSeconds": 1.5,
+            "videoEndTimeSeconds": 4.0,
+            "videoClipLabel": "0:01.5 -> 0:04",
+            "videoFit": "contain",
+            "videoVolume": 75,
+            "videoSkippable": False,
+            "videoPreviewMode": "cinematic_bridge_card",
+            "videoOpened": False,
+        }
+        player.render()
+        self.assert_screen_has_pixels(player)
+        self.assertFalse(player.can_advance_current_line())
+        player.current_line["videoOpened"] = True
+        self.assertTrue(player.can_advance_current_line())
 
         selected_entry = player.get_selected_archive_entry()
         if selected_entry:
