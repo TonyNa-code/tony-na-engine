@@ -11258,6 +11258,19 @@ function renderQuickActionButton(action, emphasized = false) {
     .map(([key, value]) => ` data-${key}="${escapeHtml(String(value ?? ""))}"`)
     .join("");
 
+  if (action.href) {
+    return `
+      <a
+        class="${className}"
+        href="${escapeHtml(action.href)}"
+        target="_blank"
+        rel="noreferrer"
+      >
+        ${label}
+      </a>
+    `;
+  }
+
   if (action.action === "open-scene-from-map" || action.action === "preview-scene-from-map") {
     return `
       <button
@@ -23031,6 +23044,10 @@ function buildReleaseChecklistItems() {
     (issue) => issue.message === "这句台词还没有绑定语音。"
   ).length;
   const exportResult = state.lastExportResult;
+  const nativeRcStatus = exportResult?.target === "native_runtime" ? exportResult.releaseCandidateReportStatus : "";
+  const nativeRcSummary = exportResult?.releaseCandidateReportSummary ?? {};
+  const nativeRcReadiness = exportResult?.releaseCandidateReadinessEstimate ?? {};
+  const nativeRcHasReport = exportResult?.target === "native_runtime" && Boolean(nativeRcStatus);
 
   const items = [
     {
@@ -23107,6 +23124,33 @@ function buildReleaseChecklistItems() {
           ? "至少当前检查里没有新的待绑语音提醒。"
           : "如果这是正式发布前版本，可把这些台词集中补完语音，或确认本身就是无语音设计。",
       action: missingVoiceWarnings > 0 ? { label: "只看待绑语音", action: "focus-script-missing-voice" } : null,
+    },
+    {
+      severity: nativeRcHasReport
+        ? nativeRcStatus === "preview_ready"
+          ? "good"
+          : nativeRcStatus === "blocked" || nativeRcStatus === "unavailable"
+            ? "blocker"
+            : "warn"
+        : "warn",
+      title: "原生 Runtime RC",
+      toneClass: nativeRcHasReport ? getNativeRuntimeRcToneClass(nativeRcStatus) : "warn-text",
+      status: nativeRcHasReport ? getNativeRuntimeRcStatusLabel(nativeRcStatus) : "还没导过原生 Runtime 包",
+      description: nativeRcHasReport
+        ? `阻塞 ${nativeRcSummary.blockers ?? 0} / 提醒 ${nativeRcSummary.warnings ?? 0} / 桌面 Preview 估算 ${formatNativeRuntimeReadinessPercent(
+            nativeRcReadiness.desktopPreviewPercent
+          )}。`
+        : "导出一次原生 Runtime 包后，编辑器会自动生成发布候选总报告，直接告诉你这包能不能进入三系统打包。",
+      action: nativeRcHasReport
+        ? {
+            label: "打开 RC 报告",
+            href: exportResult.releaseCandidateReportPublicUrl,
+          }
+        : {
+            label: "生成原生 RC 检查包",
+            action: "export-build",
+            dataset: { "export-target": "native_runtime" },
+          },
     },
     {
       severity:
@@ -23200,6 +23244,36 @@ function renderReleaseChecklistCard(item) {
       ${item.action ? `<div class="issue-card-footer">${renderQuickActionButton(item.action, true)}</div>` : ""}
     </article>
   `;
+}
+
+function getNativeRuntimeRcStatusLabel(status) {
+  switch (status) {
+    case "preview_ready":
+      return "Preview RC 可进入三系统打包";
+    case "preview_ready_with_warnings":
+      return "Preview RC 可打包，但有提醒";
+    case "preview_ready_with_optional_failures":
+      return "Preview 主链可打包，但有非核心失败";
+    case "blocked":
+      return "存在阻塞项，先修复再打包";
+    case "unavailable":
+      return "RC 报告暂不可用";
+    default:
+      return status ? String(status) : "尚未生成";
+  }
+}
+
+function getNativeRuntimeRcToneClass(status) {
+  if (status === "preview_ready") return "good-text";
+  if (status === "blocked" || status === "unavailable") return "danger-text";
+  if (status === "preview_ready_with_warnings" || status === "preview_ready_with_optional_failures") return "warn-text";
+  return "";
+}
+
+function formatNativeRuntimeReadinessPercent(value) {
+  const numberValue = Number(value);
+  if (!Number.isFinite(numberValue)) return "未估算";
+  return `${Math.max(0, Math.min(100, Math.round(numberValue)))}%`;
 }
 
 function renderReleaseSettingsPanel() {
@@ -24144,6 +24218,20 @@ function renderProjectValidationSummary() {
             : ""
         }
         ${
+          exportResult?.target === "native_runtime" && exportResult?.releaseCandidateReportPublicUrl
+            ? `
+              <a
+                class="toolbar-button toolbar-button-primary"
+                href="${escapeHtml(exportResult.releaseCandidateReportPublicUrl)}"
+                target="_blank"
+                rel="noreferrer"
+              >
+                打开原生 RC 总报告
+              </a>
+            `
+            : ""
+        }
+        ${
           exportResult?.signingGuidePublicUrl
             ? `
               <a
@@ -24218,6 +24306,14 @@ function renderProjectValidationSummary() {
                   exportResult.appBuilderPath ?? "未生成"
                 )}<br />发布自检报告：${escapeHtml(
                   exportResult.releaseCheckPath ?? "未生成"
+                )}<br />发布候选总报告：${escapeHtml(
+                  exportResult.releaseCandidateReportPath ?? "未生成"
+                )}<br />RC 状态：${escapeHtml(
+                  getNativeRuntimeRcStatusLabel(exportResult.releaseCandidateReportStatus)
+                )}<br />桌面 Preview 估算：${escapeHtml(
+                  formatNativeRuntimeReadinessPercent(exportResult.releaseCandidateReadinessEstimate?.desktopPreviewPercent)
+                )}<br />商业桌面估算：${escapeHtml(
+                  formatNativeRuntimeReadinessPercent(exportResult.releaseCandidateReadinessEstimate?.commercialDesktopPercent)
                 )}<br />mac 启动器：${escapeHtml(
                   exportResult.macLauncherName ?? "未生成"
                 )}<br />Linux 启动器：${escapeHtml(

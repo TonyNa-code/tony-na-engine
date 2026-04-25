@@ -10,6 +10,7 @@ import math
 import os
 import platform
 import random
+import re
 import shutil
 import subprocess
 import sys
@@ -1976,6 +1977,240 @@ def build_native_runtime_doctor_report(bundle_dir: Path) -> dict:
         "summary": build_doctor_summary(checks),
         "checks": checks,
     }
+
+
+def get_release_candidate_platform_tag() -> str:
+    if sys.platform == "darwin":
+        return "macos"
+    if sys.platform.startswith("win"):
+        return "windows"
+    if sys.platform.startswith("linux"):
+        return "linux"
+    return re.sub(r"[^a-z0-9]+", "-", sys.platform.lower()).strip("-") or "unknown"
+
+
+def first_existing_bundle_file(bundle_dir: Path, candidates: list[str]) -> str:
+    for candidate in candidates:
+        if (bundle_dir / candidate).exists():
+            return candidate
+    return ""
+
+
+def get_release_candidate_packaging_matrix(bundle_dir: Path) -> list[dict]:
+    builder_script = first_existing_bundle_file(bundle_dir, ["build_native_runtime_app.py"])
+    runtime_requirements = first_existing_bundle_file(bundle_dir, ["requirements-native-runtime.txt", "requirements.txt"])
+    build_requirements = first_existing_bundle_file(bundle_dir, ["requirements-native-runtime-build.txt", "requirements-build.txt"])
+    current_platform = get_release_candidate_platform_tag()
+    platforms = [
+        {
+            "id": "macos",
+            "label": "macOS",
+            "buildScript": first_existing_bundle_file(bundle_dir, ["打包原生Runtime应用.command"]),
+            "output": ".app / Preview zip",
+            "releaseRequirement": "Developer ID 签名与 notarization",
+        },
+        {
+            "id": "windows",
+            "label": "Windows",
+            "buildScript": first_existing_bundle_file(bundle_dir, ["build_native_runtime_app.bat"]),
+            "output": ".exe 或 onedir / Preview zip",
+            "releaseRequirement": "代码签名证书与 SmartScreen 实机验证",
+        },
+        {
+            "id": "linux",
+            "label": "Linux",
+            "buildScript": first_existing_bundle_file(bundle_dir, ["build_native_runtime_app.sh"]),
+            "output": "可执行目录 / Preview zip",
+            "releaseRequirement": "目标发行版点测；可继续封装 AppImage、deb/rpm 或 Flatpak",
+        },
+    ]
+    return [
+        {
+            **platform_entry,
+            "currentMachine": platform_entry["id"] == current_platform,
+            "pyInstallerBuilderAvailable": bool(builder_script and build_requirements),
+            "runtimeRequirements": runtime_requirements,
+            "buildRequirements": build_requirements,
+            "canAttemptLocalBuild": platform_entry["id"] == current_platform and bool(builder_script and build_requirements),
+            "status": (
+                "ready_to_build_here"
+                if platform_entry["id"] == current_platform and builder_script and build_requirements
+                else "build_on_target_platform"
+                if builder_script and build_requirements
+                else "missing_packaging_files"
+            ),
+        }
+        for platform_entry in platforms
+    ]
+
+
+def build_release_candidate_gate(
+    gate_id: str,
+    label: str,
+    status: str,
+    required_for_preview: bool,
+    message: str,
+    source_check_id: str = "",
+) -> dict:
+    return {
+        "id": gate_id,
+        "label": label,
+        "status": status,
+        "requiredForPreview": required_for_preview,
+        "message": message,
+        "sourceCheckId": source_check_id,
+    }
+
+
+def build_release_candidate_gates(doctor_report: dict, packaging_matrix: list[dict]) -> list[dict]:
+    required_check_ids = {
+        "bundle_structure",
+        "release_check",
+        "title_screen",
+        "save_dialog",
+        "save_load",
+        "settings",
+        "archives",
+        "profile",
+    }
+    gates = []
+    for check in doctor_report.get("checks", []) or []:
+        check_id = str(check.get("id") or "")
+        required = check_id in required_check_ids
+        gates.append(
+            build_release_candidate_gate(
+                gate_id=f"doctor_{check_id}",
+                label=str(check.get("label") or check_id),
+                status=str(check.get("status") or "fail"),
+                required_for_preview=required,
+                message=str(check.get("message") or ""),
+                source_check_id=check_id,
+            )
+        )
+
+    packaging_ready = all(entry.get("pyInstallerBuilderAvailable") for entry in packaging_matrix)
+    gates.append(
+        build_release_candidate_gate(
+            gate_id="packaging_scaffold",
+            label="PyInstaller 打包脚手架",
+            status="pass" if packaging_ready else "fail",
+            required_for_preview=True,
+            message="三平台打包脚本和构建依赖文件已随包提供。" if packaging_ready else "导出包缺少打包脚手架或构建依赖文件。",
+        )
+    )
+    return gates
+
+
+def get_release_candidate_status(gates: list[dict]) -> str:
+    if any(gate.get("status") == "fail" and gate.get("requiredForPreview") for gate in gates):
+        return "blocked"
+    if any(gate.get("status") == "fail" for gate in gates):
+        return "preview_ready_with_optional_failures"
+    if any(gate.get("status") == "warn" for gate in gates):
+        return "preview_ready_with_warnings"
+    return "preview_ready"
+
+
+def get_release_candidate_next_actions(status: str, gates: list[dict], packaging_matrix: list[dict]) -> list[str]:
+    blockers = [gate for gate in gates if gate.get("status") == "fail" and gate.get("requiredForPreview")]
+    warnings = [gate for gate in gates if gate.get("status") == "warn"]
+    if blockers:
+        return [
+            f"先修复阻塞项：{gate.get('label')} - {gate.get('message')}"
+            for gate in blockers[:6]
+        ]
+    actions = []
+    if warnings:
+        actions.append(f"处理 {len(warnings)} 条 Preview 警告，重点看发布前自检、视频后端和目标系统兼容性。")
+    target_platforms = [entry["label"] for entry in packaging_matrix if not entry.get("currentMachine")]
+    if target_platforms:
+        actions.append(f"在目标系统分别运行打包脚本并点测：{', '.join(target_platforms)}。")
+    actions.append("正式公开分发前补齐 macOS 签名/公证、Windows 代码签名和杀毒/SmartScreen 实机验证。")
+    actions.append("对 OP / ED / PV 做目标平台编码矩阵测试，确认音画同步、跳过和结束回到剧情链都稳定。")
+    if status == "preview_ready":
+        actions.insert(0, "当前导出包可作为桌面 Preview Release Candidate 继续进入三系统实机打包。")
+    return actions
+
+
+def build_native_runtime_release_candidate_report(bundle_dir: Path) -> dict:
+    doctor_report = build_native_runtime_doctor_report(bundle_dir)
+    release_check = next(
+        (
+            check.get("details")
+            for check in doctor_report.get("checks", []) or []
+            if check.get("id") == "release_check" and isinstance(check.get("details"), dict)
+        ),
+        {},
+    )
+    video_backend_report = next(
+        (
+            check.get("details")
+            for check in doctor_report.get("checks", []) or []
+            if check.get("id") == "video_backends" and isinstance(check.get("details"), dict)
+        ),
+        {},
+    )
+    video_probe_report = next(
+        (
+            check.get("details")
+            for check in doctor_report.get("checks", []) or []
+            if check.get("id") == "video_preview_probe" and isinstance(check.get("details"), dict)
+        ),
+        {},
+    )
+    packaging_matrix = get_release_candidate_packaging_matrix(bundle_dir)
+    gates = build_release_candidate_gates(doctor_report, packaging_matrix)
+    status = get_release_candidate_status(gates)
+    blockers = [gate for gate in gates if gate.get("status") == "fail" and gate.get("requiredForPreview")]
+    optional_failures = [gate for gate in gates if gate.get("status") == "fail" and not gate.get("requiredForPreview")]
+    warnings = [gate for gate in gates if gate.get("status") == "warn"]
+    desktop_preview_percent = 80 if status.startswith("preview_ready") else 62
+    commercial_desktop_percent = 62 if status.startswith("preview_ready") else 48
+    mobile_percent = 15
+    return {
+        "status": status,
+        "checkedAt": now_iso(),
+        "bundleDir": str(bundle_dir),
+        "projectTitle": release_check.get("projectTitle") or "",
+        "summary": {
+            "blockers": len(blockers),
+            "optionalFailures": len(optional_failures),
+            "warnings": len(warnings),
+            "doctorStatus": doctor_report.get("status"),
+            "doctorSummary": doctor_report.get("summary"),
+            "releaseCheckStatus": release_check.get("status"),
+            "releaseCheckSummary": release_check.get("summary"),
+            "videoBackendStatus": video_backend_report.get("status"),
+            "videoPreviewProbeStatus": video_probe_report.get("status"),
+        },
+        "readinessEstimate": {
+            "desktopPreviewPercent": desktop_preview_percent,
+            "commercialDesktopPercent": commercial_desktop_percent,
+            "mobileRuntimePercent": mobile_percent,
+            "note": "估算基于当前导出包自检、打包脚手架和桌面/商业/手机端剩余工作量；不是性能评分。",
+        },
+        "gates": gates,
+        "platformMatrix": packaging_matrix,
+        "videoStrategy": {
+            "backendStatus": video_backend_report.get("status"),
+            "previewProbeStatus": video_probe_report.get("status"),
+            "recommendation": video_backend_report.get("recommendation") or video_probe_report.get("recommendation") or "",
+        },
+        "commercialReleaseGaps": [
+            "macOS Developer ID 签名、notarization 和 Gatekeeper 实机验证",
+            "Windows 代码签名、SmartScreen/杀毒误报验证和安装器链路",
+            "Linux 目标发行版点测，以及 AppImage/deb/rpm/Flatpak 等发行形态选择",
+            "OP/ED/PV 视频编码矩阵与音画同步长流程测试",
+            "完整人工逐按钮长流程点测、崩溃日志可读性和升级覆盖安装验证",
+        ],
+        "nextActions": get_release_candidate_next_actions(status, gates, packaging_matrix),
+    }
+
+
+def print_native_runtime_release_candidate_report(bundle_dir: Path) -> dict:
+    report = build_native_runtime_release_candidate_report(bundle_dir)
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+    return report
 
 
 def build_save_dialog_page_data_for_doctor(bundle_dir: Path) -> dict:
@@ -8030,6 +8265,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--validate-bundle", dest="validate_bundle", help="只检查导出包结构，不启动窗口")
     parser.add_argument("--release-check", dest="release_check", help="输出发布前自检报告 JSON，不启动窗口")
     parser.add_argument("--doctor", "--release-doctor", dest="doctor", help="一键运行原生 Runtime 发布体检报告 JSON，不启动窗口")
+    parser.add_argument("--release-candidate-report", "--rc-report", dest="release_candidate_report", help="输出原生 Runtime 发布候选总报告 JSON，不启动窗口")
     parser.add_argument("--exercise-save-load", dest="exercise_save_load", help="检查存档文件能否写入和读回")
     parser.add_argument("--exercise-settings", dest="exercise_settings", help="检查原生 Runtime 设置能否写入和读回")
     parser.add_argument("--exercise-archives", dest="exercise_archives", help="检查原生 Runtime 资料馆进度能否写入和读回")
@@ -8063,6 +8299,14 @@ def main(argv: list[str] | None = None) -> int:
             return 1 if report.get("status") == "fail" else 0
         except NativeRuntimeError as error:
             print(f"Native runtime doctor failed: {error}")
+            return 1
+
+    if args.release_candidate_report:
+        try:
+            report = print_native_runtime_release_candidate_report(Path(args.release_candidate_report).resolve())
+            return 1 if report.get("status") == "blocked" else 0
+        except NativeRuntimeError as error:
+            print(f"Native runtime release candidate report failed: {error}")
             return 1
 
     if args.exercise_save_load:

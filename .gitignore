@@ -7,6 +7,7 @@ __pycache__/
 
 .export_runtime_cache/
 .tmp_brand_preview/
+.native_runtime_smoke_venv/
 
 exports/
 projects/

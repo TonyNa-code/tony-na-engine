@@ -173,7 +173,7 @@ python run_editor.py
 
 - `网页试玩包`：适合快速预览、网页分发和轻量测试。
 - `Windows / macOS / Linux 桌面包`：当前主要基于 NW.js 桌面 Runtime。
-- `原生 Runtime 包`：Preview 路线，已覆盖标题页主菜单、基础剧情主链、正式存档/读档、系统菜单设置项、文本历史、自动播放、已读快进、项目字体、玩家档案/自动续玩、基础粒子与镜头演出、可选 PyAV/FFmpeg 音画同步内嵌视频播放、OpenCV 画面兜底、系统播放器桥接兜底，以及第一批资料馆和详情查看能力。
+- `原生 Runtime 包`：Preview 路线，已覆盖标题页主菜单、基础剧情主链、正式存档/读档、系统菜单设置项、文本历史、自动播放、已读快进、项目字体、玩家档案/自动续玩、基础粒子与镜头演出、可选 PyAV/FFmpeg 音画同步内嵌视频播放、OpenCV 画面兜底、系统播放器桥接兜底、第一批资料馆，以及随包生成的发布候选总报告。
 - `手机端 Runtime`：实验规划阶段，当前重点是触控、音频策略和界面适配验证。
 
 ## 测试
@@ -254,11 +254,27 @@ cd tony-na-engine
 py -3 -m unittest discover -s tests -p "test_browser_playwright_smoke.py" -v
 ```
 
+原生 Runtime 渲染 smoke（会在仓库内创建隔离虚拟环境并安装 `pygame-ce`）：
+
+macOS / Linux：
+
+```bash
+cd tony-na-engine
+./run_native_runtime_smoke.sh
+```
+
+Windows：
+
+```bat
+cd tony-na-engine
+run_native_runtime_smoke.cmd
+```
+
 或者直接运行对应系统脚本：
 
-- macOS：[`run_tests.command`](run_tests.command) / [`run_browser_tests.command`](run_browser_tests.command)
-- Windows：[`run_tests.cmd`](run_tests.cmd) / [`run_browser_tests.cmd`](run_browser_tests.cmd)
-- Linux：[`run_tests.sh`](run_tests.sh) / [`run_browser_tests.sh`](run_browser_tests.sh)
+- macOS：[`run_tests.command`](run_tests.command) / [`run_browser_tests.command`](run_browser_tests.command) / [`run_native_runtime_smoke.command`](run_native_runtime_smoke.command)
+- Windows：[`run_tests.cmd`](run_tests.cmd) / [`run_browser_tests.cmd`](run_browser_tests.cmd) / [`run_native_runtime_smoke.cmd`](run_native_runtime_smoke.cmd)
+- Linux：[`run_tests.sh`](run_tests.sh) / [`run_browser_tests.sh`](run_browser_tests.sh) / [`run_native_runtime_smoke.sh`](run_native_runtime_smoke.sh)
 
 ### GitHub Actions
 
@@ -267,6 +283,7 @@ py -3 -m unittest discover -s tests -p "test_browser_playwright_smoke.py" -v
 - Python 语法检查
 - 前端脚本语法检查
 - 后端 smoke 测试
+- 原生 Runtime 渲染 smoke 测试
 - Playwright 浏览器烟测
 
 ## 发布状态

@@ -294,6 +294,7 @@ def write_package_manifest(
         "archiveName": archive_path.name if archive_path else "",
         "archivePath": str(archive_path) if archive_path else "",
         "releaseCheck": description.get("releaseCheck") or {},
+        "releaseCandidateReport": description.get("releaseCandidateReport") or {},
         "video": description.get("video") or {},
         "signing": {
             "signed": False,
@@ -351,15 +352,15 @@ def run_bundle_runtime_json_report(bundle_dir: Path, flag: str, report_label: st
     runtime_player_path = bundle_dir / RUNTIME_PLAYER_NAME
     command = [sys.executable, str(runtime_player_path), flag, str(bundle_dir)]
     result = subprocess.run(command, cwd=bundle_dir, capture_output=True, text=True, check=False)
-    if result.returncode != 0:
-        return {
-            "status": "unavailable",
-            "command": format_command(command),
-            "message": result.stderr.strip() or result.stdout.strip() or f"{report_label}命令执行失败。",
-        }
     try:
         report = json.loads(result.stdout)
     except json.JSONDecodeError:
+        if result.returncode != 0:
+            return {
+                "status": "unavailable",
+                "command": format_command(command),
+                "message": result.stderr.strip() or result.stdout.strip() or f"{report_label}命令执行失败。",
+            }
         return {
             "status": "invalid_json",
             "command": format_command(command),
@@ -399,6 +400,11 @@ def describe_build(
     )
     video_backend_report = run_bundle_runtime_json_report(bundle_dir, "--describe-video-backends", "视频后端报告")
     video_preview_probe = run_bundle_runtime_json_report(bundle_dir, "--probe-video-preview", "视频帧预览探针")
+    release_candidate_report = run_bundle_runtime_json_report(
+        bundle_dir,
+        "--release-candidate-report",
+        "发布候选总报告",
+    )
     return {
         "appName": resolved_app_name,
         "bundleIdentifier": resolved_bundle_identifier,
@@ -424,6 +430,7 @@ def describe_build(
         ],
         "missingAssetPaths": missing_assets,
         "releaseCheck": release_check,
+        "releaseCandidateReport": release_candidate_report,
         "commandPreview": format_command(command),
     }
 

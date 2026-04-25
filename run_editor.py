@@ -274,9 +274,13 @@ NATIVE_RUNTIME_BRAND_LOGO_NAME = "assets/brand-logo.png"
 NATIVE_RUNTIME_APP_BUILDER_SOURCE = NATIVE_RUNTIME_TEMPLATE_DIR / "build_native_runtime_app.py"
 NATIVE_RUNTIME_APP_BUILDER_NAME = "build_native_runtime_app.py"
 NATIVE_RUNTIME_RELEASE_CHECK_NAME = "native-runtime-release-check.json"
+NATIVE_RUNTIME_RC_REPORT_NAME = "native-runtime-release-candidate-report.json"
 NATIVE_RUNTIME_MAC_COMMAND_NAME = "启动原生Runtime预览.command"
 NATIVE_RUNTIME_LINUX_COMMAND_NAME = "run_native_runtime_preview.sh"
 NATIVE_RUNTIME_WINDOWS_COMMAND_NAME = "run_native_runtime_preview.bat"
+NATIVE_RUNTIME_MAC_RC_COMMAND_NAME = "检查原生Runtime发布候选.command"
+NATIVE_RUNTIME_LINUX_RC_COMMAND_NAME = "check_native_runtime_release_candidate.sh"
+NATIVE_RUNTIME_WINDOWS_RC_COMMAND_NAME = "check_native_runtime_release_candidate.bat"
 NATIVE_RUNTIME_MAC_APP_BUILDER_COMMAND_NAME = "打包原生Runtime应用.command"
 NATIVE_RUNTIME_LINUX_APP_BUILDER_COMMAND_NAME = "build_native_runtime_app.sh"
 NATIVE_RUNTIME_WINDOWS_APP_BUILDER_COMMAND_NAME = "build_native_runtime_app.bat"
@@ -6257,10 +6261,14 @@ def write_native_runtime_files(build_dir: Path, export_payload: dict) -> dict:
     mac_launcher_path = build_dir / NATIVE_RUNTIME_MAC_COMMAND_NAME
     linux_launcher_path = build_dir / NATIVE_RUNTIME_LINUX_COMMAND_NAME
     windows_launcher_path = build_dir / NATIVE_RUNTIME_WINDOWS_COMMAND_NAME
+    mac_rc_path = build_dir / NATIVE_RUNTIME_MAC_RC_COMMAND_NAME
+    linux_rc_path = build_dir / NATIVE_RUNTIME_LINUX_RC_COMMAND_NAME
+    windows_rc_path = build_dir / NATIVE_RUNTIME_WINDOWS_RC_COMMAND_NAME
     mac_app_builder_path = build_dir / NATIVE_RUNTIME_MAC_APP_BUILDER_COMMAND_NAME
     linux_app_builder_path = build_dir / NATIVE_RUNTIME_LINUX_APP_BUILDER_COMMAND_NAME
     windows_app_builder_path = build_dir / NATIVE_RUNTIME_WINDOWS_APP_BUILDER_COMMAND_NAME
     release_check_path = build_dir / NATIVE_RUNTIME_RELEASE_CHECK_NAME
+    rc_report_path = build_dir / NATIVE_RUNTIME_RC_REPORT_NAME
 
     mac_launcher_path.write_text(
         "\n".join(
@@ -6307,6 +6315,65 @@ def write_native_runtime_files(build_dir: Path, export_payload: dict) -> dict:
                 "  echo 安装命令：python -m pip install -r requirements-native-runtime.txt",
                 "  pause",
                 ")",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    mac_rc_path.write_text(
+        "\n".join(
+            [
+                "#!/bin/bash",
+                "set -e",
+                "set -o pipefail",
+                'SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"',
+                'cd "$SCRIPT_DIR"',
+                'python3 runtime_player.py --release-candidate-report . | tee native-runtime-release-candidate-report.json || {',
+                '  echo ""',
+                '  echo "发布候选检查发现阻塞项，报告已写入 native-runtime-release-candidate-report.json。"',
+                '  echo "请先按报告修复，再继续打包或分发。"',
+                '  echo ""',
+                '  read -r -p "按回车关闭..." _',
+                '  exit 1',
+                '}',
+                'echo ""',
+                'echo "发布候选检查完成，报告已写入 native-runtime-release-candidate-report.json。"',
+                'read -r -p "按回车关闭..." _',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    linux_rc_path.write_text(
+        "\n".join(
+            [
+                "#!/bin/bash",
+                "set -e",
+                "set -o pipefail",
+                'SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"',
+                'cd "$SCRIPT_DIR"',
+                'python3 runtime_player.py --release-candidate-report . | tee native-runtime-release-candidate-report.json',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    windows_rc_path.write_text(
+        "\r\n".join(
+            [
+                "@echo off",
+                "cd /d %~dp0",
+                "python runtime_player.py --release-candidate-report . > native-runtime-release-candidate-report.json",
+                "if errorlevel 1 (",
+                "  echo.",
+                "  echo 发布候选检查发现阻塞项，报告已写入 native-runtime-release-candidate-report.json。",
+                "  echo 请先按报告修复，再继续打包或分发。",
+                "  pause",
+                "  exit /b 1",
+                ")",
+                "echo.",
+                "echo 发布候选检查完成，报告已写入 native-runtime-release-candidate-report.json。",
+                "pause",
                 "",
             ]
         ),
@@ -6376,6 +6443,8 @@ def write_native_runtime_files(build_dir: Path, export_payload: dict) -> dict:
     )
     mac_launcher_path.chmod(0o755)
     linux_launcher_path.chmod(0o755)
+    mac_rc_path.chmod(0o755)
+    linux_rc_path.chmod(0o755)
     mac_app_builder_path.chmod(0o755)
     linux_app_builder_path.chmod(0o755)
 
@@ -6415,6 +6484,36 @@ def write_native_runtime_files(build_dir: Path, export_payload: dict) -> dict:
             + "\n",
             encoding="utf-8",
         )
+    rc_report = subprocess.run(
+        [
+            sys.executable,
+            str(build_dir / NATIVE_RUNTIME_PLAYER_NAME),
+            "--release-candidate-report",
+            str(build_dir),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    rc_report_payload = None
+    try:
+        rc_report_payload = json.loads(rc_report.stdout)
+        rc_report_path.write_text(rc_report.stdout, encoding="utf-8")
+    except json.JSONDecodeError:
+        rc_report_payload = {
+            "status": "unavailable",
+            "checkedAt": datetime.now().astimezone().isoformat(timespec="seconds"),
+            "summary": {"blockers": 1, "optionalFailures": 0, "warnings": 0},
+            "message": rc_report.stderr.strip() or rc_report.stdout.strip() or "发布候选总报告生成失败。",
+            "nextActions": ["手动运行 python runtime_player.py --release-candidate-report . 查看具体问题。"],
+        }
+        rc_report_path.write_text(
+            json.dumps(rc_report_payload, ensure_ascii=False, indent=2)
+            + "\n",
+            encoding="utf-8",
+        )
+    rc_report_summary = rc_report_payload.get("summary") if isinstance(rc_report_payload, dict) else {}
+    rc_report_readiness = rc_report_payload.get("readinessEstimate") if isinstance(rc_report_payload, dict) else {}
 
     return {
         "gameDataName": game_data_path.name,
@@ -6435,12 +6534,23 @@ def write_native_runtime_files(build_dir: Path, export_payload: dict) -> dict:
         "appBuilderPath": str(build_dir / NATIVE_RUNTIME_APP_BUILDER_NAME),
         "releaseCheckName": release_check_path.name,
         "releaseCheckPath": str(release_check_path),
+        "releaseCandidateReportName": rc_report_path.name,
+        "releaseCandidateReportPath": str(rc_report_path),
+        "releaseCandidateReportStatus": rc_report_payload.get("status") if isinstance(rc_report_payload, dict) else "unavailable",
+        "releaseCandidateReportSummary": rc_report_summary if isinstance(rc_report_summary, dict) else {},
+        "releaseCandidateReadinessEstimate": rc_report_readiness if isinstance(rc_report_readiness, dict) else {},
         "macLauncherName": mac_launcher_path.name,
         "macLauncherPath": str(mac_launcher_path),
         "linuxLauncherName": linux_launcher_path.name,
         "linuxLauncherPath": str(linux_launcher_path),
         "windowsLauncherName": windows_launcher_path.name,
         "windowsLauncherPath": str(windows_launcher_path),
+        "macReleaseCandidateCheckerName": mac_rc_path.name,
+        "macReleaseCandidateCheckerPath": str(mac_rc_path),
+        "linuxReleaseCandidateCheckerName": linux_rc_path.name,
+        "linuxReleaseCandidateCheckerPath": str(linux_rc_path),
+        "windowsReleaseCandidateCheckerName": windows_rc_path.name,
+        "windowsReleaseCandidateCheckerPath": str(windows_rc_path),
         "macAppBuilderName": mac_app_builder_path.name,
         "macAppBuilderPath": str(mac_app_builder_path),
         "linuxAppBuilderName": linux_app_builder_path.name,
@@ -6477,9 +6587,13 @@ def export_native_runtime_build() -> dict:
             "videoRequirements": runtime_files["videoRequirementsName"],
             "appBuilder": runtime_files["appBuilderName"],
             "releaseCheck": runtime_files["releaseCheckName"],
+            "releaseCandidateReport": runtime_files["releaseCandidateReportName"],
             "macLauncher": runtime_files["macLauncherName"],
             "linuxLauncher": runtime_files["linuxLauncherName"],
             "windowsLauncher": runtime_files["windowsLauncherName"],
+            "macReleaseCandidateChecker": runtime_files["macReleaseCandidateCheckerName"],
+            "linuxReleaseCandidateChecker": runtime_files["linuxReleaseCandidateCheckerName"],
+            "windowsReleaseCandidateChecker": runtime_files["windowsReleaseCandidateCheckerName"],
             "macAppBuilder": runtime_files["macAppBuilderName"],
             "linuxAppBuilder": runtime_files["linuxAppBuilderName"],
             "windowsAppBuilder": runtime_files["windowsAppBuilderName"],
@@ -6494,6 +6608,8 @@ def export_native_runtime_build() -> dict:
             "canBuildStandaloneApp": True,
             "appBuilder": runtime_files["appBuilderName"],
             "releaseCheck": runtime_files["releaseCheckName"],
+            "releaseCandidateReport": runtime_files["releaseCandidateReportName"],
+            "releaseCandidateReportStatus": runtime_files["releaseCandidateReportStatus"],
         },
     )
     manifest_path = write_export_manifest(build_dir, manifest)
@@ -6534,6 +6650,12 @@ def export_native_runtime_build() -> dict:
         "releaseCheckName": runtime_files["releaseCheckName"],
         "releaseCheckPath": runtime_files["releaseCheckPath"],
         "releaseCheckPublicUrl": f"/exports/{build_dir.name}/{runtime_files['releaseCheckName']}",
+        "releaseCandidateReportName": runtime_files["releaseCandidateReportName"],
+        "releaseCandidateReportPath": runtime_files["releaseCandidateReportPath"],
+        "releaseCandidateReportPublicUrl": f"/exports/{build_dir.name}/{runtime_files['releaseCandidateReportName']}",
+        "releaseCandidateReportStatus": runtime_files["releaseCandidateReportStatus"],
+        "releaseCandidateReportSummary": runtime_files["releaseCandidateReportSummary"],
+        "releaseCandidateReadinessEstimate": runtime_files["releaseCandidateReadinessEstimate"],
         "macLauncherName": runtime_files["macLauncherName"],
         "macLauncherPath": runtime_files["macLauncherPath"],
         "macLauncherPublicUrl": f"/exports/{build_dir.name}/{runtime_files['macLauncherName']}",
@@ -6543,6 +6665,15 @@ def export_native_runtime_build() -> dict:
         "windowsLauncherName": runtime_files["windowsLauncherName"],
         "windowsLauncherPath": runtime_files["windowsLauncherPath"],
         "windowsLauncherPublicUrl": f"/exports/{build_dir.name}/{runtime_files['windowsLauncherName']}",
+        "macReleaseCandidateCheckerName": runtime_files["macReleaseCandidateCheckerName"],
+        "macReleaseCandidateCheckerPath": runtime_files["macReleaseCandidateCheckerPath"],
+        "macReleaseCandidateCheckerPublicUrl": f"/exports/{build_dir.name}/{runtime_files['macReleaseCandidateCheckerName']}",
+        "linuxReleaseCandidateCheckerName": runtime_files["linuxReleaseCandidateCheckerName"],
+        "linuxReleaseCandidateCheckerPath": runtime_files["linuxReleaseCandidateCheckerPath"],
+        "linuxReleaseCandidateCheckerPublicUrl": f"/exports/{build_dir.name}/{runtime_files['linuxReleaseCandidateCheckerName']}",
+        "windowsReleaseCandidateCheckerName": runtime_files["windowsReleaseCandidateCheckerName"],
+        "windowsReleaseCandidateCheckerPath": runtime_files["windowsReleaseCandidateCheckerPath"],
+        "windowsReleaseCandidateCheckerPublicUrl": f"/exports/{build_dir.name}/{runtime_files['windowsReleaseCandidateCheckerName']}",
         "macAppBuilderName": runtime_files["macAppBuilderName"],
         "macAppBuilderPath": runtime_files["macAppBuilderPath"],
         "macAppBuilderPublicUrl": f"/exports/{build_dir.name}/{runtime_files['macAppBuilderName']}",

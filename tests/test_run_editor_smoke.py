@@ -1011,9 +1011,13 @@ class RunEditorSmokeTests(unittest.TestCase):
         self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_APP_BUILDER_NAME).is_file())
         self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_BRAND_LOGO_NAME).is_file())
         self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_RELEASE_CHECK_NAME).is_file())
+        self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_RC_REPORT_NAME).is_file())
         self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_MAC_COMMAND_NAME).is_file())
         self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_LINUX_COMMAND_NAME).is_file())
         self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_WINDOWS_COMMAND_NAME).is_file())
+        self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_MAC_RC_COMMAND_NAME).is_file())
+        self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_LINUX_RC_COMMAND_NAME).is_file())
+        self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_WINDOWS_RC_COMMAND_NAME).is_file())
         self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_MAC_APP_BUILDER_COMMAND_NAME).is_file())
         self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_LINUX_APP_BUILDER_COMMAND_NAME).is_file())
         self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_WINDOWS_APP_BUILDER_COMMAND_NAME).is_file())
@@ -1024,10 +1028,20 @@ class RunEditorSmokeTests(unittest.TestCase):
         self.assertEqual(manifest["engine"]["exportTarget"], run_editor.EXPORT_TARGET_NATIVE_RUNTIME)
         self.assertEqual(manifest["runtime"]["mode"], "pygame_native")
         self.assertTrue(manifest["runtime"]["canBuildStandaloneApp"])
+        self.assertEqual(manifest["runtime"]["releaseCandidateReport"], run_editor.NATIVE_RUNTIME_RC_REPORT_NAME)
+        self.assertEqual(manifest["files"]["releaseCandidateReport"], run_editor.NATIVE_RUNTIME_RC_REPORT_NAME)
 
         release_check_payload = json.loads((build_dir / run_editor.NATIVE_RUNTIME_RELEASE_CHECK_NAME).read_text(encoding="utf-8"))
         self.assertEqual(release_check_payload["status"], "pass")
         self.assertEqual(release_check_payload["summary"]["errors"], 0)
+
+        exported_rc_payload = json.loads((build_dir / run_editor.NATIVE_RUNTIME_RC_REPORT_NAME).read_text(encoding="utf-8"))
+        self.assertIn(exported_rc_payload["status"], {"preview_ready", "preview_ready_with_warnings"})
+        self.assertEqual(exported_rc_payload["summary"]["blockers"], 0)
+        self.assertEqual(export_result["releaseCandidateReportStatus"], exported_rc_payload["status"])
+        self.assertEqual(export_result["releaseCandidateReportSummary"]["blockers"], 0)
+        self.assertGreaterEqual(export_result["releaseCandidateReadinessEstimate"]["desktopPreviewPercent"], 75)
+        self.assertTrue(export_result["releaseCandidateReportPublicUrl"].endswith(run_editor.NATIVE_RUNTIME_RC_REPORT_NAME))
 
         doctor_description = subprocess.run(
             [
@@ -1048,6 +1062,28 @@ class RunEditorSmokeTests(unittest.TestCase):
             {"bundle_structure", "release_check", "save_load", "settings", "video_preview_probe"}
             <= {check["id"] for check in doctor_payload["checks"]}
         )
+
+        rc_description = subprocess.run(
+            [
+                sys.executable,
+                str(build_dir / run_editor.NATIVE_RUNTIME_PLAYER_NAME),
+                "--release-candidate-report",
+                str(build_dir),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(rc_description.returncode, 0, rc_description.stdout + rc_description.stderr)
+        rc_payload = json.loads(rc_description.stdout)
+        self.assertIn(rc_payload["status"], {"preview_ready", "preview_ready_with_warnings"})
+        self.assertEqual(rc_payload["summary"]["blockers"], 0)
+        self.assertGreaterEqual(rc_payload["readinessEstimate"]["desktopPreviewPercent"], 75)
+        self.assertTrue({"macos", "windows", "linux"} <= {entry["id"] for entry in rc_payload["platformMatrix"]})
+        self.assertTrue(
+            {"doctor_release_check", "packaging_scaffold"} <= {gate["id"] for gate in rc_payload["gates"]}
+        )
+        self.assertTrue(rc_payload["nextActions"])
 
         game_data = json.loads((build_dir / "game_data.json").read_text(encoding="utf-8"))
         self.assertIn("gameUiConfig", game_data["project"])
@@ -1098,6 +1134,8 @@ class RunEditorSmokeTests(unittest.TestCase):
         self.assertTrue(app_builder_payload["dataEntries"])
         self.assertFalse(app_builder_payload["missingAssetPaths"])
         self.assertEqual(app_builder_payload["releaseCheck"]["status"], "pass")
+        self.assertIn(app_builder_payload["releaseCandidateReport"]["status"], {"preview_ready", "preview_ready_with_warnings"})
+        self.assertEqual(app_builder_payload["releaseCandidateReport"]["summary"]["blockers"], 0)
         self.assertEqual(app_builder_payload["video"]["backendReport"]["status"], "no_video")
         self.assertEqual(app_builder_payload["video"]["previewProbe"]["status"], "no_video")
         self.assertTrue(

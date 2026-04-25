@@ -71,6 +71,16 @@ python3 -m pip install -r requirements-native-runtime.txt
 python3 runtime_player.py --validate-bundle .
 ```
 
+## 维护者渲染 smoke
+
+如果是在源码仓库里验证原生 Runtime 的真实 Pygame 绘制链，可以回到仓库根目录运行：
+
+```bash
+./run_native_runtime_smoke.sh
+```
+
+这条命令会创建 `.native_runtime_smoke_venv` 隔离环境、安装 `pygame-ce`，并使用 dummy 音频/视频驱动运行 `tests/test_native_runtime_render_smoke.py`。macOS 也可以双击 `run_native_runtime_smoke.command`，Windows 可运行 `run_native_runtime_smoke.cmd`。
+
 ## 一键发布体检
 
 不启动窗口，集中运行导出包结构、发布前自检、标题页、正式存档面板、存档/设置/资料馆/玩家档案、粒子、演出、视频桥接和视频内嵌画面探针：
@@ -80,6 +90,33 @@ python3 runtime_player.py --doctor .
 ```
 
 这条命令会输出 JSON 总报告。涉及存档和设置写入的检查会使用临时用户目录，不会覆盖玩家或创作者机器上的真实存档。
+
+## 发布候选总报告
+
+不启动窗口，在 `--doctor` 的基础上输出更接近发版决策的 Release Candidate 报告。报告会汇总阻塞项、警告项、三系统打包矩阵、视频后端策略、商业发布缺口和下一步建议：
+
+```bash
+python3 runtime_player.py --release-candidate-report .
+```
+
+导出包也会自动附带一份 `native-runtime-release-candidate-report.json`。如果想重新生成报告，可以直接运行随包脚本：
+
+- macOS：双击 `检查原生Runtime发布候选.command`
+- Linux：运行 `./check_native_runtime_release_candidate.sh`
+- Windows：双击 `check_native_runtime_release_candidate.bat`
+
+如果只想输入短命令，也可以使用：
+
+```bash
+python3 runtime_player.py --rc-report .
+```
+
+报告中的 `status` 含义：
+
+- `preview_ready`：可进入桌面 Preview RC 的三系统实机打包阶段。
+- `preview_ready_with_warnings`：主链可进入 Preview RC，但仍有发布警告需要在 Release notes 或实机点测中处理。
+- `preview_ready_with_optional_failures`：Preview 主链不阻塞，但存在非核心能力失败。
+- `blocked`：存在 Preview 阻塞项，应先修复再打包。
 
 ## 发布前自检
 
