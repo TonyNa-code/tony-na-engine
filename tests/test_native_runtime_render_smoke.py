@@ -348,6 +348,16 @@ class NativeRuntimeRenderSmokeTests(unittest.TestCase):
         player.open_text_history_overlay()
         player.render()
         self.assert_screen_has_pixels(player)
+        previous_history_index = player.history_scroll_index
+        player.handle_event(pygame.event.Event(pygame.MOUSEWHEEL, {"y": -1}))
+        self.assertGreaterEqual(player.history_scroll_index, previous_history_index)
+        player.handle_event(pygame.event.Event(pygame.MOUSEBUTTONDOWN, {"button": 3, "pos": (0, 0)}))
+        self.assertIsNone(player.overlay_mode)
+        player.handle_event(pygame.event.Event(pygame.MOUSEBUTTONDOWN, {"button": 3, "pos": (0, 0)}))
+        self.assertEqual(player.overlay_mode, "system")
+        player.close_overlay(preserve_status=True)
+        player.handle_event(pygame.event.Event(pygame.MOUSEWHEEL, {"y": 1}))
+        self.assertEqual(player.overlay_mode, "history")
         player.close_overlay(preserve_status=True)
 
         player.toggle_auto_play()

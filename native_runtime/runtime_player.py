@@ -5346,7 +5346,7 @@ class NativeRuntimePlayer:
         controls = (
             "↑↓：选择 · Enter：确认 · F11：全屏 · Esc：退出"
             if self.overlay_mode == "title"
-            else "F1：系统 · H：历史 · A：自动 · S：已读快进 · F6/F7：存读 · F11：全屏"
+            else "左键：推进 · 右键/F1：系统 · 滚轮↑/H：历史 · A：自动 · S：快进"
         )
         control_surface = self.font_ui.render(controls, True, palette["muted"])
         self.screen.blit(control_surface, (self.width - control_surface.get_width() - 36, 30))
@@ -6502,6 +6502,38 @@ class NativeRuntimePlayer:
                 self.toggle_skip_read()
                 return True
 
+        if event.type == self.pygame.MOUSEWHEEL:
+            if self.overlay_mode:
+                return self.handle_overlay_event(event)
+            if event.y > 0:
+                self.open_text_history_overlay()
+                return True
+            if event.y < 0 and self.current_line:
+                self.advance_current_line_if_allowed()
+                return True
+
+        if event.type == self.pygame.MOUSEBUTTONDOWN and event.button == 3:
+            if self.overlay_mode:
+                if self.overlay_mode == "title":
+                    return True
+                if self.overlay_mode == "archive-detail":
+                    self.close_archive_detail()
+                    return True
+                self.close_overlay()
+                return True
+            self.open_system_menu()
+            return True
+
+        if event.type == self.pygame.MOUSEBUTTONDOWN and event.button in {4, 5}:
+            if self.overlay_mode:
+                return self.handle_overlay_event(event)
+            if event.button == 4:
+                self.open_text_history_overlay()
+                return True
+            if self.current_line:
+                self.advance_current_line_if_allowed()
+                return True
+
         if self.overlay_mode and event.type == self.pygame.MOUSEBUTTONDOWN and event.button == 1:
             return self.handle_overlay_event(event)
 
@@ -6665,6 +6697,13 @@ class NativeRuntimePlayer:
             if event.key in (pygame.K_RETURN, pygame.K_SPACE):
                 self.close_overlay()
                 return True
+        if event.type == pygame.MOUSEWHEEL:
+            if event.y > 0:
+                self.history_scroll_index = max(0, self.history_scroll_index - 1)
+                return True
+            if event.y < 0:
+                self.history_scroll_index = min(max(0, len(self.text_history) - 1), self.history_scroll_index + 1)
+                return True
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             for target in self.overlay_hotspots:
                 if target.get("kind") == "history-item" and target["rect"].collidepoint(event.pos):
@@ -6675,6 +6714,12 @@ class NativeRuntimePlayer:
                 if target.get("kind") == "close" and target["rect"].collidepoint(event.pos):
                     self.close_overlay()
                     return True
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button in {4, 5}:
+            if event.button == 4:
+                self.history_scroll_index = max(0, self.history_scroll_index - 1)
+            else:
+                self.history_scroll_index = min(max(0, len(self.text_history) - 1), self.history_scroll_index + 1)
+            return True
         return True
 
     def handle_profile_overlay_event(self, event) -> bool:
