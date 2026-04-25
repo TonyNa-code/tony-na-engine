@@ -962,6 +962,8 @@ class RunEditorSmokeTests(unittest.TestCase):
         self.assertTrue(app_builder_payload["dataEntries"])
         self.assertFalse(app_builder_payload["missingAssetPaths"])
         self.assertEqual(app_builder_payload["releaseCheck"]["status"], "pass")
+        self.assertEqual(app_builder_payload["video"]["backendReport"]["status"], "no_video")
+        self.assertEqual(app_builder_payload["video"]["previewProbe"]["status"], "no_video")
         self.assertTrue(
             any(entry["source"] == run_editor.NATIVE_RUNTIME_BRAND_LOGO_NAME for entry in app_builder_payload["dataEntries"])
         )

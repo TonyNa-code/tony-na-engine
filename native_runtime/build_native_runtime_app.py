@@ -294,6 +294,7 @@ def write_package_manifest(
         "archiveName": archive_path.name if archive_path else "",
         "archivePath": str(archive_path) if archive_path else "",
         "releaseCheck": description.get("releaseCheck") or {},
+        "video": description.get("video") or {},
         "signing": {
             "signed": False,
             "notarized": False,
@@ -346,6 +347,28 @@ def run_bundle_release_check(bundle_dir: Path) -> dict:
     return report
 
 
+def run_bundle_runtime_json_report(bundle_dir: Path, flag: str, report_label: str) -> dict:
+    runtime_player_path = bundle_dir / RUNTIME_PLAYER_NAME
+    command = [sys.executable, str(runtime_player_path), flag, str(bundle_dir)]
+    result = subprocess.run(command, cwd=bundle_dir, capture_output=True, text=True, check=False)
+    if result.returncode != 0:
+        return {
+            "status": "unavailable",
+            "command": format_command(command),
+            "message": result.stderr.strip() or result.stdout.strip() or f"{report_label}命令执行失败。",
+        }
+    try:
+        report = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return {
+            "status": "invalid_json",
+            "command": format_command(command),
+            "message": f"{report_label}没有返回有效 JSON。",
+        }
+    report["command"] = format_command(command)
+    return report
+
+
 def describe_build(
     bundle_dir: Path,
     app_name: str | None,
@@ -374,6 +397,8 @@ def describe_build(
         if include_release_check
         else {"status": "skipped", "summary": {"errors": 0, "warnings": 0}, "issues": []}
     )
+    video_backend_report = run_bundle_runtime_json_report(bundle_dir, "--describe-video-backends", "视频后端报告")
+    video_preview_probe = run_bundle_runtime_json_report(bundle_dir, "--probe-video-preview", "视频帧预览探针")
     return {
         "appName": resolved_app_name,
         "bundleIdentifier": resolved_bundle_identifier,
@@ -389,6 +414,10 @@ def describe_build(
         "distributionNotes": get_distribution_notes(platform_tag),
         "optionalVideoRequirements": get_optional_video_requirements_name(bundle_dir),
         "optionalVideoInstallCommand": get_optional_video_requirements_install_command(bundle_dir),
+        "video": {
+            "backendReport": video_backend_report,
+            "previewProbe": video_preview_probe,
+        },
         "dataEntries": [
             {"source": entry["relativeSource"], "dest": entry["dest"]}
             for entry in data_entries

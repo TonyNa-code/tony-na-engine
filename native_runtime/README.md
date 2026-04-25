@@ -123,6 +123,8 @@ python3 -m pip install -r requirements.txt -r requirements-build.txt
 python3 build_native_runtime_app.py --mode onedir .
 ```
 
+打包清单会记录发布前自检、视频后端状态和视频帧预览探针结果，方便排查目标系统上的视频/素材问题。
+
 在编辑器导出的原生 Runtime 包中，对应命令是：
 
 ```bash
