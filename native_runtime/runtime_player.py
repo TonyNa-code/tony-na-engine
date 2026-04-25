@@ -279,6 +279,7 @@ TEXT_SPEED_LABELS = {
 AUTO_PLAY_DELAY_PRESETS = (900, 1400, 1800, 2400, 3200)
 SYSTEM_MENU_ITEMS = [
     ("continue", "继续"),
+    ("help", "操作帮助"),
     ("history", "文本历史"),
     ("archives", "资料馆"),
     ("profile", "玩家档案"),
@@ -4114,6 +4115,11 @@ class NativeRuntimePlayer:
         self.system_menu_index = 0
         self.status_message = "系统菜单已打开。"
 
+    def open_help_overlay(self) -> None:
+        self.ui_hidden = False
+        self.overlay_mode = "help"
+        self.status_message = "操作帮助已打开。"
+
     def open_profile_overlay(self) -> None:
         self.overlay_mode = "profile"
         self.status_message = "玩家档案已打开。"
@@ -4168,6 +4174,9 @@ class NativeRuntimePlayer:
     def activate_system_menu_item(self, item_key: str) -> bool:
         if item_key == "continue":
             self.close_overlay()
+            return True
+        if item_key == "help":
+            self.open_help_overlay()
             return True
         if item_key == "history":
             self.open_text_history_overlay()
@@ -5648,6 +5657,8 @@ class NativeRuntimePlayer:
             self.render_save_dialog_overlay()
         elif self.overlay_mode == "system":
             self.render_system_menu_overlay()
+        elif self.overlay_mode == "help":
+            self.render_help_overlay()
         elif self.overlay_mode == "history":
             self.render_text_history_overlay()
         elif self.overlay_mode == "profile":
@@ -6043,6 +6054,88 @@ class NativeRuntimePlayer:
             self.font_ui.render(hint, True, palette["muted"]),
             (panel.left + 26, panel.bottom - 44),
         )
+
+    def render_help_overlay(self) -> None:
+        palette = self.get_active_palette()
+        panel = self.pygame.Rect(0, 0, min(self.width - 72, 940), min(self.height - 64, 640))
+        panel.center = (self.width // 2, self.height // 2)
+        self.pygame.draw.rect(self.screen, (*palette["panel"], 246), panel, border_radius=28)
+        self.pygame.draw.rect(self.screen, with_alpha(palette["panelBorder"], 72), panel, 2, border_radius=28)
+        self.draw_game_ui_panel_frame(panel, "system")
+        self.screen.blit(self.font_title.render("操作帮助", True, palette["text"]), (panel.left + 26, panel.top + 20))
+        self.screen.blit(
+            self.font_ui.render("F2 / ? 随时打开 · 键盘 / 鼠标 / 阅读辅助 / 存档截图", True, palette["muted"]),
+            (panel.left + 26, panel.top + 56),
+        )
+
+        sections = [
+            (
+                "阅读推进",
+                [
+                    "Enter / Space / 左键 / 滚轮下：推进文本",
+                    "A：自动播放 · S：已读快进",
+                    "H / 滚轮上：文本历史 · R / V：语音回听",
+                ],
+            ),
+            (
+                "菜单界面",
+                [
+                    "F1 / Tab / 右键：系统菜单",
+                    "U / 鼠标中键：隐藏或恢复 UI",
+                    "Esc / 右键：关闭弹窗或返回",
+                ],
+            ),
+            (
+                "存档截图",
+                [
+                    "F5：快存 · F8/F9：快读",
+                    "F6：正式存档 · F7：读取存档",
+                    "Ctrl+1/2/3 写入 · Ctrl+Shift+1/2/3 读取",
+                ],
+            ),
+            (
+                "显示资料",
+                [
+                    "F11：窗口 / 全屏 · F12 / P：截图",
+                    "V：视频播放 / 历史语音回听",
+                    "← / →：切换资料馆页 · ↑↓：菜单导航",
+                ],
+            ),
+        ]
+
+        grid_left = panel.left + 26
+        grid_top = panel.top + 92
+        grid_gap = 14
+        close_area_height = 54
+        card_width = max(190, (panel.width - 52 - grid_gap) // 2)
+        card_height = max(74, (panel.bottom - close_area_height - grid_top - grid_gap) // 2)
+        for index, (section_title, lines) in enumerate(sections):
+            column = index % 2
+            row = index // 2
+            card_rect = self.pygame.Rect(
+                grid_left + column * (card_width + grid_gap),
+                grid_top + row * (card_height + grid_gap),
+                card_width,
+                card_height,
+            )
+            self.pygame.draw.rect(self.screen, with_alpha(palette["accent"], 16), card_rect, border_radius=20)
+            self.pygame.draw.rect(self.screen, with_alpha(palette["panelBorder"], 28), card_rect, 1, border_radius=20)
+            self.screen.blit(self.font_body.render(section_title, True, palette["accent"]), (card_rect.left + 14, card_rect.top + 10))
+            line_y = card_rect.top + 38
+            for line in lines:
+                self.screen.blit(
+                    self.font_ui.render(line[:42], True, palette["text"]),
+                    (card_rect.left + 14, line_y),
+                )
+                line_y += max(18, self.font_ui.get_height() + 2)
+
+        close_rect = self.pygame.Rect(panel.right - 134, panel.bottom - 48, 104, 32)
+        self.pygame.draw.rect(self.screen, with_alpha(palette["panel"], 58), close_rect, border_radius=14)
+        self.pygame.draw.rect(self.screen, with_alpha(palette["panelBorder"], 42), close_rect, 1, border_radius=14)
+        self.draw_game_ui_button_frame(close_rect, self.get_game_ui_button_state(close_rect))
+        self.blit_text_center(self.font_ui, "关闭", close_rect.centerx, close_rect.top + 7, palette["text"])
+        self.overlay_hotspots.append({"kind": "close", "rect": close_rect})
+        self.screen.blit(self.font_ui.render("Enter / Esc / 右键关闭", True, palette["muted"]), (panel.left + 26, panel.bottom - 38))
 
     def render_text_history_overlay(self) -> None:
         palette = self.get_active_palette()
@@ -6500,6 +6593,19 @@ class NativeRuntimePlayer:
         self.status_message = f"截图已保存：{screenshot_path.name}"
         return screenshot_path
 
+    def is_help_shortcut_event(self, event) -> bool:
+        if event.type != self.pygame.KEYDOWN:
+            return False
+        if event.key == self.pygame.K_F2:
+            return True
+        if str(getattr(event, "unicode", "") or "") == "?":
+            return True
+        slash_key = getattr(self.pygame, "K_SLASH", None)
+        if slash_key is None or event.key != slash_key:
+            return False
+        event_mod = int(getattr(event, "mod", 0) or 0)
+        return bool(event_mod & self.pygame.KMOD_SHIFT)
+
     def handle_event(self, event) -> bool:
         if event.type == self.pygame.QUIT:
             return False
@@ -6518,6 +6624,12 @@ class NativeRuntimePlayer:
         if event.type == self.pygame.KEYDOWN:
             if event.key in (self.pygame.K_F12, self.pygame.K_p):
                 self.capture_screenshot()
+                return True
+            if self.is_help_shortcut_event(event):
+                if self.overlay_mode == "help":
+                    self.close_overlay()
+                else:
+                    self.open_help_overlay()
                 return True
             if self.ui_hidden and event.key == self.pygame.K_u:
                 self.restore_ui_hidden()
@@ -6639,6 +6751,8 @@ class NativeRuntimePlayer:
             return self.handle_save_dialog_event(event)
         if self.overlay_mode == "system":
             return self.handle_system_menu_event(event)
+        if self.overlay_mode == "help":
+            return self.handle_help_overlay_event(event)
         if self.overlay_mode == "history":
             return self.handle_text_history_overlay_event(event)
         if self.overlay_mode == "profile":
@@ -6753,6 +6867,18 @@ class NativeRuntimePlayer:
             for target in self.overlay_hotspots:
                 if target["kind"] == "system-item" and target["rect"].collidepoint(event.pos):
                     return self.activate_system_menu_item(str(target["value"]))
+        return True
+
+    def handle_help_overlay_event(self, event) -> bool:
+        pygame = self.pygame
+        if event.type == pygame.KEYDOWN and event.key in (pygame.K_RETURN, pygame.K_SPACE):
+            self.close_overlay()
+            return True
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            for target in self.overlay_hotspots:
+                if target.get("kind") == "close" and target["rect"].collidepoint(event.pos):
+                    self.close_overlay()
+                    return True
         return True
 
     def handle_text_history_overlay_event(self, event) -> bool:

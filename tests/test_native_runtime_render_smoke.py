@@ -311,6 +311,7 @@ class NativeRuntimeRenderSmokeTests(unittest.TestCase):
             lambda: (player.open_save_dialog("save"), player.render()),
             lambda: (player.open_save_dialog("load"), player.render()),
             lambda: (player.open_system_menu(), player.render()),
+            lambda: (player.open_help_overlay(), player.render()),
             lambda: (player.open_settings_overlay(), player.render()),
             lambda: (player.open_profile_overlay(), player.render()),
             lambda: (player.open_auto_resume_overlay(), player.render()),
@@ -327,6 +328,21 @@ class NativeRuntimeRenderSmokeTests(unittest.TestCase):
         screenshot_files = list(get_runtime_screenshot_dir().glob("native_render_smoke-*.png"))
         self.assertEqual(len(screenshot_files), 1)
         self.assertGreater(screenshot_files[0].stat().st_size, 0)
+        player.handle_event(pygame.event.Event(pygame.KEYDOWN, {"key": pygame.K_F2}))
+        self.assertEqual(player.overlay_mode, "help")
+        player.render()
+        self.assert_screen_has_pixels(player)
+        player.handle_event(pygame.event.Event(pygame.KEYDOWN, {"key": pygame.K_RETURN}))
+        self.assertIsNone(player.overlay_mode)
+        player.handle_event(
+            pygame.event.Event(
+                pygame.KEYDOWN,
+                {"key": pygame.K_SLASH, "unicode": "?", "mod": pygame.KMOD_SHIFT},
+            )
+        )
+        self.assertEqual(player.overlay_mode, "help")
+        player.handle_event(pygame.event.Event(pygame.KEYDOWN, {"key": pygame.K_F2}))
+        self.assertIsNone(player.overlay_mode)
         self.assertGreaterEqual(len(player.text_history), 1)
         self.assertTrue(player.font_source_status)
         history_item = player.get_selected_text_history_item()
