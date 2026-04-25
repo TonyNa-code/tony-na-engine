@@ -17,6 +17,7 @@ GAME_DATA_NAME = "game_data.json"
 RUNTIME_PLAYER_NAME = "runtime_player.py"
 PACKAGE_MANIFEST_NAME = "native_app_package_manifest.json"
 ENGINE_BRAND_LOGO_RELATIVE_PATH = "assets/brand-logo.png"
+VIDEO_REQUIREMENTS_CANDIDATES = ("requirements-native-runtime-video.txt", "requirements-video.txt")
 
 
 class NativeAppBuildError(RuntimeError):
@@ -35,6 +36,15 @@ def get_requirements_install_command(bundle_dir: Path) -> str:
         else "requirements-build.txt"
     )
     return f"python -m pip install -r {runtime_requirements} -r {build_requirements}"
+
+
+def get_optional_video_requirements_name(bundle_dir: Path) -> str:
+    return next((file_name for file_name in VIDEO_REQUIREMENTS_CANDIDATES if (bundle_dir / file_name).is_file()), "")
+
+
+def get_optional_video_requirements_install_command(bundle_dir: Path) -> str:
+    requirements_name = get_optional_video_requirements_name(bundle_dir)
+    return f"python -m pip install -r {requirements_name}" if requirements_name else ""
 
 
 def load_game_data(bundle_dir: Path) -> dict:
@@ -377,6 +387,8 @@ def describe_build(
         "packageManifest": PACKAGE_MANIFEST_NAME,
         "plannedArchiveName": get_planned_archive_name(resolved_app_name, platform_tag, mode),
         "distributionNotes": get_distribution_notes(platform_tag),
+        "optionalVideoRequirements": get_optional_video_requirements_name(bundle_dir),
+        "optionalVideoInstallCommand": get_optional_video_requirements_install_command(bundle_dir),
         "dataEntries": [
             {"source": entry["relativeSource"], "dest": entry["dest"]}
             for entry in data_entries

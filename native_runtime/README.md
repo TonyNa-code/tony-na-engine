@@ -76,6 +76,24 @@ python3 runtime_player.py --validate-bundle .
 python3 runtime_player.py --release-check .
 ```
 
+## 视频后端状态
+
+原生 Runtime 默认使用“影院式预览卡 + 系统播放器桥接”，包体轻、三平台风险低，适合 Preview 版验证 OP / ED / PV。
+
+查看当前机器的视频后端能力：
+
+```bash
+python3 runtime_player.py --describe-video-backends .
+```
+
+如果想评估后续窗口内嵌画面帧预览，可以额外安装可选依赖：
+
+```bash
+python3 -m pip install -r requirements-native-runtime-video.txt
+```
+
+这条路线目前只作为实验性候选：OpenCV 可以帮助解码画面帧，但不负责音频播放和音画同步；正式商业级内嵌 OP / ED 仍需要继续评估 FFmpeg/PyAV/平台原生播放器等方案。
+
 ## 快速启动
 
 ```bash

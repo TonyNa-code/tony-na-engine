@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import math
 import os
@@ -17,6 +18,8 @@ from pathlib import Path
 ASSET_TYPE_IMAGE = {"background", "sprite", "cg", "ui"}
 DEFAULT_GAME_DATA_NAME = "game_data.json"
 ENGINE_BRAND_LOGO_RELATIVE_PATH = "assets/brand-logo.png"
+NATIVE_VIDEO_OPTIONAL_REQUIREMENTS_NAME = "requirements-native-runtime-video.txt"
+NATIVE_VIDEO_OPTIONAL_REQUIREMENTS_CANDIDATES = (NATIVE_VIDEO_OPTIONAL_REQUIREMENTS_NAME, "requirements-video.txt")
 GAME_UI_ASSET_REFERENCE_LABELS = {
     "titleBackgroundAssetId": "标题背景",
     "titleLogoAssetId": "标题 Logo",
@@ -29,6 +32,30 @@ GAME_UI_ASSET_REFERENCE_LABELS = {
     "systemPanelFrameAssetId": "系统面板九宫格",
     "uiOverlayAssetId": "UI 氛围叠层",
 }
+NATIVE_VIDEO_BACKEND_OPTIONS = [
+    {
+        "id": "system_player_bridge",
+        "label": "系统播放器桥接",
+        "kind": "external",
+        "pythonPackage": "",
+        "moduleName": "",
+        "embeddedVideo": False,
+        "audio": True,
+        "productionReady": True,
+        "notes": "默认方案。包体轻、三平台风险低，但无法在 Pygame 窗口内检测真实播放进度。",
+    },
+    {
+        "id": "opencv_frame_preview",
+        "label": "OpenCV 内嵌画面帧预览",
+        "kind": "embedded_visual_preview",
+        "pythonPackage": "opencv-python>=4.9,<5",
+        "moduleName": "cv2",
+        "embeddedVideo": True,
+        "audio": False,
+        "productionReady": False,
+        "notes": "可作为后续窗口内嵌画面解码候选；OpenCV 不负责音频，正式 OP/ED 仍需额外音频/同步方案。",
+    },
+]
 COLOR_BG = (12, 15, 28)
 COLOR_PANEL = (18, 24, 40)
 COLOR_PANEL_BORDER = (78, 106, 168)
@@ -404,6 +431,52 @@ def can_open_external_video() -> bool:
     return get_external_video_opener_command(Path("preview.mp4")) is not None
 
 
+def is_optional_python_module_available(module_name: str) -> bool:
+    if not module_name:
+        return True
+    try:
+        return importlib.util.find_spec(module_name) is not None
+    except (ImportError, ValueError):
+        return False
+
+
+def get_native_video_backend_options(bundle_dir: Path | None = None) -> list[dict]:
+    candidate_root = bundle_dir or Path(".")
+    optional_requirements_name = next(
+        (
+            file_name
+            for file_name in NATIVE_VIDEO_OPTIONAL_REQUIREMENTS_CANDIDATES
+            if (candidate_root / file_name).is_file()
+        ),
+        NATIVE_VIDEO_OPTIONAL_REQUIREMENTS_NAME,
+    )
+    options = []
+    for option in NATIVE_VIDEO_BACKEND_OPTIONS:
+        option_copy = dict(option)
+        if option_copy["id"] == "system_player_bridge":
+            available = can_open_external_video()
+            option_copy.update(
+                {
+                    "available": available,
+                    "status": "ready" if available else "needs_system_opener",
+                    "openerLabel": get_external_video_opener_label() if available else "",
+                    "installCommand": "",
+                }
+            )
+        else:
+            available = is_optional_python_module_available(str(option_copy.get("moduleName") or ""))
+            option_copy.update(
+                {
+                    "available": available,
+                    "status": "available" if available else "optional_dependency_missing",
+                    "optionalRequirements": optional_requirements_name,
+                    "installCommand": f"python -m pip install -r {optional_requirements_name}",
+                }
+            )
+        options.append(option_copy)
+    return options
+
+
 def open_external_video(video_path: Path) -> tuple[bool, str]:
     if not video_path.is_file():
         return False, f"视频文件不存在：{video_path.name}"
@@ -662,6 +735,10 @@ def build_release_check_report(bundle_dir: Path) -> dict:
                     export_url,
                 )
             video_bridge_available = can_open_external_video()
+            optional_video_hint = (
+                f"如需评估后续窗口内画面预览，可运行 python runtime_player.py --describe-video-backends .，"
+                f"或安装 {NATIVE_VIDEO_OPTIONAL_REQUIREMENTS_NAME}。"
+            )
             add_release_check_issue(
                 issues,
                 "warning",
@@ -672,8 +749,10 @@ def build_release_check_report(bundle_dir: Path) -> dict:
                 (
                     f"运行到视频卡时可按 V 调用{get_external_video_opener_label()}播放；"
                     "这不是内嵌解码，正式发布前仍建议在目标系统实机确认 OP/ED/PV。"
+                    + optional_video_hint
                     if video_bridge_available
                     else "当前系统没有检测到可用的视频打开器；网页包和 NW.js 桌面包仍可直接播放视频。"
+                    + optional_video_hint
                 ),
                 export_url,
             )
@@ -797,12 +876,55 @@ def build_native_video_bridge_report(bundle_dir: Path) -> dict:
             "videoBlockCount": sum(len(entry["usages"]) for entry in entries),
             "openerAvailable": opener_available,
         },
+        "nativePreviewMode": NATIVE_VIDEO_PREVIEW_MODE,
+        "backendOptions": get_native_video_backend_options(bundle_dir),
         "entries": entries,
     }
 
 
 def print_native_video_bridge_report(bundle_dir: Path) -> None:
     report = build_native_video_bridge_report(bundle_dir)
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+
+
+def build_native_video_backend_report(bundle_dir: Path) -> dict:
+    bridge_report = build_native_video_bridge_report(bundle_dir)
+    backend_options = bridge_report.get("backendOptions") or get_native_video_backend_options(bundle_dir)
+    embedded_candidates = [
+        option
+        for option in backend_options
+        if option.get("embeddedVideo")
+    ]
+    available_embedded = [option for option in embedded_candidates if option.get("available")]
+    bridge_status = bridge_report.get("status")
+    if bridge_status == "no_video":
+        recommendation = "当前导出包没有视频素材；如果后续加入 OP/ED/PV，可以继续使用系统播放器桥接。"
+    elif bridge_status == "ready":
+        recommendation = "当前可以继续使用系统播放器桥接。"
+    else:
+        recommendation = "当前系统没有检测到可用外部视频打开器，建议优先发布网页/NW.js 包或在目标系统安装默认视频播放器。"
+    if available_embedded:
+        recommendation += " 已检测到可选内嵌画面后端，可用于后续实验性窗口内视频帧预览。"
+    else:
+        recommendation += f" 如需尝试实验性内嵌画面后端，可安装 {NATIVE_VIDEO_OPTIONAL_REQUIREMENTS_NAME}。"
+    return {
+        "status": (
+            "no_video"
+            if bridge_status == "no_video"
+            else ("embedded_candidate_available" if available_embedded else "bridge_only")
+        ),
+        "checkedAt": now_iso(),
+        "bundleDir": str(bundle_dir),
+        "nativePreviewMode": NATIVE_VIDEO_PREVIEW_MODE,
+        "videoAssetCount": (bridge_report.get("summary") or {}).get("videoAssetCount", 0),
+        "videoBlockCount": (bridge_report.get("summary") or {}).get("videoBlockCount", 0),
+        "recommendation": recommendation,
+        "backendOptions": backend_options,
+    }
+
+
+def print_native_video_backend_report(bundle_dir: Path) -> None:
+    report = build_native_video_backend_report(bundle_dir)
     print(json.dumps(report, ensure_ascii=False, indent=2))
 
 
@@ -5900,6 +6022,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--exercise-profile", dest="exercise_profile", help="检查原生 Runtime 玩家档案和续玩记录能否写入和读回")
     parser.add_argument("--describe-title-screen", dest="describe_title_screen", help="输出原生 Runtime 标题页配置摘要，不启动窗口")
     parser.add_argument("--describe-video-bridge", dest="describe_video_bridge", help="输出原生 Runtime 视频桥接摘要，不启动窗口")
+    parser.add_argument("--describe-video-backends", dest="describe_video_backends", help="输出原生 Runtime 可选视频后端摘要，不启动窗口")
     parser.add_argument("--describe-save-dialog", dest="describe_save_dialog", help="输出正式存档面板摘要，不启动窗口")
     parser.add_argument("--page", dest="save_dialog_page", type=int, default=0, help="配合 --describe-save-dialog 使用，指定页码")
     args = parser.parse_args(argv)
@@ -5979,6 +6102,14 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         except NativeRuntimeError as error:
             print(f"Native runtime video bridge description failed: {error}")
+            return 1
+
+    if args.describe_video_backends:
+        try:
+            print_native_video_backend_report(Path(args.describe_video_backends).resolve())
+            return 0
+        except NativeRuntimeError as error:
+            print(f"Native runtime video backend description failed: {error}")
             return 1
 
     if args.describe_save_dialog:

@@ -567,9 +567,36 @@ class RunEditorSmokeTests(unittest.TestCase):
         self.assertEqual(video_bridge_payload["summary"]["videoBlockCount"], 1)
         self.assertEqual(video_bridge_payload["entries"][0]["externalPlaybackMode"], "system_player_bridge")
         self.assertEqual(video_bridge_payload["entries"][0]["nativePreviewMode"], "cinematic_bridge_card")
+        self.assertEqual(video_bridge_payload["nativePreviewMode"], "cinematic_bridge_card")
+        self.assertTrue(
+            any(option["id"] == "opencv_frame_preview" for option in video_bridge_payload["backendOptions"])
+        )
         self.assertTrue(video_bridge_payload["entries"][0]["exists"])
         self.assertTrue(video_bridge_payload["entries"][0]["extensionSupported"])
         self.assertEqual(video_bridge_payload["entries"][0]["usages"][0]["title"], "Opening Movie")
+
+        video_backend_description = subprocess.run(
+            [
+                sys.executable,
+                str(build_dir / run_editor.NATIVE_RUNTIME_PLAYER_NAME),
+                "--describe-video-backends",
+                str(build_dir),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(video_backend_description.returncode, 0, video_backend_description.stdout + video_backend_description.stderr)
+        video_backend_payload = json.loads(video_backend_description.stdout)
+        self.assertEqual(video_backend_payload["nativePreviewMode"], "cinematic_bridge_card")
+        self.assertEqual(video_backend_payload["videoAssetCount"], 1)
+        self.assertTrue(
+            any(
+                option["optionalRequirements"] == run_editor.NATIVE_RUNTIME_VIDEO_REQUIREMENTS_NAME
+                for option in video_backend_payload["backendOptions"]
+                if option.get("optionalRequirements")
+            )
+        )
 
     def test_voice_placeholder_and_match_workflow(self) -> None:
         _, chapter_result = self.create_blank_project_with_chapter()
@@ -843,6 +870,7 @@ class RunEditorSmokeTests(unittest.TestCase):
         self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_README_NAME).is_file())
         self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_REQUIREMENTS_NAME).is_file())
         self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_BUILD_REQUIREMENTS_NAME).is_file())
+        self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_VIDEO_REQUIREMENTS_NAME).is_file())
         self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_APP_BUILDER_NAME).is_file())
         self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_BRAND_LOGO_NAME).is_file())
         self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_RELEASE_CHECK_NAME).is_file())
@@ -906,6 +934,7 @@ class RunEditorSmokeTests(unittest.TestCase):
         self.assertEqual(app_builder_payload["outputDir"], "native_app_dist")
         self.assertEqual(app_builder_payload["packageManifest"], "native_app_package_manifest.json")
         self.assertTrue(app_builder_payload["plannedArchiveName"].endswith("-preview.zip"))
+        self.assertEqual(app_builder_payload["optionalVideoRequirements"], run_editor.NATIVE_RUNTIME_VIDEO_REQUIREMENTS_NAME)
         self.assertIn(app_builder_payload["platform"], {"macos", "windows", "linux", "unknown"})
         self.assertTrue(app_builder_payload["bundleIdentifier"].startswith("com.tonyna."))
         self.assertTrue(app_builder_payload["distributionNotes"])
