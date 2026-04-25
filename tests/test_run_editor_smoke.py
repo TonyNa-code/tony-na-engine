@@ -913,6 +913,26 @@ class RunEditorSmokeTests(unittest.TestCase):
         self.assertEqual(release_check_payload["status"], "pass")
         self.assertEqual(release_check_payload["summary"]["errors"], 0)
 
+        doctor_description = subprocess.run(
+            [
+                sys.executable,
+                str(build_dir / run_editor.NATIVE_RUNTIME_PLAYER_NAME),
+                "--doctor",
+                str(build_dir),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(doctor_description.returncode, 0, doctor_description.stdout + doctor_description.stderr)
+        doctor_payload = json.loads(doctor_description.stdout)
+        self.assertEqual(doctor_payload["status"], "pass")
+        self.assertEqual(doctor_payload["summary"]["failed"], 0)
+        self.assertTrue(
+            {"bundle_structure", "release_check", "save_load", "settings", "video_preview_probe"}
+            <= {check["id"] for check in doctor_payload["checks"]}
+        )
+
         game_data = json.loads((build_dir / "game_data.json").read_text(encoding="utf-8"))
         self.assertIn("gameUiConfig", game_data["project"])
         self.assertEqual(game_data["project"]["gameUiConfig"]["preset"], "paper")

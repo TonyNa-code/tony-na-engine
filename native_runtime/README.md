@@ -68,6 +68,16 @@ python3 -m pip install -r requirements-native-runtime.txt
 python3 runtime_player.py --validate-bundle .
 ```
 
+## 一键发布体检
+
+不启动窗口，集中运行导出包结构、发布前自检、标题页、正式存档面板、存档/设置/资料馆/玩家档案、粒子、演出、视频桥接和视频帧预览探针：
+
+```bash
+python3 runtime_player.py --doctor .
+```
+
+这条命令会输出 JSON 总报告。涉及存档和设置写入的检查会使用临时用户目录，不会覆盖玩家或创作者机器上的真实存档。
+
 ## 发布前自检
 
 不启动窗口，输出发布前诊断报告。这个检查会覆盖入口场景、缺失素材、素材格式风险、大文件风险、存档位数量、成品 UI 皮肤素材引用等：

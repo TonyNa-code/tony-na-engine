@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import importlib
 import importlib.util
+import io
 import json
 import math
 import os
@@ -11,7 +12,9 @@ import random
 import shutil
 import subprocess
 import sys
+import tempfile
 import traceback
+from contextlib import redirect_stdout
 from datetime import datetime
 from pathlib import Path
 
@@ -1134,6 +1137,204 @@ def build_native_video_preview_probe_report(
 def print_native_video_preview_probe_report(bundle_dir: Path) -> None:
     report = build_native_video_preview_probe_report(bundle_dir)
     print(json.dumps(report, ensure_ascii=False, indent=2))
+
+
+def get_doctor_status(checks: list[dict]) -> str:
+    if any(check.get("status") == "fail" for check in checks):
+        return "fail"
+    if any(check.get("status") == "warn" for check in checks):
+        return "warn"
+    return "pass"
+
+
+def build_doctor_summary(checks: list[dict]) -> dict:
+    return {
+        "checks": len(checks),
+        "passed": sum(1 for check in checks if check.get("status") == "pass"),
+        "warnings": sum(1 for check in checks if check.get("status") == "warn"),
+        "failed": sum(1 for check in checks if check.get("status") == "fail"),
+        "skipped": sum(1 for check in checks if check.get("status") == "skipped"),
+    }
+
+
+def build_doctor_check(
+    check_id: str,
+    label: str,
+    status: str,
+    message: str,
+    details: dict | None = None,
+    output: str = "",
+) -> dict:
+    return {
+        "id": check_id,
+        "label": label,
+        "status": status,
+        "message": message,
+        "details": details or {},
+        "output": output,
+    }
+
+
+def run_doctor_callable_check(check_id: str, label: str, callback, *args) -> dict:
+    output_buffer = io.StringIO()
+    try:
+        with redirect_stdout(output_buffer):
+            callback(*args)
+    except NativeRuntimeError as error:
+        return build_doctor_check(check_id, label, "fail", str(error), output=output_buffer.getvalue().strip())
+    except Exception as error:
+        return build_doctor_check(
+            check_id,
+            label,
+            "fail",
+            f"{type(error).__name__}: {error}",
+            output=output_buffer.getvalue().strip(),
+        )
+    return build_doctor_check(check_id, label, "pass", "通过", output=output_buffer.getvalue().strip())
+
+
+def run_doctor_with_temporary_home(callback):
+    original_home = os.environ.get("HOME")
+    original_userprofile = os.environ.get("USERPROFILE")
+    with tempfile.TemporaryDirectory(prefix="tony-na-native-doctor-") as temp_dir:
+        temp_home = Path(temp_dir) / "home"
+        temp_home.mkdir(parents=True, exist_ok=True)
+        os.environ["HOME"] = str(temp_home)
+        os.environ["USERPROFILE"] = str(temp_home)
+        try:
+            return callback()
+        finally:
+            if original_home is None:
+                os.environ.pop("HOME", None)
+            else:
+                os.environ["HOME"] = original_home
+            if original_userprofile is None:
+                os.environ.pop("USERPROFILE", None)
+            else:
+                os.environ["USERPROFILE"] = original_userprofile
+
+
+def build_release_check_doctor_check(bundle_dir: Path) -> dict:
+    report = build_release_check_report(bundle_dir)
+    report_status = str(report.get("status") or "fail")
+    summary = report.get("summary") or {}
+    if report_status == "pass":
+        status = "pass"
+        message = "发布前自检通过。"
+    elif report_status == "warn":
+        status = "warn"
+        message = f"发布前自检有 {summary.get('warnings', 0)} 条警告。"
+    else:
+        status = "fail"
+        message = f"发布前自检有 {summary.get('errors', 0)} 个错误。"
+    return build_doctor_check("release_check", "发布前自检", status, message, details=report)
+
+
+def build_report_doctor_check(check_id: str, label: str, report_builder, bundle_dir: Path) -> dict:
+    try:
+        report = report_builder(bundle_dir)
+    except NativeRuntimeError as error:
+        return build_doctor_check(check_id, label, "fail", str(error))
+    except Exception as error:
+        return build_doctor_check(check_id, label, "fail", f"{type(error).__name__}: {error}")
+    return build_doctor_check(check_id, label, "pass", "通过", details=report)
+
+
+def build_video_bridge_doctor_check(bundle_dir: Path) -> dict:
+    report = build_native_video_bridge_report(bundle_dir)
+    report_status = str(report.get("status") or "")
+    summary = report.get("summary") or {}
+    if report_status == "needs_system_opener":
+        return build_doctor_check(
+            "video_bridge",
+            "视频播放器桥接",
+            "warn",
+            "导出包包含视频，但当前系统没有检测到默认视频打开器。",
+            details=report,
+        )
+    if report_status == "no_video":
+        return build_doctor_check("video_bridge", "视频播放器桥接", "pass", "没有视频素材，跳过桥接风险。", details=report)
+    return build_doctor_check(
+        "video_bridge",
+        "视频播放器桥接",
+        "pass",
+        f"检测到 {summary.get('videoAssetCount', 0)} 个视频素材，系统播放器桥接可用。",
+        details=report,
+    )
+
+
+def build_video_preview_doctor_check(bundle_dir: Path) -> dict:
+    report = build_native_video_preview_probe_report(bundle_dir)
+    report_status = str(report.get("status") or "")
+    if report_status in {"ready", "no_video", "optional_dependency_missing"}:
+        status = "pass"
+    elif report_status in {"partial", "pygame_missing", "all_failed"}:
+        status = "warn"
+    else:
+        status = "fail"
+    return build_doctor_check(
+        "video_preview_probe",
+        "视频帧预览探针",
+        status,
+        str(report.get("recommendation") or "视频帧预览探针完成。"),
+        details=report,
+    )
+
+
+def build_native_runtime_doctor_report(bundle_dir: Path) -> dict:
+    checks: list[dict] = []
+    checks.append(run_doctor_callable_check("bundle_structure", "导出包结构", validate_bundle, bundle_dir))
+    checks.append(build_release_check_doctor_check(bundle_dir))
+    checks.append(
+        run_doctor_with_temporary_home(
+            lambda: build_report_doctor_check("title_screen", "标题页摘要", build_native_title_screen_report, bundle_dir)
+        )
+    )
+    checks.append(
+        run_doctor_with_temporary_home(
+            lambda: build_report_doctor_check("save_dialog", "正式存档面板", build_save_dialog_page_data_for_doctor, bundle_dir)
+        )
+    )
+
+    def run_stateful_checks() -> list[dict]:
+        return [
+            run_doctor_callable_check("save_load", "存档读写", exercise_save_load, bundle_dir),
+            run_doctor_callable_check("settings", "系统设置读写", exercise_runtime_settings, bundle_dir),
+            run_doctor_callable_check("archives", "资料馆进度", exercise_archive_progress, bundle_dir),
+            run_doctor_callable_check("profile", "玩家档案/自动续玩", exercise_player_profile, bundle_dir),
+        ]
+
+    checks.extend(run_doctor_with_temporary_home(run_stateful_checks))
+    checks.append(run_doctor_callable_check("particles", "粒子配置", exercise_particle_effect, bundle_dir))
+    checks.append(run_doctor_callable_check("visual_effects", "高级演出配置", exercise_visual_effects, bundle_dir))
+    checks.append(build_video_bridge_doctor_check(bundle_dir))
+    checks.append(build_report_doctor_check("video_backends", "视频后端能力", build_native_video_backend_report, bundle_dir))
+    checks.append(build_video_preview_doctor_check(bundle_dir))
+
+    status = get_doctor_status(checks)
+    return {
+        "status": status,
+        "checkedAt": now_iso(),
+        "bundleDir": str(bundle_dir),
+        "summary": build_doctor_summary(checks),
+        "checks": checks,
+    }
+
+
+def build_save_dialog_page_data_for_doctor(bundle_dir: Path) -> dict:
+    payload = load_game_data(bundle_dir / "game_data.json")
+    project = payload.get("project") or {}
+    save_store = load_project_save_store(
+        str(project.get("projectId") or "untitled_project"),
+        get_project_formal_save_slot_count(project),
+    )
+    return build_save_dialog_page_data(project, save_store, page=0)
+
+
+def print_native_runtime_doctor_report(bundle_dir: Path) -> dict:
+    report = build_native_runtime_doctor_report(bundle_dir)
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+    return report
 
 
 def build_native_title_screen_report(bundle_dir: Path) -> dict:
@@ -6270,6 +6471,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("game_data", nargs="?", default=DEFAULT_GAME_DATA_NAME, help="导出的 game_data.json 路径")
     parser.add_argument("--validate-bundle", dest="validate_bundle", help="只检查导出包结构，不启动窗口")
     parser.add_argument("--release-check", dest="release_check", help="输出发布前自检报告 JSON，不启动窗口")
+    parser.add_argument("--doctor", "--release-doctor", dest="doctor", help="一键运行原生 Runtime 发布体检报告 JSON，不启动窗口")
     parser.add_argument("--exercise-save-load", dest="exercise_save_load", help="检查存档文件能否写入和读回")
     parser.add_argument("--exercise-settings", dest="exercise_settings", help="检查原生 Runtime 设置能否写入和读回")
     parser.add_argument("--exercise-archives", dest="exercise_archives", help="检查原生 Runtime 资料馆进度能否写入和读回")
@@ -6296,6 +6498,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.release_check:
         print_release_check_report(Path(args.release_check).resolve())
         return 0
+
+    if args.doctor:
+        try:
+            report = print_native_runtime_doctor_report(Path(args.doctor).resolve())
+            return 1 if report.get("status") == "fail" else 0
+        except NativeRuntimeError as error:
+            print(f"Native runtime doctor failed: {error}")
+            return 1
 
     if args.exercise_save_load:
         try:
