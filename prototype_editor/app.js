@@ -1935,6 +1935,7 @@ const STORY_BLOCK_ISSUE_FILTER_LABELS = {
   missing_voice: "待绑语音",
   missing_asset: "待补素材",
   broken_target: "跳转待修",
+  variable_logic: "变量待修",
   too_long: "偏长文本",
 };
 
@@ -2131,6 +2132,7 @@ const state = {
   historyRecoveryPromptKey: "",
   sceneStatusDrag: null,
   storyBlockDrag: null,
+  starterVariablesPromise: null,
   beginnerTutorialOpen: false,
   beginnerTutorialStep: 0,
 };
@@ -12381,6 +12383,109 @@ function getBlockExpressionAssetId(block) {
   return expression?.spriteAssetId ?? "";
 }
 
+function isRawVariableValueMatchingType(variable, value) {
+  if (!variable) {
+    return false;
+  }
+
+  if (variable.type === "number") {
+    return typeof value === "number" && Number.isFinite(value);
+  }
+
+  if (variable.type === "boolean") {
+    return typeof value === "boolean";
+  }
+
+  return typeof value === "string";
+}
+
+function isConditionOperatorAllowedForVariable(variable, operator) {
+  const safeOperator = String(operator ?? "==").trim() || "==";
+  if (["==", "=", "!="].includes(safeOperator)) {
+    return true;
+  }
+  if ([">", ">=", "<", "<="].includes(safeOperator)) {
+    return variable?.type === "number";
+  }
+  return false;
+}
+
+function hasVariableReferenceIssue(
+  variableId,
+  { expectedType = null, value = null, validateValue = false, operator = null } = {}
+) {
+  const variable = state.data.variablesById.get(variableId);
+  if (!variable) {
+    return true;
+  }
+
+  if (expectedType && variable.type !== expectedType) {
+    return true;
+  }
+
+  if (validateValue && !isRawVariableValueMatchingType(variable, value)) {
+    return true;
+  }
+
+  if (operator !== null && !isConditionOperatorAllowedForVariable(variable, operator)) {
+    return true;
+  }
+
+  return false;
+}
+
+function blockHasVariableLogicIssue(block) {
+  if (block.type === "variable_set") {
+    return hasVariableReferenceIssue(block.variableId, {
+      value: block.value,
+      validateValue: true,
+    });
+  }
+
+  if (block.type === "variable_add") {
+    return hasVariableReferenceIssue(block.variableId, {
+      expectedType: "number",
+      value: block.value,
+      validateValue: true,
+    });
+  }
+
+  if (block.type === "choice") {
+    return (block.options ?? []).some((option) =>
+      (option.effects ?? []).some((effect) => {
+        if (effect.type === "variable_add") {
+          return hasVariableReferenceIssue(effect.variableId, {
+            expectedType: "number",
+            value: effect.value,
+            validateValue: true,
+          });
+        }
+        if (effect.type === "variable_set") {
+          return hasVariableReferenceIssue(effect.variableId, {
+            value: effect.value,
+            validateValue: true,
+          });
+        }
+        return true;
+      })
+    );
+  }
+
+  if (block.type === "condition") {
+    return (block.branches ?? []).some((branch) =>
+      (branch.when ?? []).some((rule) =>
+        hasVariableReferenceIssue(rule.variableId, {
+          value: rule.value,
+          validateValue: true,
+          operator: rule.operator,
+        })
+      )
+    );
+  }
+
+  return false;
+}
+
 function getStoryBlockIssueItems(block) {
   const items = [];
   const pushIssue = (key, label, toneClass = "warn-text") => {
@@ -12445,6 +12550,10 @@ function getStoryBlockIssueItems(block) {
     )
   ) {
     pushIssue("broken_target", "跳转待修", "danger-text");
+  }
+
+  if (blockHasVariableLogicIssue(block)) {
+    pushIssue("variable_logic", "变量待修", "danger-text");
   }
 
   return items;
@@ -35287,31 +35396,41 @@ async function ensureStarterVariables(options = {}) {
     return true;
   }
 
+  if (state.starterVariablesPromise) {
+    return state.starterVariablesPromise;
+  }
+
   const nextVariables = buildStarterVariableLibrary(state.data.variables, options);
   if (nextVariables.length === state.data.variables.length) {
     return true;
   }
 
-  try {
-    await flushPendingStoryChanges();
-    setSaveStatus(options.reason ?? "正在创建基础变量库...");
-    await postJson(API_SAVE_PROJECT_SETTINGS, {
-      variables: {
-        variables: nextVariables,
-      },
-    });
-    await reloadProjectData({
-      ...getCurrentUiState(),
-    });
-    setSaveStatus("基础变量库已创建");
-    showToast("基础变量库已创建");
-    return true;
-  } catch (error) {
-    setSaveStatus("创建基础变量库失败", true);
-    showToast("创建基础变量库失败", "error");
-    window.alert(`创建基础变量库没有成功：${error.message}`);
-    return false;
-  }
+  state.starterVariablesPromise = (async () => {
+    try {
+      await flushPendingStoryChanges();
+      setSaveStatus(options.reason ?? "正在创建基础变量库...");
+      await postJson(API_SAVE_PROJECT_SETTINGS, {
+        variables: {
+          variables: nextVariables,
+        },
+      });
+      await reloadProjectData({
+        ...getCurrentUiState(),
+      });
+      setSaveStatus("基础变量库已创建");
+      showToast("基础变量库已创建");
+      return true;
+    } catch (error) {
+      setSaveStatus("创建基础变量库失败", true);
+      showToast("创建基础变量库失败", "error");
+      window.alert(`创建基础变量库没有成功：${error.message}`);
+      return false;
+    } finally {
+      state.starterVariablesPromise = null;
+    }
+  })();
+
+  return state.starterVariablesPromise;
 }
 
 function getSafeVariableId(variableId, typeFilter = null) {
@@ -37835,6 +37954,14 @@ function runValidation(data) {
     type: "screen",
     screen: "story",
   }));
+  data.variables.forEach((variable) => {
+    if (!isRawVariableValueMatchingType(variable, variable.defaultValue)) {
+      pushIssue("error", "变量默认值类型不正确。", `变量 ${variable.name ?? variable.id}`, {
+        type: "screen",
+        screen: "story",
+      });
+    }
+  });
   validateUniqueIds(data.chapters, "章节", pushIssue, "chapterId", (item, id) =>
     data.chaptersById.has(id) ? { type: "chapter", chapterId: id } : { type: "screen", screen: "story" }
   );

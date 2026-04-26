@@ -100,6 +100,9 @@ VN_TEXT_LONG_WARNING_LENGTH = 260
 VN_TEXT_LONG_WARNING_LINES = 5
 VN_CHOICE_LONG_WARNING_LENGTH = 42
 VN_CHOICE_MANY_OPTIONS = 6
+VARIABLE_TYPES = {"number", "boolean", "string"}
+NUMERIC_CONDITION_OPERATORS = {">", ">=", "<", "<="}
+EQUALITY_CONDITION_OPERATORS = {"==", "=", "!="}
 SAVE_SHORTCUT_COUNT = 3
 SAVE_DIALOG_PAGE_SIZE = 6
 DEFAULT_FORMAL_SAVE_SLOT_COUNT = 24
@@ -1212,6 +1215,64 @@ def get_release_check_status(issues: list[dict]) -> str:
     return "pass"
 
 
+def normalize_variable_type(value: object) -> str:
+    variable_type = str(value or "string").strip().lower() or "string"
+    return variable_type if variable_type in VARIABLE_TYPES else "string"
+
+
+def is_number_variable_value(value: object) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value))
+
+
+def variable_value_matches_type(variable_type: str, value: object) -> bool:
+    safe_type = normalize_variable_type(variable_type)
+    if safe_type == "number":
+        return is_number_variable_value(value)
+    if safe_type == "boolean":
+        return isinstance(value, bool)
+    return isinstance(value, str)
+
+
+def condition_operator_matches_variable_type(variable_type: str, operator: object) -> bool:
+    safe_operator = str(operator or "==").strip() or "=="
+    if safe_operator in EQUALITY_CONDITION_OPERATORS:
+        return True
+    if safe_operator in NUMERIC_CONDITION_OPERATORS:
+        return normalize_variable_type(variable_type) == "number"
+    return False
+
+
+def get_export_variable_map(payload: dict) -> tuple[list[dict], dict[str, dict], set[str]]:
+    variables_doc = payload.get("variables") if isinstance(payload.get("variables"), dict) else {}
+    variables = variables_doc.get("variables") if isinstance(variables_doc.get("variables"), list) else []
+    variables_by_id: dict[str, dict] = {}
+    duplicate_ids: set[str] = set()
+    for variable in variables:
+        if not isinstance(variable, dict):
+            continue
+        variable_id = str(variable.get("id") or "").strip()
+        if not variable_id:
+            continue
+        if variable_id in variables_by_id:
+            duplicate_ids.add(variable_id)
+            continue
+        variables_by_id[variable_id] = variable
+    return variables, variables_by_id, duplicate_ids
+
+
+def get_export_logic_issue_count(issues: list[dict]) -> int:
+    logic_codes = {
+        "logic_target_missing",
+        "logic_variable_missing",
+        "logic_variable_type_mismatch",
+        "logic_variable_default_type_mismatch",
+        "logic_condition_operator_mismatch",
+        "logic_choice_effect_unknown",
+        "logic_variable_duplicate_id",
+    }
+    return sum(1 for issue in issues if issue.get("code") in logic_codes)
+
+
 def build_release_check_report(bundle_dir: Path) -> dict:
     issues: list[dict] = []
     data_path = bundle_dir / DEFAULT_GAME_DATA_NAME
@@ -1343,6 +1404,189 @@ def build_release_check_report(bundle_dir: Path) -> dict:
                     )
     for code, message, suggestion, path in choice_text_warnings[:5]:
         add_release_check_issue(issues, "warning", code, message, suggestion, path)
+
+    variables, variables_by_id, duplicate_variable_ids = get_export_variable_map(payload)
+    for variable_id in sorted(duplicate_variable_ids):
+        add_release_check_issue(
+            issues,
+            "error",
+            "logic_variable_duplicate_id",
+            f"变量 ID 重复：{variable_id}",
+            "回到编辑器变量库合并或重命名重复变量，避免运行时读到不可预测的值。",
+            f"variables.{variable_id}",
+        )
+    for variable in variables:
+        if not isinstance(variable, dict):
+            continue
+        variable_id = str(variable.get("id") or "").strip()
+        if not variable_id:
+            continue
+        variable_type = normalize_variable_type(variable.get("type"))
+        if not variable_value_matches_type(variable_type, variable.get("defaultValue")):
+            add_release_check_issue(
+                issues,
+                "error",
+                "logic_variable_default_type_mismatch",
+                f"变量默认值类型不匹配：{variable.get('name') or variable_id}",
+                "回到变量库把默认值改成对应类型；数字变量用数字，开关变量用 true/false，文本变量用字符串。",
+                f"variables.{variable_id}.defaultValue",
+            )
+
+    def variable_name(variable_id: str) -> str:
+        variable = variables_by_id.get(variable_id)
+        return str(variable.get("name") or variable_id) if variable else variable_id
+
+    def check_scene_target(scene_id: object, label: str, path: str) -> None:
+        target_scene_id = str(scene_id or "").strip()
+        if target_scene_id and target_scene_id in scene_ids:
+            return
+        add_release_check_issue(
+            issues,
+            "error",
+            "logic_target_missing",
+            f"{label}不存在：{target_scene_id or '未设置'}",
+            "回到剧情编辑器重新选择一个仍然存在的目标场景，否则原生 Runtime 路线会中断或落到空目标。",
+            path,
+        )
+
+    def check_variable_reference(
+        variable_id: object,
+        *,
+        path: str,
+        usage_label: str,
+        expected_type: str | None = None,
+        value: object = None,
+        validate_value: bool = False,
+        operator: object = None,
+    ) -> None:
+        safe_variable_id = str(variable_id or "").strip()
+        variable = variables_by_id.get(safe_variable_id)
+        if not safe_variable_id or not variable:
+            add_release_check_issue(
+                issues,
+                "error",
+                "logic_variable_missing",
+                f"{usage_label}引用了不存在的变量：{safe_variable_id or '未设置'}",
+                "回到剧情卡片重新选择变量，或先在变量库里创建这个变量。",
+                path,
+            )
+            return
+
+        variable_type = normalize_variable_type(variable.get("type"))
+        if expected_type and variable_type != expected_type:
+            add_release_check_issue(
+                issues,
+                "error",
+                "logic_variable_type_mismatch",
+                f"{usage_label}需要{expected_type}变量，但当前引用的是 {variable_name(safe_variable_id)} ({variable_type})",
+                "把这张逻辑卡片改绑到正确类型的变量，或调整变量库里的变量类型。",
+                path,
+            )
+        should_validate_value = validate_value and (not expected_type or variable_type == expected_type)
+        if should_validate_value and not variable_value_matches_type(variable_type, value):
+            add_release_check_issue(
+                issues,
+                "error",
+                "logic_variable_type_mismatch",
+                f"{usage_label}的值类型和变量不匹配：{variable_name(safe_variable_id)}",
+                "重新保存这张逻辑卡片，让编辑器按变量类型写入数字、开关或文本值。",
+                path,
+            )
+        if operator is not None and not condition_operator_matches_variable_type(variable_type, operator):
+            add_release_check_issue(
+                issues,
+                "error",
+                "logic_condition_operator_mismatch",
+                f"条件判断的比较方式和变量类型不匹配：{variable_name(safe_variable_id)} {operator}",
+                "文本和开关变量只适合等于/不等于；大于、小于这类比较请改用数字变量。",
+                path,
+            )
+
+    for scene in scenes:
+        scene_name = str(scene.get("name") or scene.get("id") or "未命名场景")
+        for block_index, block in enumerate(scene.get("blocks", []) or []):
+            if not isinstance(block, dict):
+                continue
+            block_type = str(block.get("type") or "")
+            block_path = f"{scene_name}#{block_index + 1}"
+            if block_type == "jump":
+                check_scene_target(block.get("targetSceneId"), "跳转目标场景", block_path)
+            elif block_type == "variable_set":
+                check_variable_reference(
+                    block.get("variableId"),
+                    path=block_path,
+                    usage_label="变量设置卡片",
+                    value=block.get("value"),
+                    validate_value=True,
+                )
+            elif block_type == "variable_add":
+                check_variable_reference(
+                    block.get("variableId"),
+                    path=block_path,
+                    usage_label="数字变量加减卡片",
+                    expected_type="number",
+                    value=block.get("value"),
+                    validate_value=True,
+                )
+            elif block_type == "choice":
+                options = block.get("options") if isinstance(block.get("options"), list) else []
+                for option_index, option in enumerate(options):
+                    if not isinstance(option, dict):
+                        continue
+                    option_path = f"{block_path}/option-{option_index + 1}"
+                    check_scene_target(option.get("gotoSceneId"), "选项目标场景", option_path)
+                    for effect_index, effect in enumerate(option.get("effects", []) or []):
+                        if not isinstance(effect, dict):
+                            continue
+                        effect_path = f"{option_path}/effect-{effect_index + 1}"
+                        effect_type = str(effect.get("type") or "")
+                        if effect_type == "variable_add":
+                            check_variable_reference(
+                                effect.get("variableId"),
+                                path=effect_path,
+                                usage_label="选项数字变化效果",
+                                expected_type="number",
+                                value=effect.get("value"),
+                                validate_value=True,
+                            )
+                        elif effect_type == "variable_set":
+                            check_variable_reference(
+                                effect.get("variableId"),
+                                path=effect_path,
+                                usage_label="选项变量设置效果",
+                                value=effect.get("value"),
+                                validate_value=True,
+                            )
+                        else:
+                            add_release_check_issue(
+                                issues,
+                                "warning",
+                                "logic_choice_effect_unknown",
+                                f"选项效果类型暂未识别：{effect_type or '未设置'}",
+                                "如果这是旧版本或手动编辑的数据，建议在编辑器里重新保存这个选项效果。",
+                                effect_path,
+                            )
+            elif block_type == "condition":
+                branches = block.get("branches") if isinstance(block.get("branches"), list) else []
+                for branch_index, branch in enumerate(branches):
+                    if not isinstance(branch, dict):
+                        continue
+                    branch_path = f"{block_path}/branch-{branch_index + 1}"
+                    check_scene_target(branch.get("gotoSceneId"), "条件分支目标场景", branch_path)
+                    rules = branch.get("when") if isinstance(branch.get("when"), list) else []
+                    for rule_index, rule in enumerate(rules):
+                        if not isinstance(rule, dict):
+                            continue
+                        rule_path = f"{branch_path}/rule-{rule_index + 1}"
+                        check_variable_reference(
+                            rule.get("variableId"),
+                            path=rule_path,
+                            usage_label="条件判断规则",
+                            value=rule.get("value"),
+                            validate_value=True,
+                            operator=rule.get("operator"),
+                        )
+                check_scene_target(block.get("elseGotoSceneId"), "条件未命中目标场景", f"{block_path}/else")
 
     formal_slot_count = get_project_formal_save_slot_count(project)
     if formal_slot_count > 80:
@@ -1559,6 +1803,7 @@ def build_release_check_report(bundle_dir: Path) -> dict:
             "assetCount": len(assets),
             "sceneCount": len(scenes),
             "formalSaveSlotCount": formal_slot_count,
+            "logicIssueCount": get_export_logic_issue_count(issues),
         },
         "issues": issues,
     }

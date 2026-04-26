@@ -932,6 +932,100 @@ class RunEditorSmokeTests(unittest.TestCase):
             run_editor.DEFAULT_EXPORT_RELEASE_VERSION,
         )
 
+    def test_native_runtime_release_check_flags_variable_logic_errors(self) -> None:
+        _, chapter_result = self.create_blank_project_with_chapter()
+        ending_result = run_editor.create_scene(chapter_result["chapterId"], "结局")
+        run_editor.save_project_settings(
+            variables={
+                "variables": [
+                    {
+                        "id": "var_route",
+                        "name": "路线标记",
+                        "type": "string",
+                        "defaultValue": "common",
+                    },
+                    {
+                        "id": "var_flag",
+                        "name": "剧情开关",
+                        "type": "boolean",
+                        "defaultValue": "not-a-boolean",
+                    },
+                ]
+            },
+        )
+
+        self.save_scene_with_blocks(
+            chapter_result["chapterId"],
+            chapter_result["scene"],
+            [
+                {
+                    "id": "block_intro",
+                    "type": "narration",
+                    "text": "这里故意放一些坏逻辑，验证发布前自检会拦截。",
+                },
+                {
+                    "id": "block_bad_add",
+                    "type": "variable_add",
+                    "variableId": "var_route",
+                    "value": 1,
+                },
+                {
+                    "id": "block_bad_choice",
+                    "type": "choice",
+                    "options": [
+                        {
+                            "id": "choice_001",
+                            "text": "继续",
+                            "gotoSceneId": ending_result["sceneId"],
+                            "effects": [
+                                {
+                                    "type": "variable_set",
+                                    "variableId": "var_missing",
+                                    "value": True,
+                                }
+                            ],
+                        }
+                    ],
+                },
+                {
+                    "id": "block_bad_condition",
+                    "type": "condition",
+                    "branches": [
+                        {
+                            "id": "branch_001",
+                            "when": [
+                                {
+                                    "variableId": "var_route",
+                                    "operator": ">",
+                                    "value": "heroine",
+                                }
+                            ],
+                            "gotoSceneId": "scene_missing",
+                        }
+                    ],
+                    "elseGotoSceneId": ending_result["sceneId"],
+                },
+            ],
+        )
+
+        export_result = run_editor.export_native_runtime_build()
+        build_dir = Path(export_result["buildPath"])
+        release_check_payload = json.loads((build_dir / run_editor.NATIVE_RUNTIME_RELEASE_CHECK_NAME).read_text(encoding="utf-8"))
+        issue_codes = {issue.get("code") for issue in release_check_payload["issues"]}
+
+        self.assertEqual(release_check_payload["status"], "fail")
+        self.assertEqual(release_check_payload["summary"]["logicIssueCount"], 5)
+        self.assertTrue(
+            {
+                "logic_variable_default_type_mismatch",
+                "logic_variable_type_mismatch",
+                "logic_variable_missing",
+                "logic_condition_operator_mismatch",
+                "logic_target_missing",
+            }
+            <= issue_codes
+        )
+
     def test_native_runtime_export_build_smoke(self) -> None:
         _, chapter_result = self.create_blank_project_with_chapter()
         ui_assets = run_editor.import_assets(
