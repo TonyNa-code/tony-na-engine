@@ -359,6 +359,22 @@ class RunEditorSmokeTests(unittest.TestCase):
                     },
                 }
             ],
+            variables={
+                "variables": [
+                    {
+                        "id": "var_affection",
+                        "name": "好感度",
+                        "type": "number",
+                        "defaultValue": 0,
+                    },
+                    {
+                        "id": "var_route",
+                        "name": "路线标记",
+                        "type": "string",
+                        "defaultValue": "common",
+                    },
+                ]
+            },
         )
 
         bundle = run_editor.load_project_bundle()
@@ -413,6 +429,8 @@ class RunEditorSmokeTests(unittest.TestCase):
         self.assertEqual(saved_project["gameUiConfig"]["uiOverlayAssetId"], "asset_overlay_grid")
         self.assertEqual(saved_project["gameUiConfig"]["uiOverlayOpacity"], 9)
         self.assertEqual(saved_project["particleCustomPresets"][0]["name"], "暴雪测试")
+        self.assertEqual(bundle["variables"]["variables"][0]["id"], "var_affection")
+        self.assertEqual(bundle["variables"]["variables"][1]["defaultValue"], "common")
 
     def test_creative_assistant_generates_local_insertable_story_blocks(self) -> None:
         _, chapter_result = self.create_blank_project_with_chapter()

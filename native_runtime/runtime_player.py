@@ -96,6 +96,10 @@ COLOR_ACCENT = (106, 154, 255)
 COLOR_ACCENT_ALT = (173, 115, 255)
 COLOR_WARNING = (255, 161, 110)
 FPS = 60
+VN_TEXT_LONG_WARNING_LENGTH = 260
+VN_TEXT_LONG_WARNING_LINES = 5
+VN_CHOICE_LONG_WARNING_LENGTH = 42
+VN_CHOICE_MANY_OPTIONS = 6
 SAVE_SHORTCUT_COUNT = 3
 SAVE_DIALOG_PAGE_SIZE = 6
 DEFAULT_FORMAL_SAVE_SLOT_COUNT = 24
@@ -1298,7 +1302,7 @@ def build_release_check_report(bundle_dir: Path) -> dict:
             if block_type not in {"dialogue", "narration"}:
                 continue
             text = str(block.get("text") or "")
-            if len(text) > 260 or text.count("\n") >= 5:
+            if len(text) > VN_TEXT_LONG_WARNING_LENGTH or text.count("\n") >= VN_TEXT_LONG_WARNING_LINES:
                 long_text_warnings.append((scene_name, block_index, len(text), text.count("\n") + 1))
     for scene_name, block_index, text_length, line_count in long_text_warnings[:5]:
         add_release_check_issue(
@@ -1309,6 +1313,36 @@ def build_release_check_report(bundle_dir: Path) -> dict:
             "原生 Runtime 会尽量动态增高文本框并提示查看历史；正式发布前建议拆成多张台词卡，阅读节奏会更像商业 VN。",
             f"{scene_name}#{block_index + 1}",
         )
+
+    choice_text_warnings = []
+    for scene in scenes:
+        scene_name = str(scene.get("name") or scene.get("id") or "未命名场景")
+        for block_index, block in enumerate(scene.get("blocks", []) or []):
+            if str(block.get("type") or "") != "choice":
+                continue
+            options = block.get("options") if isinstance(block.get("options"), list) else []
+            if len(options) > VN_CHOICE_MANY_OPTIONS:
+                choice_text_warnings.append(
+                    (
+                        "many_choice_options",
+                        f"选项数量偏多：{scene_name} 第 {block_index + 1} 张卡（{len(options)} 个选项）",
+                        "选项过多会让原生 Runtime 的按钮区变拥挤；建议拆成二级选择，或确认目标分辨率下逐项点测。",
+                        f"{scene_name}#{block_index + 1}",
+                    )
+                )
+            for option_index, option in enumerate(options):
+                option_text = str(option.get("text") or "")
+                if len(option_text) > VN_CHOICE_LONG_WARNING_LENGTH:
+                    choice_text_warnings.append(
+                        (
+                            "long_choice_text",
+                            f"选项文案偏长：{scene_name} 第 {block_index + 1} 张卡 / 选项 {option_index + 1}（{len(option_text)} 字）",
+                            "长选项会在按钮里被截断；建议改成更短的决策文字，把解释放到前一句旁白或台词里。",
+                            f"{scene_name}#{block_index + 1}/option-{option_index + 1}",
+                        )
+                    )
+    for code, message, suggestion, path in choice_text_warnings[:5]:
+        add_release_check_issue(issues, "warning", code, message, suggestion, path)
 
     formal_slot_count = get_project_formal_save_slot_count(project)
     if formal_slot_count > 80:

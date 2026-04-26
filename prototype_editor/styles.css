@@ -3502,6 +3502,66 @@ button.asset-gap-stat-card:hover {
   gap: 10px;
 }
 
+.readable-text-tools {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+  margin-top: 10px;
+  padding: 12px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(82, 101, 138, 0.12);
+}
+
+.readable-text-tools.is-warning {
+  background: rgba(255, 247, 230, 0.86);
+  border-color: rgba(188, 108, 63, 0.24);
+}
+
+.readable-text-tools strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.readable-text-tools p {
+  margin: 0;
+}
+
+.choice-count-tools,
+.choice-text-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(82, 101, 138, 0.1);
+}
+
+.choice-count-tools {
+  margin-bottom: 12px;
+}
+
+.choice-count-tools.is-warning,
+.choice-text-tools.is-warning {
+  background: rgba(255, 247, 230, 0.86);
+  border-color: rgba(188, 108, 63, 0.24);
+}
+
+.choice-count-tools strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.choice-count-tools p,
+.choice-text-tools .helper-text {
+  margin: 0;
+}
+
 .helper-text {
   color: var(--muted);
   font-size: 13px;
@@ -5055,6 +5115,15 @@ button.asset-gap-stat-card:hover {
 
   .editor-mode-button {
     flex: 1 1 0;
+  }
+
+  .readable-text-tools {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .readable-text-tools .toolbar-button {
+    justify-content: center;
   }
 
   .asset-grid {

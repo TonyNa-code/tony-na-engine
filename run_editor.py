@@ -1985,6 +1985,7 @@ def save_project_settings(
     dialog_box_config: dict | None = None,
     game_ui_config: dict | None = None,
     particle_custom_presets: list | None = None,
+    variables: object | None = None,
 ) -> dict:
     project = read_json(PROJECT_PATH)
     project["formatVersion"] = PROJECT_FORMAT_VERSION
@@ -2033,6 +2034,9 @@ def save_project_settings(
             project["particleCustomPresets"] = cleaned_particle_presets
         else:
             project.pop("particleCustomPresets", None)
+
+    if variables is not None:
+        write_json(DATA_DIR / "variables.json", normalize_variables_document(variables))
 
     project["updatedAt"] = now_iso()
     write_json(PROJECT_PATH, project)
@@ -9303,6 +9307,7 @@ class EditorRequestHandler(SimpleHTTPRequestHandler):
                     dialog_box_config=payload.get("dialogBoxConfig"),
                     game_ui_config=payload.get("gameUiConfig"),
                     particle_custom_presets=payload.get("particleCustomPresets"),
+                    variables=payload.get("variables"),
                 ),
                 "修改项目设置",
             )

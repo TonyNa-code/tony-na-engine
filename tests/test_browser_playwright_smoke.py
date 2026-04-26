@@ -426,6 +426,153 @@ class BrowserPlaywrightSmokeTests(unittest.TestCase):
 
         self.assertGreater(block_cards.count(), initial_count)
 
+    def test_story_editor_can_split_long_dialogue_into_multiple_cards(self) -> None:
+        self.create_blank_project("浏览器烟测项目_Split")
+        self.create_first_chapter()
+
+        block_cards = self.page.locator("#storyBlockList .block-card")
+        self.page.locator("#screen-story").get_by_role("button", name="加台词").first.click()
+        self.page.locator("#editorDialogueText").wait_for(timeout=15000)
+        split_button = self.page.get_by_role("button", name="拆成长文本卡片")
+        self.assertTrue(split_button.is_disabled())
+
+        initial_count = block_cards.count()
+        long_dialogue = (
+            "我把这段话故意写得很长，是为了模拟正式项目里常见的一大段情绪独白。"
+            "如果全部塞进同一张卡片，玩家阅读节奏会变慢，配音和回看也会变得不好管理。"
+            "拆成多张卡片之后，每一次点击都会更像真正的视觉小说节拍。"
+            "这样编辑器不仅能发现问题，也能立刻把问题处理掉。"
+            "尤其是后期接入语音、自动播放和历史文本时，短卡片会比一大坨长文本可靠得多。"
+            "这条测试要确认拆分以后仍然会写回项目文件，而不是只在界面上临时变化。"
+        )
+        self.page.locator("#editorDialogueText").fill(long_dialogue)
+        self.page.locator("[data-readable-status]").filter(has_text="可拆卡").wait_for(timeout=10000)
+        split_button.click()
+        self.page.wait_for_function(
+            """([selector, expected]) => document.querySelectorAll(selector).length > expected""",
+            arg=["#storyBlockList .block-card", initial_count],
+            timeout=15000,
+        )
+
+        self.assertGreater(block_cards.count(), initial_count)
+
+    def test_story_editor_choice_quality_and_delete_option(self) -> None:
+        self.create_blank_project("浏览器烟测项目_Choice")
+        self.create_first_chapter()
+
+        self.page.locator("#screen-story").get_by_role("button", name="加选项").first.click()
+        option_editors = self.page.locator("[data-choice-option]")
+        option_editors.first.wait_for(timeout=15000)
+        initial_count = option_editors.count()
+        self.assertGreaterEqual(initial_count, 2)
+
+        long_choice = "这是一条故意写得很长的选项文案，用来确认按钮布局体检会实时提醒创作者把说明放回前一句对白里"
+        option_editors.first.locator('[data-field="choice-text"]').fill(long_choice)
+        option_editors.first.locator("[data-choice-text-status]").filter(has_text="文案偏长").wait_for(
+            timeout=10000
+        )
+        option_editors.nth(1).locator('[data-field="choice-text"]').fill("短选项 B")
+        option_editors.nth(1).get_by_role("button", name="上移选项").click()
+        self.page.wait_for_function(
+            """() => document.querySelector('[data-choice-option] [data-field="choice-text"]')?.value === '短选项 B'""",
+            timeout=15000,
+        )
+
+        first_option = self.page.locator("[data-choice-option]").first
+        first_option.get_by_role("button", name="给这个选项加效果").click()
+        first_option.get_by_role("button", name="给这个选项加效果").click()
+        effects = first_option.locator("[data-choice-effect]")
+        self.page.wait_for_function(
+            """() => document.querySelectorAll('[data-choice-option]:first-child [data-choice-effect]').length === 2""",
+            timeout=15000,
+        )
+        effects.nth(0).locator('[data-field="choice-effect-type"]').select_option("variable_set")
+        effects.nth(1).locator('[data-field="choice-effect-type"]').select_option("variable_add")
+        effects.nth(1).get_by_role("button", name="上移效果").click()
+        self.page.wait_for_function(
+            """() => document.querySelector('[data-choice-option]:first-child [data-choice-effect] [data-field="choice-effect-type"]')?.value === 'variable_add'""",
+            timeout=15000,
+        )
+        effects.last.get_by_role("button", name="删除这条效果").click()
+        self.page.wait_for_function(
+            """() => document.querySelectorAll('[data-choice-option]:first-child [data-choice-effect]').length === 1""",
+            timeout=15000,
+        )
+
+        self.page.get_by_role("button", name="再加一个选项").click()
+        self.page.wait_for_function(
+            """([selector, expected]) => document.querySelectorAll(selector).length > expected""",
+            arg=["[data-choice-option]", initial_count],
+            timeout=15000,
+        )
+        self.page.locator("[data-choice-option]").last.get_by_role("button", name="删除这个选项").click()
+        self.page.wait_for_function(
+            """([selector, expected]) => document.querySelectorAll(selector).length === expected""",
+            arg=["[data-choice-option]", initial_count],
+            timeout=15000,
+        )
+
+        self.assertEqual(option_editors.count(), initial_count)
+
+    def test_story_editor_condition_branch_and_rule_controls(self) -> None:
+        self.create_blank_project("浏览器烟测项目_Condition")
+        self.create_first_chapter()
+
+        advanced_button = self.page.get_by_role("button", name="打开高级工具").first
+        if advanced_button.is_visible():
+            advanced_button.click()
+
+        self.page.locator("#screen-story").get_by_role("button", name="条件判断").click()
+        branches = self.page.locator("[data-condition-branch]")
+        branches.first.wait_for(timeout=15000)
+        self.page.locator('[data-field="condition-variable"] option[value="var_affection"]').first.wait_for(
+            state="attached",
+            timeout=15000
+        )
+        initial_branch_count = branches.count()
+        self.assertEqual(initial_branch_count, 1)
+
+        self.page.get_by_role("button", name="再加一条分支").click()
+        self.page.wait_for_function(
+            """([selector, expected]) => document.querySelectorAll(selector).length > expected""",
+            arg=["[data-condition-branch]", initial_branch_count],
+            timeout=15000,
+        )
+        moved_branch_id = branches.nth(1).get_attribute("data-branch-id")
+        branches.nth(1).get_by_role("button", name="上移分支").click()
+        self.page.wait_for_function(
+            """(branchId) => document.querySelector("[data-condition-branch]")?.dataset.branchId === branchId""",
+            arg=moved_branch_id,
+            timeout=15000,
+        )
+
+        first_branch = branches.first
+        first_branch.get_by_role("button", name="再加一个判断").click()
+        rules = first_branch.locator("[data-condition-rule]")
+        self.page.wait_for_function(
+            """([selector, expected]) => document.querySelectorAll(selector).length > expected""",
+            arg=["[data-condition-branch]:first-child [data-condition-rule]", 1],
+            timeout=15000,
+        )
+        rules.nth(0).locator('[data-field="condition-value-number"]').fill("1")
+        rules.nth(1).locator('[data-field="condition-value-number"]').fill("2")
+        rules.nth(1).get_by_role("button", name="上移判断").click()
+        self.page.wait_for_function(
+            """() => document.querySelector('[data-condition-branch]:first-child [data-condition-rule] [data-field="condition-value-number"]')?.value === '2'""",
+            timeout=15000,
+        )
+        rules.last.get_by_role("button", name="删除这个判断").click()
+        self.page.wait_for_function(
+            """() => document.querySelectorAll('[data-condition-branch]:first-child [data-condition-rule]').length === 1""",
+            timeout=15000,
+        )
+
+        branches.last.get_by_role("button", name="删除这条分支").click()
+        self.page.wait_for_function(
+            """() => document.querySelectorAll('[data-condition-branch]').length === 1""",
+            timeout=15000,
+        )
+
     def test_creative_assistant_can_generate_restore_export_and_insert(self) -> None:
         self.create_blank_project("浏览器烟测项目_Assistant")
         self.create_first_chapter()

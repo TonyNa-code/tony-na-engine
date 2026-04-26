@@ -1377,6 +1377,35 @@ const PROJECT_DIALOG_BOX_PRESET_LABELS = {
   custom: "自定义样式",
 };
 
+const VN_TEXT_LONG_WARNING_LENGTH = 260;
+const VN_TEXT_LONG_WARNING_LINES = 5;
+const VN_TEXT_SPLIT_TARGET_LENGTH = 180;
+const VN_CHOICE_LONG_WARNING_LENGTH = 42;
+const VN_CHOICE_MANY_OPTIONS = 6;
+
+const STARTER_VARIABLE_PRESETS = [
+  {
+    id: "var_affection",
+    name: "好感度",
+    type: "number",
+    defaultValue: 0,
+    min: -100,
+    max: 100,
+  },
+  {
+    id: "var_route",
+    name: "路线标记",
+    type: "string",
+    defaultValue: "common",
+  },
+  {
+    id: "var_flag",
+    name: "剧情开关",
+    type: "boolean",
+    defaultValue: false,
+  },
+];
+
 const PROJECT_DIALOG_BOX_SHAPE_LABELS = {
   rounded: "圆角框",
   square: "方角框",
@@ -4889,17 +4918,23 @@ async function handleClick(event) {
   }
 
   if (action === "add-variable-set") {
-    void addBlock("variable_set");
+    if (await ensureStarterVariables({ reason: "变量设置卡片需要先有变量。" })) {
+      void addBlock("variable_set");
+    }
     return;
   }
 
   if (action === "add-variable-add") {
-    void addBlock("variable_add");
+    if (await ensureStarterVariables({ requireNumber: true, reason: "数字变量变化卡片需要先有数字变量。" })) {
+      void addBlock("variable_add");
+    }
     return;
   }
 
   if (action === "add-condition") {
-    void addBlock("condition");
+    if (await ensureStarterVariables({ reason: "条件判断需要先有变量。" })) {
+      void addBlock("condition");
+    }
     return;
   }
 
@@ -5023,6 +5058,16 @@ async function handleClick(event) {
     return;
   }
 
+  if (action === "split-readable-block") {
+    void splitSelectedReadableBlock();
+    return;
+  }
+
+  if (action === "create-starter-variables") {
+    void ensureStarterVariables({ forceStarterPack: true, reason: "正在创建基础变量库..." });
+    return;
+  }
+
   if (action === "apply-particle-preset-defaults") {
     applyParticlePresetDefaultsToEditor();
     return;
@@ -5134,15 +5179,41 @@ async function handleClick(event) {
     return;
   }
 
+  if (action === "remove-choice-option") {
+    if (removeChoiceOptionEditor(actionTarget)) {
+      scheduleAutoSave(300);
+    }
+    return;
+  }
+
+  if (action === "move-choice-option-up" || action === "move-choice-option-down") {
+    const direction = action === "move-choice-option-up" ? -1 : 1;
+    if (moveChoiceOptionEditor(actionTarget, direction)) {
+      scheduleAutoSave(300);
+    }
+    return;
+  }
+
   if (action === "add-choice-effect") {
-    appendChoiceEffectEditor(actionTarget.dataset.optionId);
-    scheduleAutoSave(300);
+    if (await ensureStarterVariables({ reason: "选项附加效果需要先有变量。" })) {
+      appendChoiceEffectEditor(actionTarget.dataset.optionId);
+      scheduleAutoSave(300);
+    }
     return;
   }
 
   if (action === "remove-choice-effect") {
-    removeChoiceEffectEditor(actionTarget);
-    scheduleAutoSave(300);
+    if (removeChoiceEffectEditor(actionTarget)) {
+      scheduleAutoSave(300);
+    }
+    return;
+  }
+
+  if (action === "move-choice-effect-up" || action === "move-choice-effect-down") {
+    const direction = action === "move-choice-effect-up" ? -1 : 1;
+    if (moveChoiceEffectEditor(actionTarget, direction)) {
+      scheduleAutoSave(300);
+    }
     return;
   }
 
@@ -5152,9 +5223,39 @@ async function handleClick(event) {
     return;
   }
 
+  if (action === "remove-condition-branch") {
+    if (removeConditionBranchEditor(actionTarget)) {
+      scheduleAutoSave(300);
+    }
+    return;
+  }
+
+  if (action === "move-condition-branch-up" || action === "move-condition-branch-down") {
+    const direction = action === "move-condition-branch-up" ? -1 : 1;
+    if (moveConditionBranchEditor(actionTarget, direction)) {
+      scheduleAutoSave(300);
+    }
+    return;
+  }
+
   if (action === "add-condition-rule") {
     appendConditionRuleEditor(actionTarget.dataset.branchId);
     scheduleAutoSave(300);
+    return;
+  }
+
+  if (action === "remove-condition-rule") {
+    if (removeConditionRuleEditor(actionTarget)) {
+      scheduleAutoSave(300);
+    }
+    return;
+  }
+
+  if (action === "move-condition-rule-up" || action === "move-condition-rule-down") {
+    const direction = action === "move-condition-rule-up" ? -1 : 1;
+    if (moveConditionRuleEditor(actionTarget, direction)) {
+      scheduleAutoSave(300);
+    }
     return;
   }
 
@@ -5796,6 +5897,18 @@ function handleInput(event) {
     if (state.currentScreen === "dashboard") {
       rerenderProjectHistoryPanel({ preserveSearchFocus: true });
     }
+    return;
+  }
+
+  if (event.target.id === "editorDialogueText" || event.target.id === "editorNarrationText") {
+    updateReadableTextQualityToolsFromInput(event.target);
+    scheduleAutoSave();
+    return;
+  }
+
+  if (event.target.matches('[data-field="choice-text"]')) {
+    updateChoiceTextQualityToolsFromInput(event.target);
+    scheduleAutoSave();
     return;
   }
 
@@ -8859,10 +8972,21 @@ function shouldFlushPendingStoryChanges(action) {
   return ![
     "save-block",
     "add-choice-option",
+    "remove-choice-option",
+    "move-choice-option-up",
+    "move-choice-option-down",
     "add-choice-effect",
     "remove-choice-effect",
+    "move-choice-effect-up",
+    "move-choice-effect-down",
     "add-condition-branch",
+    "remove-condition-branch",
+    "move-condition-branch-up",
+    "move-condition-branch-down",
     "add-condition-rule",
+    "remove-condition-rule",
+    "move-condition-rule-up",
+    "move-condition-rule-down",
     "save-particle-custom-preset",
     "apply-particle-custom-preset",
     "delete-particle-custom-preset",
@@ -12269,12 +12393,11 @@ function getStoryBlockIssueItems(block) {
     pushIssue("missing_voice", "待绑语音");
   }
 
-  const textLength = String(block.text ?? "").trim().length;
   if (
-    (block.type === "dialogue" && textLength > getScriptLengthLimit("dialogue")) ||
-    (block.type === "narration" && textLength > getScriptLengthLimit("narration")) ||
+    ((block.type === "dialogue" || block.type === "narration") && isReadableTextLong(block.text)) ||
     (block.type === "choice" &&
-      (block.options ?? []).some((option) => String(option.text ?? "").trim().length > 20))
+      ((block.options ?? []).length > VN_CHOICE_MANY_OPTIONS ||
+        (block.options ?? []).some((option) => String(option.text ?? "").trim().length > VN_CHOICE_LONG_WARNING_LENGTH)))
   ) {
     pushIssue("too_long", "偏长文本");
   }
@@ -26808,6 +26931,31 @@ function renderReadonlyBlockPanel(block) {
   `;
 }
 
+function renderReadableTextQualityTools(text, label) {
+  const toolState = getReadableTextToolState(text);
+
+  return `
+    <div class="readable-text-tools ${toolState.isLong ? "is-warning" : ""}" data-readable-text-tools>
+      <div>
+        <strong>${escapeHtml(label)}可读性</strong>
+        <p class="helper-text" data-readable-summary>
+          ${escapeHtml(buildReadableTextSummary(toolState.metrics))}
+        </p>
+      </div>
+      <span class="issue-tag ${toolState.toneClass}" data-readable-status>${toolState.statusText}</span>
+      <button
+        type="button"
+        class="toolbar-button"
+        data-action="split-readable-block"
+        data-readable-split-button
+        ${toolState.canSplit ? "" : "disabled"}
+      >
+        拆成长文本卡片
+      </button>
+    </div>
+  `;
+}
+
 function renderDialogueEditor(block) {
   const speakerId = getSafeCharacterId(block.speakerId);
   const expressionId = getSafeExpressionId(speakerId, block.expressionId);
@@ -26882,6 +27030,7 @@ function renderDialogueEditor(block) {
       <div class="detail-row">
         <label for="editorDialogueText">台词内容</label>
         <textarea id="editorDialogueText">${escapeHtml(block.text ?? "")}</textarea>
+        ${renderReadableTextQualityTools(block.text, "台词")}
       </div>
     </div>
     <div class="detail-actions">
@@ -26893,7 +27042,7 @@ function renderDialogueEditor(block) {
 function renderChoiceEditor(block) {
   const choiceOptions = block.options?.length ? block.options : createDefaultChoiceOptions(block.id);
   const options = choiceOptions.map(
-    (option, index) => renderChoiceOptionEditorRow(option, index)
+    (option, index) => renderChoiceOptionEditorRow(option, index, choiceOptions.length)
   );
 
   return `
@@ -26905,6 +27054,7 @@ function renderChoiceEditor(block) {
       ["卡片类型", BLOCK_LABELS[block.type] ?? block.type],
       ["当前选项数", choiceOptions.length],
     ])}
+    ${renderChoiceCountQualityTools(choiceOptions.length)}
     <div id="choiceOptionsEditor" class="option-editor-list">
       ${options.join("")}
     </div>
@@ -26925,10 +27075,28 @@ function renderNarrationEditor(block) {
       <div class="detail-row">
         <label for="editorNarrationText">旁白内容</label>
         <textarea id="editorNarrationText">${escapeHtml(block.text ?? "")}</textarea>
+        ${renderReadableTextQualityTools(block.text, "旁白")}
       </div>
     </div>
     <div class="detail-actions">
       <button class="toolbar-button toolbar-button-primary" data-action="save-block">保存这张卡片</button>
+    </div>
+  `;
+}
+
+function renderChoiceCountQualityTools(optionCount) {
+  const safeCount = Math.max(Number(optionCount) || 0, 0);
+  const isCrowded = safeCount > VN_CHOICE_MANY_OPTIONS;
+
+  return `
+    <div class="choice-count-tools ${isCrowded ? "is-warning" : ""}" data-choice-count-tools>
+      <div>
+        <strong>选项按钮区</strong>
+        <p class="helper-text" data-choice-count-summary>${escapeHtml(buildChoiceCountSummary(safeCount))}</p>
+      </div>
+      <span class="issue-tag ${isCrowded ? "warn-text" : "good-text"}" data-choice-count-status>
+        ${isCrowded ? "按钮偏多" : "数量舒适"}
+      </span>
     </div>
   `;
 }
@@ -28377,7 +28545,32 @@ function renderJumpEditor(block) {
   `;
 }
 
+function renderVariableStarterPrompt(title, description) {
+  return `
+    <article class="editor-card">
+      <h3>${escapeHtml(title)}</h3>
+      <p>${escapeHtml(description)}</p>
+      <div class="detail-actions">
+        <button class="toolbar-button toolbar-button-primary" data-action="create-starter-variables">
+          一键创建基础变量库
+        </button>
+      </div>
+    </article>
+    <article class="editor-card">
+      <h3>会创建什么</h3>
+      <p>基础变量库会加入“好感度”（数字）、“路线标记”（文本）和“剧情开关”（是/否），足够支撑常见分支、数值变化和条件判断。</p>
+    </article>
+  `;
+}
+
 function renderVariableSetEditor(block) {
+  if (!hasUsableVariable()) {
+    return renderVariableStarterPrompt(
+      "还没有变量",
+      "变量设置卡片需要先有变量。可以先创建一组基础变量，再继续设置路线、开关或数值。"
+    );
+  }
+
   const variableId = getSafeVariableId(block.variableId);
 
   return `
@@ -28409,6 +28602,13 @@ function renderVariableSetEditor(block) {
 }
 
 function renderVariableAddEditor(block) {
+  if (!hasUsableVariable("number")) {
+    return renderVariableStarterPrompt(
+      "还没有数字变量",
+      "数字变量变化卡片需要至少一个数字变量。可以先创建基础变量库，里面会包含“好感度”这类常用数值。"
+    );
+  }
+
   const variableId = getSafeVariableId(block.variableId, "number");
 
   return `
@@ -28441,6 +28641,13 @@ function renderVariableAddEditor(block) {
 }
 
 function renderConditionEditor(block) {
+  if (!hasUsableVariable()) {
+    return renderVariableStarterPrompt(
+      "还没有可判断的变量",
+      "条件判断需要先有变量，才能根据好感度、路线标记或剧情开关决定跳到哪里。"
+    );
+  }
+
   const branches = block.branches?.length ? block.branches : createDefaultConditionBranches(block.id);
   const elseGotoSceneId = getSafeSceneId(
     block.elseGotoSceneId,
@@ -28457,7 +28664,7 @@ function renderConditionEditor(block) {
       ["没命中时去哪里", state.data.scenesById.get(elseGotoSceneId)?.name ?? elseGotoSceneId],
     ])}
     <div id="conditionBranchesEditor" class="option-editor-list">
-      ${branches.map((branch, index) => renderConditionBranchEditorRow(branch, index)).join("")}
+      ${branches.map((branch, index) => renderConditionBranchEditorRow(branch, index, branches.length)).join("")}
     </div>
     <div class="detail-row">
       <label for="editorConditionElseSceneId">如果都不满足，跳到哪个场景</label>
@@ -28472,7 +28679,7 @@ function renderConditionEditor(block) {
   `;
 }
 
-function renderConditionBranchEditorRow(branch, index) {
+function renderConditionBranchEditorRow(branch, index, branchCount = 1) {
   const branchId = branch.id ?? createConditionBranchId("condition", index);
   const rules = branch.when?.length ? branch.when : [createDefaultConditionRule()];
   const gotoSceneId = getSafeSceneId(
@@ -28482,7 +28689,7 @@ function renderConditionBranchEditorRow(branch, index) {
 
   return `
     <div class="option-editor" data-condition-branch data-branch-id="${branchId}">
-      <strong>条件分支 ${index + 1}</strong>
+      <strong data-condition-branch-title>条件分支 ${index + 1}</strong>
       <div class="field-grid">
         <div class="detail-row">
           <label>满足这条分支后跳到哪里</label>
@@ -28492,22 +28699,25 @@ function renderConditionBranchEditorRow(branch, index) {
         </div>
       </div>
       <div class="option-editor-list" data-condition-rules>
-        ${rules.map((rule, ruleIndex) => renderConditionRuleEditorRow(rule, ruleIndex)).join("")}
+        ${rules.map((rule, ruleIndex) => renderConditionRuleEditorRow(rule, ruleIndex, rules.length)).join("")}
       </div>
       <div class="detail-actions">
+        <button class="toolbar-button" data-action="move-condition-branch-up" ${index <= 0 ? "disabled" : ""}>上移分支</button>
+        <button class="toolbar-button" data-action="move-condition-branch-down" ${index >= branchCount - 1 ? "disabled" : ""}>下移分支</button>
         <button class="toolbar-button" data-action="add-condition-rule" data-branch-id="${branchId}">再加一个判断</button>
+        <button class="toolbar-button" data-action="remove-condition-branch" data-branch-id="${branchId}">删除这条分支</button>
       </div>
     </div>
   `;
 }
 
-function renderConditionRuleEditorRow(rule, index) {
+function renderConditionRuleEditorRow(rule, index, ruleCount = 1) {
   const variableId = getSafeVariableId(rule.variableId);
   const operator = getSafeConditionOperator(variableId, rule.operator);
 
   return `
     <div class="option-editor" data-condition-rule>
-      <strong>判断 ${index + 1}</strong>
+      <strong data-condition-rule-title>判断 ${index + 1}</strong>
       <div class="field-grid">
         <div class="detail-row">
           <label>检查哪个变量</label>
@@ -28525,17 +28735,22 @@ function renderConditionRuleEditorRow(rule, index) {
           ${renderConditionValueFields(variableId, rule.value)}
         </div>
       </div>
+      <div class="detail-actions">
+        <button class="toolbar-button" data-action="move-condition-rule-up" ${index <= 0 ? "disabled" : ""}>上移判断</button>
+        <button class="toolbar-button" data-action="move-condition-rule-down" ${index >= ruleCount - 1 ? "disabled" : ""}>下移判断</button>
+        <button class="toolbar-button" data-action="remove-condition-rule">删除这个判断</button>
+      </div>
     </div>
   `;
 }
 
-function renderChoiceEffectEditorRow(effect, index) {
+function renderChoiceEffectEditorRow(effect, index, effectCount = 1) {
   const safeEffect = normalizeChoiceEffect(effect);
   const variableFilter = safeEffect.type === "variable_add" ? "number" : null;
 
   return `
     <div class="effect-editor" data-choice-effect>
-      <strong>附加效果 ${index + 1}</strong>
+      <strong data-choice-effect-title>附加效果 ${index + 1}</strong>
       <div class="field-grid">
         <div class="detail-row">
           <label>效果类型</label>
@@ -28554,6 +28769,8 @@ function renderChoiceEffectEditorRow(effect, index) {
         </div>
       </div>
       <div class="detail-actions">
+        <button class="toolbar-button" data-action="move-choice-effect-up" ${index <= 0 ? "disabled" : ""}>上移效果</button>
+        <button class="toolbar-button" data-action="move-choice-effect-down" ${index >= effectCount - 1 ? "disabled" : ""}>下移效果</button>
         <button class="toolbar-button" data-action="remove-choice-effect">删除这条效果</button>
       </div>
     </div>
@@ -28564,13 +28781,13 @@ function renderChoiceEffectEmptyState() {
   return `<div class="helper-text" data-choice-effects-empty>这个选项暂时没有附加效果。需要的话，点下面按钮就能继续加。</div>`;
 }
 
-function renderChoiceOptionEditorRow(option, index) {
+function renderChoiceOptionEditorRow(option, index, optionCount = 1) {
   const editableEffects = getEditableChoiceEffects(option.effects);
   const unsupportedEffectCount = Math.max((option.effects?.length ?? 0) - editableEffects.length, 0);
 
   return `
     <div class="option-editor" data-choice-option data-option-id="${option.id}">
-      <strong>选项 ${index + 1}</strong>
+      <strong data-choice-option-title>选项 ${index + 1}</strong>
       <div class="field-grid">
         <div class="detail-row">
           <label>选项文案</label>
@@ -28580,6 +28797,7 @@ function renderChoiceOptionEditorRow(option, index) {
             value="${escapeHtml(option.text ?? "")}"
             placeholder="例如：一起回家吧"
           />
+          ${renderChoiceTextQualityTools(option.text)}
         </div>
         <div class="detail-row">
           <label>跳转到哪个场景</label>
@@ -28603,7 +28821,7 @@ function renderChoiceOptionEditorRow(option, index) {
           ${
             editableEffects.length > 0
               ? editableEffects
-                  .map((effect, effectIndex) => renderChoiceEffectEditorRow(effect, effectIndex))
+                  .map((effect, effectIndex) => renderChoiceEffectEditorRow(effect, effectIndex, editableEffects.length))
                   .join("")
               : renderChoiceEffectEmptyState()
           }
@@ -28614,7 +28832,24 @@ function renderChoiceOptionEditorRow(option, index) {
             : ""
         }
         <div class="detail-actions">
+          <button
+            class="toolbar-button"
+            data-action="move-choice-option-up"
+            data-option-id="${option.id}"
+            ${index <= 0 ? "disabled" : ""}
+          >
+            上移选项
+          </button>
+          <button
+            class="toolbar-button"
+            data-action="move-choice-option-down"
+            data-option-id="${option.id}"
+            ${index >= optionCount - 1 ? "disabled" : ""}
+          >
+            下移选项
+          </button>
           <button class="toolbar-button" data-action="add-choice-effect" data-option-id="${option.id}">给这个选项加效果</button>
+          <button class="toolbar-button" data-action="remove-choice-option" data-option-id="${option.id}">删除这个选项</button>
         </div>
       </div>
     </div>
@@ -32013,6 +32248,316 @@ async function saveSelectedBlock(options = {}) {
   return success;
 }
 
+function getReadableTextMetrics(text) {
+  const safeText = String(text ?? "").trim();
+  return {
+    length: safeText.length,
+    lineCount: safeText ? safeText.split(/\r?\n/).length : 0,
+  };
+}
+
+function buildReadableTextSummary(metrics) {
+  const safeMetrics =
+    metrics && typeof metrics === "object"
+      ? metrics
+      : {
+          length: 0,
+          lineCount: 0,
+        };
+  return `当前 ${safeMetrics.length} 字 / ${safeMetrics.lineCount} 行，超过 ${VN_TEXT_SPLIT_TARGET_LENGTH} 字会启用拆分；超过 ${VN_TEXT_LONG_WARNING_LENGTH} 字或 ${VN_TEXT_LONG_WARNING_LINES} 行时建议拆卡。`;
+}
+
+function getChoiceTextQualityState(text) {
+  const length = String(text ?? "").trim().length;
+  const isLong = length > VN_CHOICE_LONG_WARNING_LENGTH;
+
+  return {
+    length,
+    isLong,
+    statusText: isLong ? "文案偏长" : "按钮舒适",
+    toneClass: isLong ? "warn-text" : "good-text",
+  };
+}
+
+function buildChoiceTextSummary(length) {
+  return `当前 ${length} 字，建议不超过 ${VN_CHOICE_LONG_WARNING_LENGTH} 字；解释性内容最好放到前一句台词或旁白里。`;
+}
+
+function renderChoiceTextQualityTools(text) {
+  const toolState = getChoiceTextQualityState(text);
+
+  return `
+    <div class="choice-text-tools ${toolState.isLong ? "is-warning" : ""}" data-choice-text-tools>
+      <span class="helper-text" data-choice-text-summary>${escapeHtml(buildChoiceTextSummary(toolState.length))}</span>
+      <span class="issue-tag ${toolState.toneClass}" data-choice-text-status>${toolState.statusText}</span>
+    </div>
+  `;
+}
+
+function buildChoiceCountSummary(optionCount) {
+  return `当前 ${optionCount} 个选项，超过 ${VN_CHOICE_MANY_OPTIONS} 个时按钮区可能拥挤；复杂分支建议拆成二级选择。`;
+}
+
+function updateChoiceCountQualityTools(container = document.getElementById("choiceOptionsEditor")) {
+  const countTools = document.querySelector("[data-choice-count-tools]");
+  const optionCount = container?.querySelectorAll("[data-choice-option]").length ?? 0;
+  const isCrowded = optionCount > VN_CHOICE_MANY_OPTIONS;
+
+  if (!countTools) {
+    return;
+  }
+
+  countTools.classList.toggle("is-warning", isCrowded);
+  const summary = countTools.querySelector("[data-choice-count-summary]");
+  const status = countTools.querySelector("[data-choice-count-status]");
+  if (summary) {
+    summary.textContent = buildChoiceCountSummary(optionCount);
+  }
+  if (status) {
+    status.textContent = isCrowded ? "按钮偏多" : "数量舒适";
+    status.className = `issue-tag ${isCrowded ? "warn-text" : "good-text"}`;
+  }
+}
+
+function updateChoiceTextQualityToolsFromInput(input) {
+  if (!(input instanceof HTMLInputElement)) {
+    return;
+  }
+
+  const tools = input.closest(".detail-row")?.querySelector("[data-choice-text-tools]");
+  if (!tools) {
+    return;
+  }
+
+  const toolState = getChoiceTextQualityState(input.value);
+  const summary = tools.querySelector("[data-choice-text-summary]");
+  const status = tools.querySelector("[data-choice-text-status]");
+
+  tools.classList.toggle("is-warning", toolState.isLong);
+  if (summary) {
+    summary.textContent = buildChoiceTextSummary(toolState.length);
+  }
+  if (status) {
+    status.textContent = toolState.statusText;
+    status.className = `issue-tag ${toolState.toneClass}`;
+  }
+}
+
+function isReadableTextLong(text) {
+  const metrics = getReadableTextMetrics(text);
+  return metrics.length > VN_TEXT_LONG_WARNING_LENGTH || metrics.lineCount > VN_TEXT_LONG_WARNING_LINES;
+}
+
+function getReadableTextToolState(text) {
+  const metrics = getReadableTextMetrics(text);
+  const isLong = isReadableTextLong(text);
+  const canSplit = splitReadableTextIntoChunks(text).length > 1;
+
+  return {
+    metrics,
+    isLong,
+    canSplit,
+    statusText: isLong ? "建议拆卡" : canSplit ? "可拆卡" : "长度舒适",
+    toneClass: isLong ? "warn-text" : "good-text",
+  };
+}
+
+function updateReadableTextQualityToolsFromInput(input) {
+  if (!(input instanceof HTMLTextAreaElement)) {
+    return;
+  }
+
+  const tools = input.closest(".detail-row")?.querySelector("[data-readable-text-tools]");
+  if (!tools) {
+    return;
+  }
+
+  const toolState = getReadableTextToolState(input.value);
+  const status = tools.querySelector("[data-readable-status]");
+  const summary = tools.querySelector("[data-readable-summary]");
+  const splitButton = tools.querySelector("[data-readable-split-button]");
+
+  tools.classList.toggle("is-warning", toolState.isLong);
+  if (summary) {
+    summary.textContent = buildReadableTextSummary(toolState.metrics);
+  }
+  if (status) {
+    status.textContent = toolState.statusText;
+    status.className = `issue-tag ${toolState.toneClass}`;
+  }
+  if (splitButton) {
+    splitButton.disabled = !toolState.canSplit;
+  }
+}
+
+function findReadableSplitIndex(text, limit) {
+  const safeLimit = Math.max(1, Number(limit) || VN_TEXT_SPLIT_TARGET_LENGTH);
+  const searchWindow = text.slice(0, safeLimit + 1);
+  const minUsefulIndex = Math.floor(safeLimit * 0.45);
+  const punctuationPattern = /[。！？!?；;，,、：:]/g;
+  let match = null;
+  let splitIndex = -1;
+
+  while ((match = punctuationPattern.exec(searchWindow)) !== null) {
+    const candidateIndex = match.index + 1;
+    if (candidateIndex >= minUsefulIndex) {
+      splitIndex = candidateIndex;
+    }
+  }
+
+  if (splitIndex > 0) {
+    return splitIndex;
+  }
+
+  const spaceIndex = searchWindow.lastIndexOf(" ");
+  if (spaceIndex >= minUsefulIndex) {
+    return spaceIndex + 1;
+  }
+
+  return safeLimit;
+}
+
+function splitLongReadableSegment(segment, limit) {
+  const chunks = [];
+  let remaining = String(segment ?? "").trim();
+
+  while (remaining.length > limit) {
+    const splitIndex = findReadableSplitIndex(remaining, limit);
+    const head = remaining.slice(0, splitIndex).trim();
+    if (head) {
+      chunks.push(head);
+    }
+    remaining = remaining.slice(splitIndex).trim();
+  }
+
+  if (remaining) {
+    chunks.push(remaining);
+  }
+
+  return chunks;
+}
+
+function shouldJoinReadableSegmentsWithSpace(left, right) {
+  return /[A-Za-z0-9)]$/.test(left) && /^[A-Za-z0-9(]/.test(right);
+}
+
+function splitReadableTextIntoChunks(text, limit = VN_TEXT_SPLIT_TARGET_LENGTH) {
+  const safeLimit = Math.max(20, Number(limit) || VN_TEXT_SPLIT_TARGET_LENGTH);
+  const normalizedText = String(text ?? "").replace(/\r\n/g, "\n").trim();
+  if (!normalizedText) {
+    return [];
+  }
+
+  const rawSegments = normalizedText
+    .split(/\n+/)
+    .flatMap((line) => line.match(/[^。！？!?；;…]+[。！？!?；;…]*/g) ?? [line])
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+  const sentenceSegments = rawSegments.flatMap((segment) =>
+    segment.length > safeLimit ? splitLongReadableSegment(segment, safeLimit) : [segment]
+  );
+  const chunks = [];
+  let currentChunk = "";
+
+  sentenceSegments.forEach((segment) => {
+    if (!currentChunk) {
+      currentChunk = segment;
+      return;
+    }
+
+    const separator = shouldJoinReadableSegmentsWithSpace(currentChunk, segment) ? " " : "";
+    const merged = `${currentChunk}${separator}${segment}`;
+    if (merged.length <= safeLimit) {
+      currentChunk = merged;
+      return;
+    }
+
+    chunks.push(currentChunk);
+    currentChunk = segment;
+  });
+
+  if (currentChunk) {
+    chunks.push(currentChunk);
+  }
+
+  return chunks;
+}
+
+function createBlockIdAllocator(scene) {
+  const existing = new Set((scene.blocks ?? []).map((block) => block.id));
+  return () => {
+    let number = 1;
+    let blockId = "";
+    do {
+      blockId = `block_${String(number).padStart(3, "0")}`;
+      number += 1;
+    } while (existing.has(blockId));
+    existing.add(blockId);
+    return blockId;
+  };
+}
+
+async function splitSelectedReadableBlock() {
+  const scene = getSelectedScene();
+  const block = getSelectedBlock();
+
+  if (!scene || !block) {
+    return false;
+  }
+
+  if (block.type !== "dialogue" && block.type !== "narration") {
+    setSaveStatus("只有台词和旁白卡片可以自动拆分", true);
+    showToast("只有台词和旁白卡片可以自动拆分", "error");
+    return false;
+  }
+
+  const editedBlock = collectEditedBlock(block);
+  const chunks = splitReadableTextIntoChunks(editedBlock.text);
+
+  if (chunks.length < 2) {
+    setSaveStatus("当前文本还不需要拆成多张卡片");
+    showToast("当前文本长度还适合放在一张卡片里");
+    return false;
+  }
+
+  const updatedScene = cloneScene(scene);
+  const blockIndex = updatedScene.blocks.findIndex((item) => item.id === block.id);
+
+  if (blockIndex < 0) {
+    return false;
+  }
+
+  const allocateBlockId = createBlockIdAllocator(updatedScene);
+  const splitBlocks = chunks.map((chunk, index) => {
+    const nextBlock = JSON.parse(JSON.stringify(editedBlock));
+    nextBlock.id = index === 0 ? block.id : allocateBlockId();
+    nextBlock.text = chunk;
+
+    if (index > 0 && nextBlock.type === "dialogue") {
+      delete nextBlock.voiceAssetId;
+    }
+
+    return nextBlock;
+  });
+
+  updatedScene.blocks.splice(blockIndex, 1, ...splitBlocks);
+
+  const success = await persistScene(updatedScene, {
+    selectedSceneId: updatedScene.id,
+    selectedBlockId: splitBlocks[0].id,
+    previewSceneId: updatedScene.id,
+    previewBlockIndex: blockIndex,
+    successMessage: `已拆分为 ${splitBlocks.length} 张卡片`,
+  });
+
+  if (success) {
+    clearPendingStoryChanges();
+    showToast(`已拆分为 ${splitBlocks.length} 张卡片`);
+  }
+
+  return success;
+}
+
 function collectEditedBlock(block) {
   if (block.type === "dialogue") {
     const speakerId = getSafeCharacterId(document.getElementById("editorSpeakerId")?.value);
@@ -32734,13 +33279,97 @@ function appendChoiceOptionEditor() {
 
   const nextIndex = container.querySelectorAll("[data-choice-option]").length;
   const nextOption = {
-    id: createChoiceOptionId(block.id, nextIndex),
+    id: getNextChoiceOptionEditorId(block.id, container),
     text: `新选项 ${nextIndex + 1}`,
     gotoSceneId: state.selectedSceneId,
     effects: [],
   };
 
-  container.insertAdjacentHTML("beforeend", renderChoiceOptionEditorRow(nextOption, nextIndex));
+  container.insertAdjacentHTML("beforeend", renderChoiceOptionEditorRow(nextOption, nextIndex, nextIndex + 1));
+  updateChoiceOptionEditorControls(container);
+  updateChoiceCountQualityTools(container);
+}
+
+function getNextChoiceOptionEditorId(blockId, container) {
+  const existingIds = new Set(
+    Array.from(container.querySelectorAll("[data-choice-option]"))
+      .map((editor) => editor.getAttribute("data-option-id"))
+      .filter(Boolean)
+  );
+  let index = 0;
+  let optionId = createChoiceOptionId(blockId, index);
+
+  while (existingIds.has(optionId)) {
+    index += 1;
+    optionId = createChoiceOptionId(blockId, index);
+  }
+
+  return optionId;
+}
+
+function updateChoiceOptionEditorControls(container = document.getElementById("choiceOptionsEditor")) {
+  const optionEditors = Array.from(container?.querySelectorAll("[data-choice-option]") ?? []);
+  optionEditors.forEach((editor, index) => {
+    const title = editor.querySelector("[data-choice-option-title]");
+    if (title) {
+      title.textContent = `选项 ${index + 1}`;
+    }
+    const moveUpButton = editor.querySelector('[data-action="move-choice-option-up"]');
+    const moveDownButton = editor.querySelector('[data-action="move-choice-option-down"]');
+    if (moveUpButton) {
+      moveUpButton.disabled = index <= 0;
+    }
+    if (moveDownButton) {
+      moveDownButton.disabled = index >= optionEditors.length - 1;
+    }
+  });
+}
+
+function removeChoiceOptionEditor(actionTarget) {
+  const container = document.getElementById("choiceOptionsEditor");
+  const optionEditor = actionTarget.closest("[data-choice-option]");
+
+  if (!container || !optionEditor) {
+    return false;
+  }
+
+  const optionCount = container.querySelectorAll("[data-choice-option]").length;
+  if (optionCount <= 1) {
+    setSaveStatus("至少保留一个选项", true);
+    showToast("至少保留一个选项", "error");
+    return false;
+  }
+
+  optionEditor.remove();
+  updateChoiceOptionEditorControls(container);
+  updateChoiceCountQualityTools(container);
+  return true;
+}
+
+function moveChoiceOptionEditor(actionTarget, direction) {
+  const container = document.getElementById("choiceOptionsEditor");
+  const optionEditor = actionTarget.closest("[data-choice-option]");
+
+  if (!container || !optionEditor) {
+    return false;
+  }
+
+  const optionEditors = Array.from(container.querySelectorAll("[data-choice-option]"));
+  const currentIndex = optionEditors.indexOf(optionEditor);
+  const targetIndex = currentIndex + direction;
+
+  if (currentIndex < 0 || targetIndex < 0 || targetIndex >= optionEditors.length) {
+    return false;
+  }
+
+  if (direction < 0) {
+    container.insertBefore(optionEditor, optionEditors[targetIndex]);
+  } else {
+    container.insertBefore(optionEditors[targetIndex], optionEditor);
+  }
+
+  updateChoiceOptionEditorControls(container);
+  return true;
 }
 
 function appendChoiceEffectEditor(optionId) {
@@ -32755,8 +33384,27 @@ function appendChoiceEffectEditor(optionId) {
   const nextIndex = effectsContainer.querySelectorAll("[data-choice-effect]").length;
   effectsContainer.insertAdjacentHTML(
     "beforeend",
-    renderChoiceEffectEditorRow(createDefaultChoiceEffect(), nextIndex)
+    renderChoiceEffectEditorRow(createDefaultChoiceEffect(), nextIndex, nextIndex + 1)
   );
+  updateChoiceEffectEditorControls(effectsContainer);
+}
+
+function updateChoiceEffectEditorControls(effectsContainer) {
+  const effectEditors = Array.from(effectsContainer?.querySelectorAll("[data-choice-effect]") ?? []);
+  effectEditors.forEach((editor, index) => {
+    const title = editor.querySelector("[data-choice-effect-title]");
+    const moveUpButton = editor.querySelector('[data-action="move-choice-effect-up"]');
+    const moveDownButton = editor.querySelector('[data-action="move-choice-effect-down"]');
+    if (title) {
+      title.textContent = `附加效果 ${index + 1}`;
+    }
+    if (moveUpButton) {
+      moveUpButton.disabled = index <= 0;
+    }
+    if (moveDownButton) {
+      moveDownButton.disabled = index >= effectEditors.length - 1;
+    }
+  });
 }
 
 function removeChoiceEffectEditor(actionTarget) {
@@ -32764,14 +33412,43 @@ function removeChoiceEffectEditor(actionTarget) {
   const effectsContainer = effectEditor?.parentElement;
 
   if (!effectEditor || !effectsContainer) {
-    return;
+    return false;
   }
 
   effectEditor.remove();
 
   if (effectsContainer.querySelectorAll("[data-choice-effect]").length === 0) {
-  effectsContainer.innerHTML = renderChoiceEffectEmptyState();
+    effectsContainer.innerHTML = renderChoiceEffectEmptyState();
+  } else {
+    updateChoiceEffectEditorControls(effectsContainer);
   }
+  return true;
+}
+
+function moveChoiceEffectEditor(actionTarget, direction) {
+  const effectEditor = actionTarget.closest("[data-choice-effect]");
+  const effectsContainer = effectEditor?.parentElement;
+
+  if (!effectEditor || !effectsContainer) {
+    return false;
+  }
+
+  const effectEditors = Array.from(effectsContainer.querySelectorAll("[data-choice-effect]"));
+  const currentIndex = effectEditors.indexOf(effectEditor);
+  const targetIndex = currentIndex + direction;
+
+  if (currentIndex < 0 || targetIndex < 0 || targetIndex >= effectEditors.length) {
+    return false;
+  }
+
+  if (direction < 0) {
+    effectsContainer.insertBefore(effectEditor, effectEditors[targetIndex]);
+  } else {
+    effectsContainer.insertBefore(effectEditors[targetIndex], effectEditor);
+  }
+
+  updateChoiceEffectEditorControls(effectsContainer);
+  return true;
 }
 
 function applyParticleCustomLayersToEditor(layers = []) {
@@ -33342,7 +34019,91 @@ function appendConditionBranchEditor() {
 
   const nextIndex = container.querySelectorAll("[data-condition-branch]").length;
   const nextBranch = createDefaultConditionBranch(block.id, nextIndex);
-  container.insertAdjacentHTML("beforeend", renderConditionBranchEditorRow(nextBranch, nextIndex));
+  nextBranch.id = getNextConditionBranchEditorId(block.id, container);
+  container.insertAdjacentHTML("beforeend", renderConditionBranchEditorRow(nextBranch, nextIndex, nextIndex + 1));
+  updateConditionBranchEditorControls(container);
+}
+
+function getNextConditionBranchEditorId(blockId, container) {
+  const existingIds = new Set(
+    Array.from(container.querySelectorAll("[data-condition-branch]"))
+      .map((editor) => editor.getAttribute("data-branch-id"))
+      .filter(Boolean)
+  );
+  let index = 0;
+  let branchId = createConditionBranchId(blockId, index);
+
+  while (existingIds.has(branchId)) {
+    index += 1;
+    branchId = createConditionBranchId(blockId, index);
+  }
+
+  return branchId;
+}
+
+function updateConditionBranchEditorControls(container = document.getElementById("conditionBranchesEditor")) {
+  const branchEditors = Array.from(container?.querySelectorAll("[data-condition-branch]") ?? []);
+  branchEditors.forEach((editor, index) => {
+    const title = editor.querySelector("[data-condition-branch-title]");
+    const moveUpButton = editor.querySelector('[data-action="move-condition-branch-up"]');
+    const moveDownButton = editor.querySelector('[data-action="move-condition-branch-down"]');
+    if (title) {
+      title.textContent = `条件分支 ${index + 1}`;
+    }
+    if (moveUpButton) {
+      moveUpButton.disabled = index <= 0;
+    }
+    if (moveDownButton) {
+      moveDownButton.disabled = index >= branchEditors.length - 1;
+    }
+    updateConditionRuleEditorControls(editor.querySelector("[data-condition-rules]"));
+  });
+}
+
+function removeConditionBranchEditor(actionTarget) {
+  const container = document.getElementById("conditionBranchesEditor");
+  const branchEditor = actionTarget.closest("[data-condition-branch]");
+
+  if (!container || !branchEditor) {
+    return false;
+  }
+
+  const branchCount = container.querySelectorAll("[data-condition-branch]").length;
+  if (branchCount <= 1) {
+    setSaveStatus("至少保留一条条件分支", true);
+    showToast("至少保留一条条件分支", "error");
+    return false;
+  }
+
+  branchEditor.remove();
+  updateConditionBranchEditorControls(container);
+  return true;
+}
+
+function moveConditionBranchEditor(actionTarget, direction) {
+  const container = document.getElementById("conditionBranchesEditor");
+  const branchEditor = actionTarget.closest("[data-condition-branch]");
+
+  if (!container || !branchEditor) {
+    return false;
+  }
+
+  const branchEditors = Array.from(container.querySelectorAll("[data-condition-branch]"));
+  const currentIndex = branchEditors.indexOf(branchEditor);
+  const targetIndex = currentIndex + direction;
+
+  if (currentIndex < 0 || targetIndex < 0 || targetIndex >= branchEditors.length) {
+    return false;
+  }
+
+  if (direction < 0) {
+    container.insertBefore(branchEditor, branchEditors[targetIndex]);
+  } else {
+    container.insertBefore(branchEditors[targetIndex], branchEditor);
+  }
+
+  updateConditionBranchEditorControls(container);
+  return true;
 }
 
 function appendConditionRuleEditor(branchId) {
@@ -33359,8 +34120,73 @@ function appendConditionRuleEditor(branchId) {
   const nextIndex = rulesContainer.querySelectorAll("[data-condition-rule]").length;
   rulesContainer.insertAdjacentHTML(
     "beforeend",
-    renderConditionRuleEditorRow(createDefaultConditionRule(), nextIndex)
+    renderConditionRuleEditorRow(createDefaultConditionRule(), nextIndex, nextIndex + 1)
   );
+  updateConditionRuleEditorControls(rulesContainer);
+}
+
+function updateConditionRuleEditorControls(rulesContainer) {
+  const ruleEditors = Array.from(rulesContainer?.querySelectorAll("[data-condition-rule]") ?? []);
+  ruleEditors.forEach((editor, index) => {
+    const title = editor.querySelector("[data-condition-rule-title]");
+    const moveUpButton = editor.querySelector('[data-action="move-condition-rule-up"]');
+    const moveDownButton = editor.querySelector('[data-action="move-condition-rule-down"]');
+    if (title) {
+      title.textContent = `判断 ${index + 1}`;
+    }
+    if (moveUpButton) {
+      moveUpButton.disabled = index <= 0;
+    }
+    if (moveDownButton) {
+      moveDownButton.disabled = index >= ruleEditors.length - 1;
+    }
+  });
+}
+
+function removeConditionRuleEditor(actionTarget) {
+  const ruleEditor = actionTarget.closest("[data-condition-rule]");
+  const rulesContainer = ruleEditor?.parentElement;
+
+  if (!ruleEditor || !rulesContainer) {
+    return false;
+  }
+
+  const ruleCount = rulesContainer.querySelectorAll("[data-condition-rule]").length;
+  if (ruleCount <= 1) {
+    setSaveStatus("每条条件分支至少保留一个判断", true);
+    showToast("至少保留一个判断", "error");
+    return false;
+  }
+
+  ruleEditor.remove();
+  updateConditionRuleEditorControls(rulesContainer);
+  return true;
+}
+
+function moveConditionRuleEditor(actionTarget, direction) {
+  const ruleEditor = actionTarget.closest("[data-condition-rule]");
+  const rulesContainer = ruleEditor?.parentElement;
+
+  if (!ruleEditor || !rulesContainer) {
+    return false;
+  }
+
+  const ruleEditors = Array.from(rulesContainer.querySelectorAll("[data-condition-rule]"));
+  const currentIndex = ruleEditors.indexOf(ruleEditor);
+  const targetIndex = currentIndex + direction;
+
+  if (currentIndex < 0 || targetIndex < 0 || targetIndex >= ruleEditors.length) {
+    return false;
+  }
+
+  if (direction < 0) {
+    rulesContainer.insertBefore(ruleEditor, ruleEditors[targetIndex]);
+  } else {
+    rulesContainer.insertBefore(ruleEditors[targetIndex], ruleEditor);
+  }
+
+  updateConditionRuleEditorControls(rulesContainer);
+  return true;
 }
 
 function createDefaultBlock(scene, blockType) {
@@ -34405,6 +35231,87 @@ function getSafeNumber(value, fallback = 0) {
 
 function getFilteredVariables(typeFilter = null) {
   return state.data.variables.filter((variable) => !typeFilter || variable.type === typeFilter);
+}
+
+function hasUsableVariable(typeFilter = null) {
+  return getFilteredVariables(typeFilter).length > 0;
+}
+
+function createStarterVariableCopy(preset, existingIds) {
+  const nextVariable = JSON.parse(JSON.stringify(preset));
+  const baseId = nextVariable.id;
+  let candidateId = baseId;
+  let suffix = 2;
+
+  while (existingIds.has(candidateId)) {
+    candidateId = `${baseId}_${String(suffix).padStart(2, "0")}`;
+    suffix += 1;
+  }
+
+  nextVariable.id = candidateId;
+  existingIds.add(candidateId);
+  return nextVariable;
+}
+
+function buildStarterVariableLibrary(existingVariables = state.data.variables, options = {}) {
+  const existing = Array.isArray(existingVariables)
+    ? existingVariables.map((variable) => JSON.parse(JSON.stringify(variable)))
+    : [];
+  const existingIds = new Set(existing.map((variable) => variable.id).filter(Boolean));
+  const shouldAddAll = Boolean(options.forceStarterPack) || existing.length === 0;
+  const nextVariables = [...existing];
+
+  STARTER_VARIABLE_PRESETS.forEach((preset) => {
+    const alreadyHasPreset = nextVariables.some(
+      (variable) => variable.id === preset.id && variable.type === preset.type
+    );
+    const alreadyHasType = nextVariables.some((variable) => variable.type === preset.type);
+    const shouldAdd =
+      shouldAddAll ||
+      (options.requireNumber && preset.type === "number" && !alreadyHasType);
+
+    if (shouldAdd && !alreadyHasPreset) {
+      nextVariables.push(createStarterVariableCopy(preset, existingIds));
+    }
+  });
+
+  return nextVariables;
+}
+
+async function ensureStarterVariables(options = {}) {
+  const hasAnyVariable = hasUsableVariable();
+  const hasNumberVariable = hasUsableVariable("number");
+  const needsVariables = options.forceStarterPack || !hasAnyVariable || (options.requireNumber && !hasNumberVariable);
+
+  if (!needsVariables) {
+    return true;
+  }
+
+  const nextVariables = buildStarterVariableLibrary(state.data.variables, options);
+  if (nextVariables.length === state.data.variables.length) {
+    return true;
+  }
+
+  try {
+    await flushPendingStoryChanges();
+    setSaveStatus(options.reason ?? "正在创建基础变量库...");
+    await postJson(API_SAVE_PROJECT_SETTINGS, {
+      variables: {
+        variables: nextVariables,
+      },
+    });
+    await reloadProjectData({
+      ...getCurrentUiState(),
+    });
+    setSaveStatus("基础变量库已创建");
+    showToast("基础变量库已创建");
+    return true;
+  } catch (error) {
+    setSaveStatus("创建基础变量库失败", true);
+    showToast("创建基础变量库失败", "error");
+    window.alert(`创建基础变量库没有成功：${error.message}`);
+    return false;
+  }
 }
 
 function getSafeVariableId(variableId, typeFilter = null) {
@@ -37025,6 +37932,22 @@ function validateUniqueIds(items, label, pushIssue, idKey = "id", contextBuilder
   });
 }
 
+function validateReadableTextLength(text, label, location, context, pushIssue) {
+  const safeText = String(text ?? "").trim();
+  if (!safeText) {
+    return;
+  }
+  const metrics = getReadableTextMetrics(safeText);
+  if (isReadableTextLong(safeText)) {
+    pushIssue(
+      "warning",
+      `${label}偏长，正式发布前建议拆成多张卡片。`,
+      `${location} -> ${metrics.length} 字 / ${metrics.lineCount} 行`,
+      context
+    );
+  }
+}
+
 function validateBlock(block, scene, data, pushIssue) {
   const location = `场景 ${scene.name} / ${BLOCK_LABELS[block.type] ?? block.type}`;
   const blockContext = {
@@ -37314,41 +38237,60 @@ function validateBlock(block, scene, data, pushIssue) {
         break;
       case "dialogue":
         requireCharacterExpression(block.speakerId, block.expressionId);
+        validateReadableTextLength(block.text, "台词", location, blockContext, pushIssue);
         if (block.voiceAssetId) {
-        requireAsset(block.voiceAssetId);
-      } else {
-        pushIssue("warning", "这句台词还没有绑定语音。", location, blockContext);
+          requireAsset(block.voiceAssetId);
+        } else {
+          pushIssue("warning", "这句台词还没有绑定语音。", location, blockContext);
+        }
+        break;
+      case "narration":
+        validateReadableTextLength(block.text, "旁白", location, blockContext, pushIssue);
+        break;
+      case "character_show":
+        requireCharacterExpression(block.characterId, block.expressionId);
+        break;
+      case "character_hide":
+        if (!data.charactersById.has(block.characterId)) {
+          pushIssue("error", "要隐藏的角色不存在。", `${location} -> ${block.characterId}`, blockContext);
+        }
+        break;
+      case "jump":
+        requireScene(block.targetSceneId, "跳转目标场景");
+        break;
+      case "variable_set":
+        requireVariable(block.variableId);
+        if (!matchesVariableType(block.variableId, block.value)) {
+          pushIssue("error", "变量设置卡片的值类型不对。", location, blockContext);
+        }
+        break;
+      case "variable_add": {
+        requireVariable(block.variableId);
+        const variable = data.variablesById.get(block.variableId);
+        if (variable?.type !== "number" || typeof block.value !== "number") {
+          pushIssue("error", "数字变量加减卡片的值不正确。", location, blockContext);
+        }
+        break;
       }
-      break;
-    case "character_show":
-      requireCharacterExpression(block.characterId, block.expressionId);
-      break;
-    case "character_hide":
-      if (!data.charactersById.has(block.characterId)) {
-        pushIssue("error", "要隐藏的角色不存在。", `${location} -> ${block.characterId}`, blockContext);
+      case "choice":
+      if ((block.options ?? []).length > VN_CHOICE_MANY_OPTIONS) {
+        pushIssue(
+          "warning",
+          `这个选项卡有 ${(block.options ?? []).length} 个选项，按钮区可能会拥挤。`,
+          location,
+          blockContext
+        );
       }
-      break;
-    case "jump":
-      requireScene(block.targetSceneId, "跳转目标场景");
-      break;
-    case "variable_set":
-      requireVariable(block.variableId);
-      if (!matchesVariableType(block.variableId, block.value)) {
-        pushIssue("error", "变量设置卡片的值类型不对。", location, blockContext);
-      }
-      break;
-    case "variable_add": {
-      requireVariable(block.variableId);
-      const variable = data.variablesById.get(block.variableId);
-      if (variable?.type !== "number" || typeof block.value !== "number") {
-        pushIssue("error", "数字变量加减卡片的值不正确。", location, blockContext);
-      }
-      break;
-    }
-    case "choice":
       (block.options ?? []).forEach((option) => {
         if (!option.text?.trim()) {
           pushIssue("error", "有空白选项文案。", `${location} -> ${option.id}`, blockContext);
+        } else if (String(option.text).trim().length > VN_CHOICE_LONG_WARNING_LENGTH) {
+          pushIssue(
+            "warning",
+            "选项文案偏长，原生 Runtime 按钮里可能会被截断。",
+            `${location} -> ${truncateText(option.text, 48)}`,
+            blockContext
+          );
         }
         requireScene(option.gotoSceneId, "选项跳转场景");
         (option.effects ?? []).forEach((effect) => {
