@@ -23,11 +23,13 @@ from native_runtime.runtime_player import (
     NativeRuntimePlayer,
     OpenCvEmbeddedVideoPlayback,
     PyAvSynchronizedVideoPlayback,
+    build_save_dialog_page_data,
     build_native_video_preview_probe_report,
     ellipsize_text,
     get_runtime_screenshot_dir,
     load_project_archive_progress,
     load_opencv_video_frame_surface,
+    write_project_auto_resume,
     wrap_text,
 )
 
@@ -529,6 +531,79 @@ class NativeRuntimeRenderSmokeTests(unittest.TestCase):
         self.assertEqual(report["summary"]["successCount"], 1)
         self.assertEqual(report["entries"][0]["status"], "ready")
         self.assertEqual(report["entries"][0]["surfaceSize"], {"width": 3, "height": 2})
+
+    def test_runtime_variables_are_normalized_when_applied_and_restored(self) -> None:
+        data_path = self.write_game_data()
+        payload = json.loads(data_path.read_text(encoding="utf-8"))
+        payload["variables"] = {
+            "variables": [
+                {"id": "var_score", "name": "Score", "type": "number", "defaultValue": "7"},
+                {"id": "var_flag", "name": "Flag", "type": "boolean", "defaultValue": "true"},
+                {"id": "var_route", "name": "Route", "type": "string", "defaultValue": 12},
+            ]
+        }
+        data_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message="The system font .*", category=UserWarning)
+            player = NativeRuntimePlayer(pygame, data_path)
+
+        self.assertEqual(player.variable_state["var_score"], 7)
+        self.assertIs(player.variable_state["var_flag"], True)
+        self.assertEqual(player.variable_state["var_route"], "12")
+
+        player.apply_variable_add({"variableId": "var_score", "value": "3"})
+        self.assertEqual(player.variable_state["var_score"], 10)
+        player.apply_variable_set({"variableId": "var_flag", "value": "false"})
+        self.assertIs(player.variable_state["var_flag"], False)
+        player.apply_variable_set({"variableId": "var_route", "value": 100})
+        self.assertEqual(player.variable_state["var_route"], "100")
+        player.apply_variable_add({"variableId": "var_route", "value": 5})
+        self.assertEqual(player.variable_state["var_route"], "100")
+        player.apply_variable_set({"variableId": "var_missing", "value": 1})
+        self.assertNotIn("var_missing", player.variable_state)
+
+        self.assertTrue(player.evaluate_when([{"variableId": "var_score", "operator": ">=", "value": "10"}]))
+        self.assertTrue(player.evaluate_when([{"variableId": "var_flag", "operator": "==", "value": "false"}]))
+        self.assertTrue(player.evaluate_when([{"variableId": "var_route", "operator": "==", "value": 100}]))
+        snapshot = player.build_save_snapshot("formal")
+        self.assertIn("Score:10", snapshot["variableSummaryText"])
+        self.assertIn("Flag:关", snapshot["variableSummaryText"])
+        dialog_data = build_save_dialog_page_data(
+            payload["project"],
+            {"quickSave": snapshot, "formalSlots": [snapshot]},
+            variables=payload["variables"]["variables"],
+        )
+        self.assertIn("Score:10", dialog_data["quickSave"]["variableSummaryText"])
+        self.assertIn("Route:100", dialog_data["visibleSlots"][0]["variableSummaryText"])
+        write_project_auto_resume("native_render_smoke", snapshot)
+        resume_item = next(item for item in player.get_title_menu_items() if item["key"] == "resume")
+        self.assertIn("Score:10", resume_item["subtitle"])
+        player.render_auto_resume_overlay()
+        self.assert_screen_has_pixels(player)
+
+        player.restore_from_snapshot(
+            {
+                "sceneId": "scene_start",
+                "sceneName": "Opening",
+                "blockIndex": 0,
+                "variableState": {
+                    "var_score": "42.5",
+                    "var_flag": "yes",
+                    "var_route": 404,
+                    "ghost": "ignored",
+                },
+                "stageBackgroundAssetId": None,
+                "visibleCharacters": {},
+                "currentBgmAssetId": None,
+                "finished": False,
+            }
+        )
+
+        self.assertEqual(player.variable_state["var_score"], 42.5)
+        self.assertIs(player.variable_state["var_flag"], True)
+        self.assertEqual(player.variable_state["var_route"], "404")
+        self.assertNotIn("ghost", player.variable_state)
 
     def test_native_runtime_renders_ui_skin_overlays_headlessly(self) -> None:
         data_path = self.write_game_data()

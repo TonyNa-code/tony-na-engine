@@ -1233,6 +1233,33 @@ def variable_value_matches_type(variable_type: str, value: object) -> bool:
     return isinstance(value, str)
 
 
+def coerce_runtime_variable_value(variable: dict | None, value: object) -> object:
+    variable_type = normalize_variable_type((variable or {}).get("type"))
+    fallback = (variable or {}).get("defaultValue")
+    if variable_type == "number":
+        if isinstance(value, bool):
+            return fallback if is_number_variable_value(fallback) else 0
+        try:
+            numeric_value = float(value)
+        except (TypeError, ValueError):
+            return fallback if is_number_variable_value(fallback) else 0
+        if not math.isfinite(numeric_value):
+            return fallback if is_number_variable_value(fallback) else 0
+        return int(numeric_value) if int(numeric_value) == numeric_value else numeric_value
+    if variable_type == "boolean":
+        if isinstance(value, bool):
+            return value
+        clean_value = str(value).strip().lower()
+        if clean_value in {"true", "1", "yes", "on"}:
+            return True
+        if clean_value in {"false", "0", "no", "off"}:
+            return False
+        return fallback if isinstance(fallback, bool) else False
+    if value is None:
+        return fallback if isinstance(fallback, str) else ""
+    return value if isinstance(value, str) else str(value)
+
+
 def condition_operator_matches_variable_type(variable_type: str, operator: object) -> bool:
     safe_operator = str(operator or "==").strip() or "=="
     if safe_operator in EQUALITY_CONDITION_OPERATORS:
@@ -2515,11 +2542,12 @@ def print_native_runtime_release_candidate_report(bundle_dir: Path) -> dict:
 def build_save_dialog_page_data_for_doctor(bundle_dir: Path) -> dict:
     payload = load_game_data(bundle_dir / "game_data.json")
     project = payload.get("project") or {}
+    variables = (payload.get("variables") or {}).get("variables") or []
     save_store = load_project_save_store(
         str(project.get("projectId") or "untitled_project"),
         get_project_formal_save_slot_count(project),
     )
-    return build_save_dialog_page_data(project, save_store, page=0)
+    return build_save_dialog_page_data(project, save_store, page=0, variables=variables)
 
 
 def print_native_runtime_doctor_report(bundle_dir: Path) -> dict:
@@ -2958,11 +2986,12 @@ def exercise_save_load(bundle_dir: Path) -> None:
 def describe_save_dialog(bundle_dir: Path, page: int = 0) -> None:
     payload = load_game_data(bundle_dir / "game_data.json")
     project = payload.get("project") or {}
+    variables = (payload.get("variables") or {}).get("variables") or []
     save_store = load_project_save_store(
         str(project.get("projectId") or "untitled_project"),
         get_project_formal_save_slot_count(project),
     )
-    summary = build_save_dialog_page_data(project, save_store, page=page)
+    summary = build_save_dialog_page_data(project, save_store, page=page, variables=variables)
     print(json.dumps(summary, ensure_ascii=False, indent=2))
 
 
@@ -3731,11 +3760,47 @@ def format_play_duration(milliseconds: int | float | None) -> str:
     return f"{seconds} 秒"
 
 
+def format_runtime_variable_value(variable: dict | None, value: object) -> str:
+    coerced_value = coerce_runtime_variable_value(variable, value)
+    if isinstance(coerced_value, bool):
+        return "开" if coerced_value else "关"
+    if isinstance(coerced_value, float) and int(coerced_value) == coerced_value:
+        return str(int(coerced_value))
+    return str(coerced_value)
+
+
+def build_variable_summary_text(
+    variables: list[dict] | None,
+    variable_state: dict | None,
+    *,
+    limit: int = 3,
+) -> str:
+    if not variables or not isinstance(variable_state, dict):
+        return ""
+    parts: list[str] = []
+    for variable in variables:
+        if not isinstance(variable, dict):
+            continue
+        variable_id = str(variable.get("id") or "").strip()
+        if not variable_id or variable_id not in variable_state:
+            continue
+        variable_name = str(variable.get("name") or variable_id).strip() or variable_id
+        parts.append(f"{variable_name}:{format_runtime_variable_value(variable, variable_state.get(variable_id))}")
+        if len(parts) >= limit:
+            break
+    if not parts:
+        return ""
+    remaining_count = max(0, len([variable for variable in variables if isinstance(variable, dict) and variable.get("id")]) - len(parts))
+    suffix = f" 等 {remaining_count + len(parts)} 项" if remaining_count > 0 else ""
+    return " / ".join(parts) + suffix
+
+
 def build_save_dialog_page_data(
     project: dict | None,
     save_store: dict | None,
     page: int = 0,
     page_size: int = SAVE_DIALOG_PAGE_SIZE,
+    variables: list[dict] | None = None,
 ) -> dict:
     slot_count = get_project_formal_save_slot_count(project)
     safe_page_size = max(1, int(page_size or SAVE_DIALOG_PAGE_SIZE))
@@ -3758,6 +3823,12 @@ def build_save_dialog_page_data(
             scene_name = str(snapshot.get("sceneName") or snapshot.get("sceneId") or f"存档 {slot_index + 1}")
             summary_text = str(snapshot.get("summaryText") or "").strip() or "当前没有摘要。"
             saved_at = format_snapshot_saved_at(snapshot.get("savedAt"))
+            variable_summary_text = str(snapshot.get("variableSummaryText") or "").strip() or build_variable_summary_text(
+                variables,
+                snapshot.get("variableState") if isinstance(snapshot, dict) else None,
+            )
+        else:
+            variable_summary_text = ""
         visible_slots.append(
             {
                 "slotIndex": slot_index,
@@ -3765,16 +3836,24 @@ def build_save_dialog_page_data(
                 "isEmpty": snapshot is None,
                 "sceneName": scene_name,
                 "summaryText": summary_text,
+                "variableSummaryText": variable_summary_text,
                 "savedAt": saved_at,
                 "finished": bool(snapshot.get("finished")) if snapshot else False,
             }
         )
 
     quick_save = (save_store or {}).get("quickSave")
+    quick_variable_summary = ""
+    if quick_save:
+        quick_variable_summary = str(quick_save.get("variableSummaryText") or "").strip() or build_variable_summary_text(
+            variables,
+            quick_save.get("variableState") if isinstance(quick_save, dict) else None,
+        )
     quick_summary = {
         "isEmpty": quick_save is None,
         "sceneName": str((quick_save or {}).get("sceneName") or (quick_save or {}).get("sceneId") or ""),
         "summaryText": str((quick_save or {}).get("summaryText") or "").strip() or ("空" if quick_save is None else "当前没有摘要。"),
+        "variableSummaryText": quick_variable_summary,
         "savedAt": format_snapshot_saved_at((quick_save or {}).get("savedAt")),
     }
     return {
@@ -3916,6 +3995,7 @@ class NativeRuntimePlayer:
         self.assets = (self.data.get("assets") or {}).get("assets") or []
         self.characters = (self.data.get("characters") or {}).get("characters") or []
         self.variables = (self.data.get("variables") or {}).get("variables") or []
+        self.variables_by_id = {str(variable.get("id")): variable for variable in self.variables if variable.get("id")}
         self.chapters = self.data.get("chapters") or []
         self.build_info = self.data.get("buildInfo") or {}
         self.dialog_box_config = get_project_dialog_box_config(self.project)
@@ -4007,11 +4087,7 @@ class NativeRuntimePlayer:
         self.screen_filter_effect: dict | None = None
         self.depth_blur_effect: dict | None = None
 
-        self.variable_state = {
-            variable.get("id"): variable.get("defaultValue")
-            for variable in self.variables
-            if variable.get("id")
-        }
+        self.variable_state = self.build_initial_variable_state()
         self.stage_background_asset_id: str | None = None
         self.visible_characters: dict[str, dict] = {}
         self.current_scene_id = self.project.get("entrySceneId") or self.scene_order[0]
@@ -5325,6 +5401,7 @@ class NativeRuntimePlayer:
             self.save_store,
             page=self.overlay_page,
             page_size=SAVE_DIALOG_PAGE_SIZE,
+            variables=self.variables,
         )
 
     def get_save_dialog_slot_count(self) -> int:
@@ -5384,11 +5461,7 @@ class NativeRuntimePlayer:
         self.stage_background_asset_id = None
         self.visible_characters = {}
         self.current_bgm_asset_id = None
-        self.variable_state = {
-            variable.get("id"): variable.get("defaultValue")
-            for variable in self.variables
-            if variable.get("id")
-        }
+        self.variable_state = self.build_initial_variable_state()
         self.current_scene_id = self.project.get("entrySceneId") or self.scene_order[0]
         if self.current_scene_id not in self.scenes_by_id:
             self.current_scene_id = self.scene_order[0]
@@ -5529,11 +5602,18 @@ class NativeRuntimePlayer:
                 subtitle = "从入口场景开始新的游玩。"
             elif item_key == "resume":
                 enabled = self.auto_resume_snapshot is not None
-                subtitle = (
-                    f"{self.auto_resume_snapshot.get('sceneName') or '未命名场景'} · {format_snapshot_saved_at(self.auto_resume_snapshot.get('savedAt'))}"
-                    if self.auto_resume_snapshot
-                    else "推进一次剧情后会自动生成续玩记录。"
-                )
+                if self.auto_resume_snapshot:
+                    variable_summary = str(self.auto_resume_snapshot.get("variableSummaryText") or "").strip()
+                    if not variable_summary:
+                        variable_summary = build_variable_summary_text(
+                            self.variables,
+                            self.auto_resume_snapshot.get("variableState"),
+                        )
+                    subtitle = f"{self.auto_resume_snapshot.get('sceneName') or '未命名场景'} · {format_snapshot_saved_at(self.auto_resume_snapshot.get('savedAt'))}"
+                    if variable_summary:
+                        subtitle = f"{subtitle} · {variable_summary}"
+                else:
+                    subtitle = "推进一次剧情后会自动生成续玩记录。"
             elif item_key == "load":
                 subtitle = f"正式存档 {filled_formal_count}/{self.formal_save_slot_count}。"
             elif item_key == "settings":
@@ -5786,6 +5866,7 @@ class NativeRuntimePlayer:
             "finished": self.finished,
             "finishedMessage": self.finished_message,
             "summaryText": self.get_current_line_preview()[:96],
+            "variableSummaryText": build_variable_summary_text(self.variables, self.variable_state),
             "textHistory": self.get_snapshot_text_history(),
             "particleEffect": dict(self.active_particle_effect) if self.active_particle_effect else None,
             "visualEffects": {
@@ -5849,13 +5930,7 @@ class NativeRuntimePlayer:
         self.current_scene_id = scene_id if scene_id in self.scenes_by_id else self.scene_order[0]
         self.unlock_current_chapter_replay()
         self.current_block_index = int(snapshot.get("blockIndex") or 0)
-        restored_variable_state = {
-            variable.get("id"): variable.get("defaultValue")
-            for variable in self.variables
-            if variable.get("id")
-        }
-        restored_variable_state.update(dict(snapshot.get("variableState") or {}))
-        self.variable_state = restored_variable_state
+        self.variable_state = self.merge_variable_state(snapshot.get("variableState") or {})
         self.stage_background_asset_id = snapshot.get("stageBackgroundAssetId")
         self.visible_characters = dict(snapshot.get("visibleCharacters") or {})
         self.current_bgm_asset_id = None
@@ -6556,17 +6631,51 @@ class NativeRuntimePlayer:
                 return True
         return True
 
+    def build_initial_variable_state(self) -> dict:
+        return {
+            variable_id: coerce_runtime_variable_value(variable, variable.get("defaultValue"))
+            for variable_id, variable in self.variables_by_id.items()
+        }
+
+    def normalize_runtime_variable_value(self, variable_id: str | None, value: object) -> object:
+        variable = self.variables_by_id.get(str(variable_id or ""))
+        if not variable:
+            return None
+        return coerce_runtime_variable_value(variable, value)
+
+    def merge_variable_state(self, variable_state: dict | None) -> dict:
+        merged_state = self.build_initial_variable_state()
+        if not isinstance(variable_state, dict):
+            return merged_state
+        for variable_id, value in variable_state.items():
+            safe_variable_id = str(variable_id or "")
+            if safe_variable_id in self.variables_by_id:
+                merged_state[safe_variable_id] = self.normalize_runtime_variable_value(safe_variable_id, value)
+        return merged_state
+
+    def get_runtime_variable_value(self, variable_id: str | None) -> object:
+        safe_variable_id = str(variable_id or "")
+        if safe_variable_id not in self.variables_by_id:
+            return None
+        if safe_variable_id not in self.variable_state:
+            self.variable_state[safe_variable_id] = self.normalize_runtime_variable_value(
+                safe_variable_id,
+                self.variables_by_id[safe_variable_id].get("defaultValue"),
+            )
+        return self.variable_state.get(safe_variable_id)
+
     def apply_variable_set(self, block: dict) -> None:
-        variable_id = block.get("variableId")
-        if not variable_id:
+        variable_id = str(block.get("variableId") or "")
+        if variable_id not in self.variables_by_id:
             return
-        self.variable_state[variable_id] = block.get("value")
+        self.variable_state[variable_id] = self.normalize_runtime_variable_value(variable_id, block.get("value"))
 
     def apply_variable_add(self, block: dict) -> None:
-        variable_id = block.get("variableId")
-        if not variable_id:
+        variable_id = str(block.get("variableId") or "")
+        variable = self.variables_by_id.get(variable_id)
+        if normalize_variable_type((variable or {}).get("type")) != "number":
             return
-        current = self.variable_state.get(variable_id, 0)
+        current = self.get_runtime_variable_value(variable_id)
         try:
             current_number = float(current)
         except (TypeError, ValueError):
@@ -6605,10 +6714,10 @@ class NativeRuntimePlayer:
         if not conditions:
             return False
         for condition in conditions:
-            variable_id = condition.get("variableId")
+            variable_id = str(condition.get("variableId") or "")
             operator = str(condition.get("operator") or "==")
-            expected_value = condition.get("value")
-            current_value = self.variable_state.get(variable_id)
+            expected_value = self.normalize_runtime_variable_value(variable_id, condition.get("value"))
+            current_value = self.get_runtime_variable_value(variable_id)
             if not self.evaluate_operator(current_value, operator, expected_value):
                 return False
         return True
@@ -7294,9 +7403,12 @@ class NativeRuntimePlayer:
             self.font_ui.render(quick_title, True, self.dialog_box_config.get("speakerColor", COLOR_TEXT)),
             (quick_rect.left + 16, quick_rect.top + 10),
         )
+        quick_variable_summary = str(quick_save.get("variableSummaryText") or "")
         quick_meta = f"{quick_save.get('savedAt')} · {quick_save.get('sceneName') or '尚未创建'}"
+        if quick_variable_summary:
+            quick_meta = f"{quick_meta} · {quick_variable_summary}"
         self.screen.blit(
-            self.font_ui.render(quick_meta, True, self.dialog_box_config.get("hintColor", COLOR_TEXT_MUTED)),
+            self.font_ui.render(quick_meta[:92], True, self.dialog_box_config.get("hintColor", COLOR_TEXT_MUTED)),
             (quick_rect.left + 16, quick_rect.top + 34),
         )
         quick_summary = str(quick_save.get("summaryText") or "空")
@@ -7348,6 +7460,8 @@ class NativeRuntimePlayer:
             if slot.get("finished"):
                 summary_text = "路线结束 · " + summary_text
             saved_at = str(slot.get("savedAt") or "尚未保存")
+            variable_summary = str(slot.get("variableSummaryText") or "")
+            meta_text = f"{saved_at} · {variable_summary}" if variable_summary else saved_at
             self.screen.blit(
                 self.font_ui.render(label, True, self.dialog_box_config.get("speakerColor", COLOR_TEXT)),
                 (card_rect.left + 16, card_rect.top + 12),
@@ -7357,7 +7471,7 @@ class NativeRuntimePlayer:
                 (card_rect.left + 16, card_rect.top + 34),
             )
             self.screen.blit(
-                self.font_ui.render(saved_at, True, self.dialog_box_config.get("hintColor", COLOR_TEXT_MUTED)),
+                self.font_ui.render(meta_text[:42], True, self.dialog_box_config.get("hintColor", COLOR_TEXT_MUTED)),
                 (card_rect.left + 16, card_rect.top + 72),
             )
             self.screen.blit(
@@ -7472,12 +7586,17 @@ class NativeRuntimePlayer:
         if snapshot:
             scene_name = str(snapshot.get("sceneName") or snapshot.get("sceneId") or "未命名场景")
             summary = str(snapshot.get("summaryText") or snapshot.get("finishedMessage") or "当前没有摘要。")
+            variable_summary = str(snapshot.get("variableSummaryText") or "").strip()
+            if not variable_summary:
+                variable_summary = build_variable_summary_text(self.variables, snapshot.get("variableState"))
             meta = f"{format_snapshot_saved_at(snapshot.get('savedAt'))} · 第 {int(snapshot.get('blockIndex') or 0) + 1} 张卡"
             if snapshot.get("finished"):
                 meta += " · 已结束"
             self.screen.blit(self.font_body.render(scene_name[:28], True, palette["text"]), (card_rect.left + 18, card_rect.top + 20))
             self.screen.blit(self.font_ui.render(meta, True, palette["muted"]), (card_rect.left + 18, card_rect.top + 58))
-            self.screen.blit(self.font_ui.render(summary[:72], True, palette["text"]), (card_rect.left + 18, card_rect.top + 94))
+            if variable_summary:
+                self.screen.blit(self.font_ui.render(variable_summary[:74], True, palette["accent"]), (card_rect.left + 18, card_rect.top + 82))
+            self.screen.blit(self.font_ui.render(summary[:72], True, palette["text"]), (card_rect.left + 18, card_rect.top + 110))
         else:
             self.blit_text_center(self.font_body, "当前没有续玩记录", card_rect.centerx, card_rect.top + 42, palette["muted"])
             self.blit_text_center(self.font_ui, "推进一次剧情或读入存档后会自动生成。", card_rect.centerx, card_rect.top + 88, palette["muted"])
