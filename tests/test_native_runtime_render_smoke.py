@@ -537,7 +537,7 @@ class NativeRuntimeRenderSmokeTests(unittest.TestCase):
         payload = json.loads(data_path.read_text(encoding="utf-8"))
         payload["variables"] = {
             "variables": [
-                {"id": "var_score", "name": "Score", "type": "number", "defaultValue": "7"},
+                {"id": "var_score", "name": "Score", "type": "number", "defaultValue": "7", "min": 0, "max": 10},
                 {"id": "var_flag", "name": "Flag", "type": "boolean", "defaultValue": "true"},
                 {"id": "var_route", "name": "Route", "type": "string", "defaultValue": 12},
             ]
@@ -553,6 +553,8 @@ class NativeRuntimeRenderSmokeTests(unittest.TestCase):
         self.assertEqual(player.variable_state["var_route"], "12")
 
         player.apply_variable_add({"variableId": "var_score", "value": "3"})
+        self.assertEqual(player.variable_state["var_score"], 10)
+        player.apply_variable_add({"variableId": "var_score", "value": "99"})
         self.assertEqual(player.variable_state["var_score"], 10)
         player.apply_variable_set({"variableId": "var_flag", "value": "false"})
         self.assertIs(player.variable_state["var_flag"], False)
@@ -600,7 +602,7 @@ class NativeRuntimeRenderSmokeTests(unittest.TestCase):
             }
         )
 
-        self.assertEqual(player.variable_state["var_score"], 42.5)
+        self.assertEqual(player.variable_state["var_score"], 10)
         self.assertIs(player.variable_state["var_flag"], True)
         self.assertEqual(player.variable_state["var_route"], "404")
         self.assertNotIn("ghost", player.variable_state)

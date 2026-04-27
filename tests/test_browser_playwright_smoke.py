@@ -610,6 +610,111 @@ class BrowserPlaywrightSmokeTests(unittest.TestCase):
         player_url = self.export_web_build()
         self.assertIn("/exports/", player_url)
 
+    def test_preview_variable_library_can_create_and_save_variable(self) -> None:
+        self.create_blank_project("浏览器烟测项目_VariableLibrary")
+        self.create_first_chapter()
+        self.open_preview_screen()
+
+        self.page.get_by_text("变量库管理台").wait_for(timeout=15000)
+        initial_count = self.page.locator("[data-project-variable-row]").count()
+        self.page.get_by_role("button", name="新增数字").click()
+        self.page.wait_for_function(
+            """([selector, expected]) => document.querySelectorAll(selector).length > expected""",
+            arg=["[data-project-variable-row]", initial_count],
+            timeout=15000,
+        )
+
+        variable_row = self.page.locator("[data-project-variable-row]").filter(has_text="新数字变量").last
+        variable_row.locator('[data-field="project-variable-name"]').fill("压力值")
+        variable_row.locator('[data-field="project-variable-default"]').fill("140")
+        variable_row.locator('[data-field="project-variable-min"]').fill("0")
+        variable_row.locator('[data-field="project-variable-max"]').fill("120")
+        variable_row.get_by_role("button", name="保存变量").click()
+        self.page.wait_for_function(
+            """() => {
+                return Array.from(document.querySelectorAll('[data-project-variable-row]')).some((row) => {
+                    const name = row.querySelector('[data-field="project-variable-name"]')?.value;
+                    const defaultValue = row.querySelector('[data-field="project-variable-default"]')?.value;
+                    const minValue = row.querySelector('[data-field="project-variable-min"]')?.value;
+                    const maxValue = row.querySelector('[data-field="project-variable-max"]')?.value;
+                    return name === '压力值' && defaultValue === '120' && minValue === '0' && maxValue === '120';
+                });
+            }""",
+            timeout=15000,
+        )
+        saved_row = self.page.locator("[data-project-variable-row]").filter(has_text="压力值").first
+        self.assertEqual(saved_row.locator('[data-field="project-variable-type"]').input_value(), "number")
+        self.assertEqual(saved_row.locator('[data-field="project-variable-default"]').input_value(), "120")
+        self.assertEqual(saved_row.locator('[data-field="project-variable-min"]').input_value(), "0")
+        self.assertEqual(saved_row.locator('[data-field="project-variable-max"]').input_value(), "120")
+
+    def test_preview_variable_library_can_rename_id_and_jump_to_reference(self) -> None:
+        project_title = "浏览器烟测项目_VariableRename"
+        self.create_blank_project(project_title)
+        self.create_first_chapter()
+        self.page.evaluate(
+            """async () => {
+                const bundleResponse = await fetch('/api/project-data');
+                const bundle = await bundleResponse.json();
+                const chapter = bundle.chapters[0];
+                const scene = chapter.scenes[0];
+                await fetch('/api/save-project-settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        variables: {
+                            variables: [
+                                { id: 'var_score', name: '分数', type: 'number', defaultValue: 0, min: 0, max: 100 },
+                            ],
+                        },
+                    }),
+                });
+                await fetch('/api/save-scene', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        chapterId: chapter.chapterId,
+                        sceneId: scene.id,
+                        scene: {
+                            ...scene,
+                            blocks: [
+                                { id: 'block_score', type: 'variable_add', variableId: 'var_score', value: 3 },
+                            ],
+                        },
+                    }),
+                });
+            }"""
+        )
+        self.open_project_by_title(project_title)
+        self.open_preview_screen()
+
+        variable_row = self.page.locator('[data-project-variable-row][data-variable-id="var_score"]').first
+        variable_row.locator('[data-field="project-variable-name"]').fill("积分")
+        variable_row.get_by_role("button", name="根据变量名生成 ID").click()
+        self.assertEqual(variable_row.locator('[data-field="project-variable-id"]').input_value(), "var_积分")
+        self.page.once("dialog", lambda dialog: dialog.accept())
+        variable_row.get_by_role("button", name="保存变量").click()
+        self.page.wait_for_function(
+            """async () => {
+                const response = await fetch('/api/project-data');
+                const bundle = await response.json();
+                const variable = bundle.variables.variables.find((item) => item.id === 'var_积分');
+                const block = bundle.chapters[0].scenes[0].blocks.find((item) => item.id === 'block_score');
+                return variable?.name === '积分' && block?.variableId === 'var_积分';
+            }""",
+            timeout=15000,
+        )
+
+        saved_row = self.page.locator("[data-project-variable-row]").filter(has_text="积分").first
+        saved_row.get_by_role("button", name="定位到卡片").first.click()
+        self.page.wait_for_function(
+            """() => {
+                return document.querySelector('#screen-story')?.classList.contains('is-active')
+                    && document.querySelector('.block-card.is-selected[data-block-id="block_score"]');
+            }""",
+            timeout=15000,
+        )
+
     def test_inspection_flow_can_run_regression_and_export_report(self) -> None:
         self.create_blank_project("浏览器烟测项目_C")
         self.create_first_chapter()
@@ -628,6 +733,59 @@ class BrowserPlaywrightSmokeTests(unittest.TestCase):
         report_content = download_path.read_text(encoding="utf-8-sig")
         self.assertIn("项目巡检报告", report_content)
         self.assertIn("自动回归试玩路线测试", report_content)
+
+    def test_inspection_flags_number_variable_range_issues(self) -> None:
+        self.create_blank_project("浏览器烟测项目_VariableRange")
+        self.create_first_chapter()
+
+        self.page.evaluate(
+            """async (variables) => {
+                const response = await fetch('/api/save-project-settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ variables: { variables } }),
+                });
+                if (!response.ok) {
+                    throw new Error(await response.text());
+                }
+            }""",
+            [
+                {
+                    "id": "var_score",
+                    "name": "分数",
+                    "type": "number",
+                    "defaultValue": 150,
+                    "min": 0,
+                    "max": 100,
+                },
+                {
+                    "id": "var_bad_range",
+                    "name": "坏范围",
+                    "type": "number",
+                    "defaultValue": 5,
+                    "min": 10,
+                    "max": 1,
+                },
+                {
+                    "id": "var_bad_bound",
+                    "name": "坏边界",
+                    "type": "number",
+                    "defaultValue": 0,
+                    "min": "oops",
+                    "max": 10,
+                },
+            ],
+        )
+        self.open_project_by_title("浏览器烟测项目_VariableRange")
+
+        self.open_inspection_screen()
+
+        inspection = self.page.locator("#inspectionContent")
+        inspection.get_by_text("数字变量默认值超出了范围，运行时会自动夹回范围内。").first.wait_for(
+            timeout=15000
+        )
+        inspection.get_by_text("数字变量的范围上下限反了。").first.wait_for(timeout=15000)
+        inspection.get_by_text("数字变量的最小值不是有效数字。").first.wait_for(timeout=15000)
 
     def test_preview_flow_can_export_windows_build(self) -> None:
         self.create_blank_project("浏览器烟测项目_D")

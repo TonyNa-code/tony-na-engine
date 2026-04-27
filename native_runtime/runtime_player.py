@@ -1233,19 +1233,50 @@ def variable_value_matches_type(variable_type: str, value: object) -> bool:
     return isinstance(value, str)
 
 
+def parse_variable_number_bound(value: object) -> float | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if math.isfinite(parsed) else None
+
+
+def get_variable_number_bounds(variable: dict | None) -> tuple[float | None, float | None]:
+    if not isinstance(variable, dict):
+        return None, None
+    min_value = parse_variable_number_bound(variable.get("min", variable.get("minValue")))
+    max_value = parse_variable_number_bound(variable.get("max", variable.get("maxValue")))
+    return min_value, max_value
+
+
+def clamp_runtime_variable_number(variable: dict | None, value: float) -> float | int:
+    min_value, max_value = get_variable_number_bounds(variable)
+    next_value = value
+    if min_value is not None:
+        next_value = max(next_value, min_value)
+    if max_value is not None:
+        next_value = min(next_value, max_value)
+    return int(next_value) if int(next_value) == next_value else next_value
+
+
 def coerce_runtime_variable_value(variable: dict | None, value: object) -> object:
     variable_type = normalize_variable_type((variable or {}).get("type"))
     fallback = (variable or {}).get("defaultValue")
     if variable_type == "number":
         if isinstance(value, bool):
-            return fallback if is_number_variable_value(fallback) else 0
+            fallback_value = fallback if is_number_variable_value(fallback) else 0
+            return clamp_runtime_variable_number(variable, float(fallback_value))
         try:
             numeric_value = float(value)
         except (TypeError, ValueError):
-            return fallback if is_number_variable_value(fallback) else 0
+            fallback_value = fallback if is_number_variable_value(fallback) else 0
+            return clamp_runtime_variable_number(variable, float(fallback_value))
         if not math.isfinite(numeric_value):
-            return fallback if is_number_variable_value(fallback) else 0
-        return int(numeric_value) if int(numeric_value) == numeric_value else numeric_value
+            fallback_value = fallback if is_number_variable_value(fallback) else 0
+            return clamp_runtime_variable_number(variable, float(fallback_value))
+        return clamp_runtime_variable_number(variable, numeric_value)
     if variable_type == "boolean":
         if isinstance(value, bool):
             return value
@@ -1293,6 +1324,8 @@ def get_export_logic_issue_count(issues: list[dict]) -> int:
         "logic_variable_missing",
         "logic_variable_type_mismatch",
         "logic_variable_default_type_mismatch",
+        "logic_variable_range_invalid",
+        "logic_variable_default_out_of_range",
         "logic_condition_operator_mismatch",
         "logic_choice_effect_unknown",
         "logic_variable_duplicate_id",
@@ -1458,6 +1491,54 @@ def build_release_check_report(bundle_dir: Path) -> dict:
                 "回到变量库把默认值改成对应类型；数字变量用数字，开关变量用 true/false，文本变量用字符串。",
                 f"variables.{variable_id}.defaultValue",
             )
+        if variable_type == "number":
+            raw_min = variable.get("min", variable.get("minValue"))
+            raw_max = variable.get("max", variable.get("maxValue"))
+            min_value, max_value = get_variable_number_bounds(variable)
+            if raw_min is not None and min_value is None:
+                add_release_check_issue(
+                    issues,
+                    "error",
+                    "logic_variable_range_invalid",
+                    f"数字变量最小值不是有效数字：{variable.get('name') or variable_id}",
+                    "把变量范围改成有效数字，或清空最小值。",
+                    f"variables.{variable_id}.min",
+                )
+            if raw_max is not None and max_value is None:
+                add_release_check_issue(
+                    issues,
+                    "error",
+                    "logic_variable_range_invalid",
+                    f"数字变量最大值不是有效数字：{variable.get('name') or variable_id}",
+                    "把变量范围改成有效数字，或清空最大值。",
+                    f"variables.{variable_id}.max",
+                )
+            if min_value is not None and max_value is not None and min_value > max_value:
+                add_release_check_issue(
+                    issues,
+                    "error",
+                    "logic_variable_range_invalid",
+                    f"数字变量范围上下限反了：{variable.get('name') or variable_id}",
+                    "确认最小值小于等于最大值；否则 Runtime 无法判断该把数值夹到哪里。",
+                    f"variables.{variable_id}.min/max",
+                )
+            range_order_is_valid = not (min_value is not None and max_value is not None and min_value > max_value)
+            if (
+                range_order_is_valid
+                and variable_value_matches_type(variable_type, variable.get("defaultValue"))
+                and (
+                    (min_value is not None and float(variable.get("defaultValue")) < min_value)
+                    or (max_value is not None and float(variable.get("defaultValue")) > max_value)
+                )
+            ):
+                add_release_check_issue(
+                    issues,
+                    "warning",
+                    "logic_variable_default_out_of_range",
+                    f"数字变量默认值超出范围：{variable.get('name') or variable_id}",
+                    "原生 Runtime 会自动夹回范围内；正式发布前建议把默认值直接改到范围内，避免作者和玩家看到的初始状态不一致。",
+                    f"variables.{variable_id}.defaultValue",
+                )
 
     def variable_name(variable_id: str) -> str:
         variable = variables_by_id.get(variable_id)
@@ -6687,7 +6768,7 @@ class NativeRuntimePlayer:
         next_value = current_number + delta
         if int(next_value) == next_value:
             next_value = int(next_value)
-        self.variable_state[variable_id] = next_value
+        self.variable_state[variable_id] = self.normalize_runtime_variable_value(variable_id, next_value)
 
     def evaluate_operator(self, current_value, operator: str, target_value) -> bool:
         if operator in {"==", "="}:

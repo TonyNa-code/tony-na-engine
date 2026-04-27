@@ -38,6 +38,7 @@ EXPORT_TEMPLATE_DIR = ROOT_DIR / "export_player_template"
 NATIVE_RUNTIME_TEMPLATE_DIR = ROOT_DIR / "native_runtime"
 EXPORT_RUNTIME_CACHE_DIR = ROOT_DIR / ".export_runtime_cache"
 SUPPORTED_RESOLUTIONS = {(1280, 720), (1920, 1080)}
+VARIABLE_ID_PATTERN = re.compile(r"^[0-9A-Za-z_\-\u4e00-\u9fff]{1,64}$")
 HISTORY_DIR_NAME = ".tony_na_history"
 HISTORY_SNAPSHOTS_DIR_NAME = "snapshots"
 HISTORY_MANIFEST_FILE_NAME = "history_manifest.json"
@@ -2041,6 +2042,111 @@ def save_project_settings(
     project["updatedAt"] = now_iso()
     write_json(PROJECT_PATH, project)
     return {"project": project}
+
+
+def validate_variable_id(value: object) -> str:
+    variable_id = str(value or "").strip()
+    if not variable_id:
+        raise ValueError("变量 ID 不能为空。")
+    if not VARIABLE_ID_PATTERN.fullmatch(variable_id):
+        raise ValueError("变量 ID 只能使用字母、数字、下划线、短横线或中文，并且不能超过 64 个字符。")
+    return variable_id
+
+
+def replace_variable_reference_in_block(block: dict, old_variable_id: str, new_variable_id: str) -> int:
+    changed = 0
+    block_type = block.get("type")
+
+    if block_type in {"variable_set", "variable_add"} and block.get("variableId") == old_variable_id:
+        block["variableId"] = new_variable_id
+        changed += 1
+
+    if block_type == "choice":
+        for option in block.get("options") or []:
+            if not isinstance(option, dict):
+                continue
+            for effect in option.get("effects") or []:
+                if isinstance(effect, dict) and effect.get("variableId") == old_variable_id:
+                    effect["variableId"] = new_variable_id
+                    changed += 1
+
+    if block_type == "condition":
+        for branch in block.get("branches") or []:
+            if not isinstance(branch, dict):
+                continue
+            for rule in branch.get("when") or []:
+                if isinstance(rule, dict) and rule.get("variableId") == old_variable_id:
+                    rule["variableId"] = new_variable_id
+                    changed += 1
+
+    return changed
+
+
+def rename_project_variable(*, old_variable_id: object, variable: object) -> dict:
+    old_id = validate_variable_id(old_variable_id)
+    if not isinstance(variable, dict):
+        raise ValueError("变量内容必须是一个对象。")
+
+    next_variable = dict(variable)
+    new_id = validate_variable_id(next_variable.get("id"))
+    variables_path = DATA_DIR / "variables.json"
+    variables_doc = normalize_variables_document(read_json(variables_path))
+    variables = variables_doc.get("variables", [])
+    target_index = next(
+        (index for index, item in enumerate(variables) if item.get("id") == old_id),
+        None,
+    )
+
+    if target_index is None:
+        raise ValueError("没有找到要重命名的变量。")
+
+    if any(item.get("id") == new_id for index, item in enumerate(variables) if index != target_index):
+        raise ValueError("这个变量 ID 已经被其他变量使用。")
+
+    next_variable["id"] = new_id
+    normalized_next_doc = normalize_variables_document({"variables": [next_variable]})
+    normalized_next_variable = normalized_next_doc["variables"][0]
+    if normalized_next_variable.get("id") != new_id:
+        raise ValueError("变量 ID 无法被安全保存，请换一个更简单的 ID。")
+
+    variables[target_index] = normalized_next_variable
+    variables_doc["variables"] = variables
+    write_json(variables_path, variables_doc)
+
+    reference_count = 0
+    scene_count = 0
+    chapter_count = 0
+
+    if old_id != new_id:
+        for chapter_path in list_chapter_files():
+            chapter = read_json(chapter_path)
+            chapter_changed = False
+            for scene in chapter.get("scenes") or []:
+                if not isinstance(scene, dict):
+                    continue
+                scene_changed = 0
+                for block in scene.get("blocks") or []:
+                    if isinstance(block, dict):
+                        scene_changed += replace_variable_reference_in_block(block, old_id, new_id)
+                if scene_changed:
+                    reference_count += scene_changed
+                    scene_count += 1
+                    chapter_changed = True
+            if chapter_changed:
+                chapter_count += 1
+                write_json(chapter_path, chapter)
+
+    touch_project()
+    return {
+        "variable": normalized_next_variable,
+        "migration": {
+            "oldVariableId": old_id,
+            "newVariableId": new_id,
+            "referenceCount": reference_count,
+            "sceneCount": scene_count,
+            "chapterCount": chapter_count,
+        },
+    }
 
 
 def sanitize_particle_custom_presets(presets: list) -> list[dict]:
@@ -8593,6 +8699,10 @@ class EditorRequestHandler(SimpleHTTPRequestHandler):
             self.handle_save_project_settings()
             return
 
+        if parsed.path == "/api/rename-variable":
+            self.handle_rename_variable()
+            return
+
         if parsed.path == "/api/export-build":
             self.handle_export_build()
             return
@@ -9325,6 +9435,33 @@ class EditorRequestHandler(SimpleHTTPRequestHandler):
         except Exception as error:  # pragma: no cover - defensive fallback
             self.send_json(
                 {"ok": False, "error": f"保存项目设置时出了意外问题：{error}"},
+                status=HTTPStatus.INTERNAL_SERVER_ERROR,
+            )
+
+    def handle_rename_variable(self) -> None:
+        try:
+            payload = self.read_json_body()
+            result = attach_history_to_result(
+                rename_project_variable(
+                    old_variable_id=payload.get("oldVariableId"),
+                    variable=payload.get("variable"),
+                ),
+                "重命名变量并迁移引用",
+            )
+            self.send_json(
+                {
+                    "ok": True,
+                    "savedAt": now_iso(),
+                    **result,
+                }
+            )
+        except json.JSONDecodeError:
+            self.send_json({"ok": False, "error": "请求体不是有效 JSON。"}, status=HTTPStatus.BAD_REQUEST)
+        except ValueError as error:
+            self.send_json({"ok": False, "error": str(error)}, status=HTTPStatus.BAD_REQUEST)
+        except Exception as error:  # pragma: no cover - defensive fallback
+            self.send_json(
+                {"ok": False, "error": f"迁移变量引用时出了意外问题：{error}"},
                 status=HTTPStatus.INTERNAL_SERVER_ERROR,
             )
 

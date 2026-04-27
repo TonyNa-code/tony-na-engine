@@ -432,6 +432,82 @@ class RunEditorSmokeTests(unittest.TestCase):
         self.assertEqual(bundle["variables"]["variables"][0]["id"], "var_affection")
         self.assertEqual(bundle["variables"]["variables"][1]["defaultValue"], "common")
 
+    def test_variable_rename_migrates_story_references(self) -> None:
+        _, chapter_result = self.create_blank_project_with_chapter()
+        run_editor.save_project_settings(
+            variables={
+                "variables": [
+                    {
+                        "id": "var_score",
+                        "name": "分数",
+                        "type": "number",
+                        "defaultValue": 0,
+                        "min": 0,
+                        "max": 100,
+                    },
+                    {
+                        "id": "var_route",
+                        "name": "路线",
+                        "type": "string",
+                        "defaultValue": "common",
+                    },
+                ]
+            }
+        )
+        self.save_scene_with_blocks(
+            chapter_result["chapterId"],
+            chapter_result["scene"],
+            [
+                {"id": "block_001", "type": "variable_add", "variableId": "var_score", "value": 3},
+                {
+                    "id": "block_002",
+                    "type": "choice",
+                    "options": [
+                        {
+                            "id": "choice_01",
+                            "text": "继续",
+                            "gotoSceneId": chapter_result["sceneId"],
+                            "effects": [
+                                {"type": "variable_set", "variableId": "var_score", "value": 5},
+                            ],
+                        }
+                    ],
+                },
+                {
+                    "id": "block_003",
+                    "type": "condition",
+                    "branches": [
+                        {
+                            "id": "branch_01",
+                            "when": [{"variableId": "var_score", "operator": ">=", "value": 3}],
+                            "gotoSceneId": chapter_result["sceneId"],
+                        }
+                    ],
+                },
+            ],
+        )
+
+        result = run_editor.rename_project_variable(
+            old_variable_id="var_score",
+            variable={
+                "id": "var_points",
+                "name": "积分",
+                "type": "number",
+                "defaultValue": 10,
+                "min": 0,
+                "max": 120,
+            },
+        )
+        bundle = run_editor.load_project_bundle()
+        saved_scene = bundle["chapters"][0]["scenes"][0]
+
+        self.assertEqual(result["migration"]["referenceCount"], 3)
+        self.assertEqual(bundle["variables"]["variables"][0]["id"], "var_points")
+        self.assertEqual(bundle["variables"]["variables"][0]["name"], "积分")
+        self.assertEqual(saved_scene["blocks"][0]["variableId"], "var_points")
+        self.assertEqual(saved_scene["blocks"][1]["options"][0]["effects"][0]["variableId"], "var_points")
+        self.assertEqual(saved_scene["blocks"][2]["branches"][0]["when"][0]["variableId"], "var_points")
+
     def test_creative_assistant_generates_local_insertable_story_blocks(self) -> None:
         _, chapter_result = self.create_blank_project_with_chapter()
 
@@ -950,6 +1026,22 @@ class RunEditorSmokeTests(unittest.TestCase):
                         "type": "boolean",
                         "defaultValue": "not-a-boolean",
                     },
+                    {
+                        "id": "var_score",
+                        "name": "分数",
+                        "type": "number",
+                        "defaultValue": 150,
+                        "min": 0,
+                        "max": 100,
+                    },
+                    {
+                        "id": "var_bad_range",
+                        "name": "坏范围",
+                        "type": "number",
+                        "defaultValue": 5,
+                        "min": 10,
+                        "max": 1,
+                    },
                 ]
             },
         )
@@ -1014,10 +1106,12 @@ class RunEditorSmokeTests(unittest.TestCase):
         issue_codes = {issue.get("code") for issue in release_check_payload["issues"]}
 
         self.assertEqual(release_check_payload["status"], "fail")
-        self.assertEqual(release_check_payload["summary"]["logicIssueCount"], 5)
+        self.assertEqual(release_check_payload["summary"]["logicIssueCount"], 7)
         self.assertTrue(
             {
                 "logic_variable_default_type_mismatch",
+                "logic_variable_default_out_of_range",
+                "logic_variable_range_invalid",
                 "logic_variable_type_mismatch",
                 "logic_variable_missing",
                 "logic_condition_operator_mismatch",

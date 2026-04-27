@@ -7604,8 +7604,10 @@ function getSaveSlotSummary(slot) {
 
 function getVariableSummary(variables) {
   const changedVariables = (data.variables ?? []).filter((variable) => {
-    const currentValue = normalizeVariableValue(variable.id, variables?.[variable.id]);
-    const defaultValue = normalizeVariableValue(variable.id, variable.defaultValue);
+    const currentValue = Object.hasOwn(variables ?? {}, variable.id)
+      ? normalizeVariableValue(variable.id, variables?.[variable.id])
+      : getVariableDefaultValue(variable.id);
+    const defaultValue = getVariableDefaultValue(variable.id);
     return JSON.stringify(currentValue) !== JSON.stringify(defaultValue);
   });
 
@@ -7617,7 +7619,10 @@ function getVariableSummary(variables) {
     .slice(0, 3)
     .map(
       (variable) =>
-        `${variable.name} ${formatVariableValue(variable.id, variables?.[variable.id] ?? variable.defaultValue)}`
+        `${variable.name} ${formatVariableValue(
+          variable.id,
+          Object.hasOwn(variables ?? {}, variable.id) ? variables?.[variable.id] : getVariableDefaultValue(variable.id)
+        )}`
     )
     .join(" · ");
 
@@ -8743,7 +8748,7 @@ function clearTransientStageEffects(visualState) {
 
 function createInitialVariableState() {
   return data.variables.reduce((result, variable) => {
-    result[variable.id] = normalizeVariableValue(variable.id, variable.defaultValue);
+    result[variable.id] = getVariableDefaultValue(variable.id);
     return result;
   }, {});
 }
@@ -9151,15 +9156,15 @@ function getPreviewVariableValue(variables, variableId) {
 }
 
 function clampPreviewVariableNumber(variableId, value) {
-  const variable = data.variablesById.get(variableId);
+  const [minValue, maxValue] = getVariableNumberBounds(variableId);
   let nextValue = value;
 
-  if (typeof variable?.min === "number") {
-    nextValue = Math.max(nextValue, variable.min);
+  if (minValue !== null) {
+    nextValue = Math.max(nextValue, minValue);
   }
 
-  if (typeof variable?.max === "number") {
-    nextValue = Math.min(nextValue, variable.max);
+  if (maxValue !== null) {
+    nextValue = Math.min(nextValue, maxValue);
   }
 
   return nextValue;
@@ -9286,7 +9291,10 @@ function renderVariables(variables) {
             <div class="info-row">
               <label>${escapeHtml(variable.name)}</label>
               <div class="value">${escapeHtml(
-                formatVariableValue(variable.id, variables?.[variable.id] ?? variable.defaultValue)
+                formatVariableValue(
+                  variable.id,
+                  Object.hasOwn(variables ?? {}, variable.id) ? variables?.[variable.id] : getVariableDefaultValue(variable.id)
+                )
               )}</div>
             </div>
           `
@@ -11273,6 +11281,27 @@ function getVariableType(variableId) {
   return data.variablesById.get(variableId)?.type ?? "string";
 }
 
+function parseVariableNumberBound(value) {
+  if (value === null || value === undefined || typeof value === "boolean") {
+    return null;
+  }
+
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function getVariableNumberBounds(variableId) {
+  const variable = data.variablesById.get(variableId);
+  if (!variable) {
+    return [null, null];
+  }
+
+  return [
+    parseVariableNumberBound(variable.min ?? variable.minValue),
+    parseVariableNumberBound(variable.max ?? variable.maxValue),
+  ];
+}
+
 function normalizeVariableValue(variableId, value) {
   const type = getVariableType(variableId);
 
@@ -11296,7 +11325,8 @@ function normalizeVariableValue(variableId, value) {
 }
 
 function getVariableDefaultValue(variableId) {
-  return normalizeVariableValue(variableId, data.variablesById.get(variableId)?.defaultValue);
+  const value = normalizeVariableValue(variableId, data.variablesById.get(variableId)?.defaultValue);
+  return typeof value === "number" ? clampPreviewVariableNumber(variableId, value) : value;
 }
 
 function formatVariableValue(variableId, value) {

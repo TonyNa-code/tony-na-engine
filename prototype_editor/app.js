@@ -20,6 +20,7 @@ const API_CREATE_VOICE_PLACEHOLDER = "/api/create-voice-placeholder";
 const API_CREATE_VOICE_PLACEHOLDERS = "/api/create-voice-placeholders";
 const API_MATCH_VOICE_FILES = "/api/match-voice-files";
 const API_SAVE_PROJECT_SETTINGS = "/api/save-project-settings";
+const API_RENAME_VARIABLE = "/api/rename-variable";
 const API_CREATE_CHAPTER = "/api/create-chapter";
 const API_CREATE_STARTER_KIT = "/api/create-starter-kit";
 const API_DUPLICATE_CHAPTER = "/api/duplicate-chapter";
@@ -2083,6 +2084,8 @@ const state = {
   inspectionIssueSearchQuery: "",
   inspectionIssueFilterMode: "all",
   inspectionRegressionResult: null,
+  projectVariableSearchQuery: "",
+  projectVariableDrafts: {},
   previewSceneSearchQuery: "",
   previewSceneFilterMode: "all",
   selectedCharacterId: null,
@@ -2821,6 +2824,8 @@ function resetProjectScopedUiState() {
   state.inspectionIssueSearchQuery = "";
   state.inspectionIssueFilterMode = "all";
   state.inspectionRegressionResult = null;
+  state.projectVariableSearchQuery = "";
+  state.projectVariableDrafts = {};
   state.previewSceneSearchQuery = "";
   state.previewSceneFilterMode = "all";
   state.selectedCharacterId = null;
@@ -4775,6 +4780,41 @@ async function handleClick(event) {
     return;
   }
 
+  if (action === "add-project-variable") {
+    void addProjectVariable(actionTarget.dataset.variableType);
+    return;
+  }
+
+  if (action === "save-project-variable") {
+    void saveProjectVariable(actionTarget.dataset.variableId);
+    return;
+  }
+
+  if (action === "duplicate-project-variable") {
+    void duplicateProjectVariable(actionTarget.dataset.variableId);
+    return;
+  }
+
+  if (action === "delete-project-variable") {
+    void deleteProjectVariable(actionTarget.dataset.variableId);
+    return;
+  }
+
+  if (action === "repair-project-variable-ranges") {
+    void repairProjectVariableRanges();
+    return;
+  }
+
+  if (action === "suggest-project-variable-id") {
+    suggestProjectVariableId(actionTarget.dataset.variableId);
+    return;
+  }
+
+  if (action === "jump-to-variable-reference") {
+    openProjectVariableReference(actionTarget.dataset.sceneId, actionTarget.dataset.blockId);
+    return;
+  }
+
   if (action === "save-project-dialog-box-config") {
     void saveProjectDialogBoxConfig();
     return;
@@ -5751,6 +5791,11 @@ function handleChange(event) {
     return;
   }
 
+  if (captureProjectVariableDraftField(target)) {
+    setSaveStatus("变量草稿已更新，保存后会写入项目");
+    return;
+  }
+
   if (updatePreviewVolumeControl(target.id, target.value, true)) {
     return;
   }
@@ -5814,6 +5859,11 @@ function handleInput(event) {
     return;
   }
 
+  if (captureProjectVariableDraftField(event.target)) {
+    setSaveStatus("变量草稿已更新，保存后会写入项目");
+    return;
+  }
+
   if (event.target.id === "assetSearchInput") {
     state.assetSearchQuery = event.target.value ?? "";
     renderAssetsScreen();
@@ -5873,6 +5923,12 @@ function handleInput(event) {
   if (event.target.id === "inspectionIssueSearchInput") {
     state.inspectionIssueSearchQuery = event.target.value ?? "";
     renderInspectionScreen();
+    return;
+  }
+
+  if (event.target.id === "projectVariableSearchInput") {
+    state.projectVariableSearchQuery = event.target.value ?? "";
+    rerenderProjectVariableLibraryPanel();
     return;
   }
 
@@ -6422,8 +6478,10 @@ function getPreviewSaveSlotSummary(slot) {
 
 function getPreviewVariableSummary(variables) {
   const changedVariables = (state.data?.variables ?? []).filter((variable) => {
-    const currentValue = normalizeVariableValue(variable.id, variables?.[variable.id]);
-    const defaultValue = normalizeVariableValue(variable.id, variable.defaultValue);
+    const currentValue = Object.hasOwn(variables ?? {}, variable.id)
+      ? normalizeVariableValue(variable.id, variables?.[variable.id])
+      : getVariableDefaultValue(variable.id);
+    const defaultValue = getVariableDefaultValue(variable.id);
     return JSON.stringify(currentValue) !== JSON.stringify(defaultValue);
   });
 
@@ -6435,7 +6493,10 @@ function getPreviewVariableSummary(variables) {
     .slice(0, 3)
     .map(
       (variable) =>
-        `${variable.name} ${formatVariableValue(variable.id, variables?.[variable.id] ?? variable.defaultValue)}`
+        `${variable.name} ${formatVariableValue(
+          variable.id,
+          Object.hasOwn(variables ?? {}, variable.id) ? variables?.[variable.id] : getVariableDefaultValue(variable.id)
+        )}`
     )
     .join(" · ");
 
@@ -7638,6 +7699,16 @@ function openStoryLocation(sceneId, blockId = null) {
   renderPreviewScreen();
   setSaveStatus(`已定位到：${scene.name} · 第 ${blockIndex + 1} 张卡片`);
   showToast(`已打开 ${scene.name} 里的对应卡片`);
+}
+
+function openProjectVariableReference(sceneId, blockId = null) {
+  resetStoryBlockFilters();
+  resetStorySceneTreeFilters();
+  openStoryLocation(sceneId, blockId);
+  requestAnimationFrame(() => {
+    const selectedCard = refs.storyBlockList?.querySelector(".block-card.is-selected");
+    selectedCard?.scrollIntoView?.({ block: "center", behavior: "smooth" });
+  });
 }
 
 function openCharacterFromSearch(characterId) {
@@ -19720,7 +19791,7 @@ function clearTransientStageEffects(visualState) {
 
 function createInitialVariableState() {
   return state.data.variables.reduce((result, variable) => {
-    result[variable.id] = normalizeVariableValue(variable.id, variable.defaultValue);
+    result[variable.id] = getVariableDefaultValue(variable.id);
     return result;
   }, {});
 }
@@ -20186,15 +20257,15 @@ function getPreviewVariableValue(variables, variableId) {
 }
 
 function clampPreviewVariableNumber(variableId, value) {
-  const variable = state.data.variablesById.get(variableId);
+  const [minValue, maxValue] = getVariableNumberBounds(variableId);
   let nextValue = value;
 
-  if (typeof variable?.min === "number") {
-    nextValue = Math.max(nextValue, variable.min);
+  if (minValue !== null) {
+    nextValue = Math.max(nextValue, minValue);
   }
 
-  if (typeof variable?.max === "number") {
-    nextValue = Math.min(nextValue, variable.max);
+  if (maxValue !== null) {
+    nextValue = Math.min(nextValue, maxValue);
   }
 
   return nextValue;
@@ -22225,7 +22296,9 @@ function syncPreviewDebugDraft(snapshot) {
     const currentValue =
       Object.prototype.hasOwnProperty.call(state.previewDebugDraft ?? {}, variable.id)
         ? state.previewDebugDraft[variable.id]
-        : snapshot.variables?.[variable.id] ?? variable.defaultValue;
+        : Object.hasOwn(snapshot.variables ?? {}, variable.id)
+          ? snapshot.variables?.[variable.id]
+          : getVariableDefaultValue(variable.id);
     result[variable.id] = normalizeVariableValue(variable.id, currentValue);
     return result;
   }, {});
@@ -22235,7 +22308,9 @@ function getPreviewDebugDraftValue(variableId, snapshot) {
   const draftValue =
     state.previewDebugDraft && Object.prototype.hasOwnProperty.call(state.previewDebugDraft, variableId)
       ? state.previewDebugDraft[variableId]
-      : snapshot?.variables?.[variableId];
+      : Object.hasOwn(snapshot?.variables ?? {}, variableId)
+        ? snapshot?.variables?.[variableId]
+        : getVariableDefaultValue(variableId);
   return normalizeVariableValue(variableId, draftValue);
 }
 
@@ -22249,7 +22324,9 @@ function countPreviewDebugDraftChanges(snapshot) {
   }
 
   return state.data.variables.filter((variable) => {
-    const currentValue = snapshot.variables?.[variable.id] ?? variable.defaultValue;
+    const currentValue = Object.hasOwn(snapshot.variables ?? {}, variable.id)
+      ? snapshot.variables?.[variable.id]
+      : getVariableDefaultValue(variable.id);
     const draftValue = getPreviewDebugDraftValue(variable.id, snapshot);
     return !arePreviewVariableValuesEqual(variable.id, draftValue, currentValue);
   }).length;
@@ -22295,8 +22372,9 @@ function renderPreviewDebugEditor(variable, draftValue) {
   const inputId = `previewDebug-${variable.id}`;
 
   if (variable.type === "number") {
-    const minAttr = typeof variable.min === "number" ? ` min="${variable.min}"` : "";
-    const maxAttr = typeof variable.max === "number" ? ` max="${variable.max}"` : "";
+    const [minValue, maxValue] = getVariableNumberBounds(variable);
+    const minAttr = minValue !== null ? ` min="${minValue}"` : "";
+    const maxAttr = maxValue !== null ? ` max="${maxValue}"` : "";
     return `
       <input
         id="${inputId}"
@@ -22366,15 +22444,15 @@ function renderPreviewDebugPanel(snapshot) {
       <div class="detail-stack preview-debug-list">
         ${state.data.variables
           .map((variable) => {
-            const currentValue = snapshot.variables?.[variable.id] ?? variable.defaultValue;
+            const currentValue = Object.hasOwn(snapshot.variables ?? {}, variable.id)
+              ? snapshot.variables?.[variable.id]
+              : getVariableDefaultValue(variable.id);
             const draftValue = getPreviewDebugDraftValue(variable.id, snapshot);
             const changed = !arePreviewVariableValuesEqual(variable.id, draftValue, currentValue);
+            const [minValue, maxValue] = getVariableNumberBounds(variable);
             const minMaxText =
-              variable.type === "number" &&
-              (typeof variable.min === "number" || typeof variable.max === "number")
-                ? ` · 范围 ${typeof variable.min === "number" ? variable.min : "-∞"} ~ ${
-                    typeof variable.max === "number" ? variable.max : "+∞"
-                  }`
+              variable.type === "number" && (minValue !== null || maxValue !== null)
+                ? ` · 范围 ${minValue !== null ? minValue : "-∞"} ~ ${maxValue !== null ? maxValue : "+∞"}`
                 : "";
 
             return `
@@ -22829,7 +22907,12 @@ function renderPreviewSidebar(session) {
         <div class="detail-row">
           <label>${escapeHtml(variable.name)}</label>
           <div class="value">${escapeHtml(
-            formatVariableValue(variable.id, snapshot?.variables?.[variable.id] ?? variable.defaultValue)
+            formatVariableValue(
+              variable.id,
+              Object.hasOwn(snapshot?.variables ?? {}, variable.id)
+                ? snapshot?.variables?.[variable.id]
+                : getVariableDefaultValue(variable.id)
+            )
           )}</div>
         </div>
       `
@@ -31085,6 +31168,559 @@ function renderGameUiFrameSliceControls(idPrefix, title, slice) {
   `;
 }
 
+function getSafeProjectVariableType(type) {
+  return ["number", "boolean", "string"].includes(type) ? type : "string";
+}
+
+function renderProjectVariableTypeOptions(selectedType) {
+  const safeType = getSafeProjectVariableType(selectedType);
+  return ["number", "boolean", "string"]
+    .map(
+      (type) => `
+        <option value="${type}" ${type === safeType ? "selected" : ""}>
+          ${escapeHtml(getVariableTypeLabel(type))}
+        </option>
+      `
+    )
+    .join("");
+}
+
+function makeProjectVariableId(name, existingIds = []) {
+  const base =
+    String(name ?? "")
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9\u4e00-\u9fff]+/g, "_")
+      .replace(/^_+|_+$/g, "") || "custom";
+  const prefix = base.startsWith("var_") ? "" : "var_";
+  const used = new Set(existingIds);
+  let candidate = `${prefix}${base}`;
+  let suffix = 2;
+  while (used.has(candidate)) {
+    candidate = `${prefix}${base}_${String(suffix).padStart(2, "0")}`;
+    suffix += 1;
+  }
+  return candidate;
+}
+
+function isSafeProjectVariableId(variableId) {
+  return /^[0-9A-Za-z_\-\u4e00-\u9fff]{1,64}$/.test(String(variableId ?? "").trim());
+}
+
+function getProjectVariableIdIssue(variableId, currentVariableId = "") {
+  const safeVariableId = String(variableId ?? "").trim();
+  if (!safeVariableId) {
+    return "逻辑 ID 不能为空";
+  }
+  if (!isSafeProjectVariableId(safeVariableId)) {
+    return "逻辑 ID 含有不可用于发布的字符";
+  }
+  if (state.data.variables.some((item) => item.id === safeVariableId && item.id !== currentVariableId)) {
+    return "逻辑 ID 已被其他变量使用";
+  }
+  return "";
+}
+
+function buildDefaultProjectVariable(type = "number") {
+  const safeType = getSafeProjectVariableType(type);
+  const labels = {
+    number: "新数字变量",
+    boolean: "新开关变量",
+    string: "新文本变量",
+  };
+  const existingIds = state.data.variables.map((variable) => variable.id);
+  const id = makeProjectVariableId(labels[safeType], existingIds);
+  const base = {
+    id,
+    name: labels[safeType],
+    type: safeType,
+  };
+
+  if (safeType === "number") {
+    return {
+      ...base,
+      defaultValue: 0,
+      min: 0,
+      max: 100,
+    };
+  }
+
+  if (safeType === "boolean") {
+    return {
+      ...base,
+      defaultValue: false,
+    };
+  }
+
+  return {
+    ...base,
+    defaultValue: "common",
+  };
+}
+
+function getProjectVariableDefaultInputValue(variable) {
+  if (variable.type === "boolean") {
+    return variable.defaultValue === true ? "true" : "false";
+  }
+  return String(variable.defaultValue ?? "");
+}
+
+function buildProjectVariableUsageMap(data = state.data) {
+  const usageMap = new Map(
+    (data?.variables ?? []).map((variable) => [
+      variable.id,
+      {
+        total: 0,
+        setCount: 0,
+        addCount: 0,
+        conditionCount: 0,
+        choiceEffectCount: 0,
+        locations: [],
+        references: [],
+      },
+    ])
+  );
+
+  const addUsage = (variableId, kind, label, reference = {}) => {
+    const safeVariableId = String(variableId ?? "").trim();
+    if (!safeVariableId || !usageMap.has(safeVariableId)) {
+      return;
+    }
+    const usage = usageMap.get(safeVariableId);
+    usage.total += 1;
+    if (kind === "set") usage.setCount += 1;
+    if (kind === "add") usage.addCount += 1;
+    if (kind === "condition") usage.conditionCount += 1;
+    if (kind === "choice") usage.choiceEffectCount += 1;
+    if (usage.locations.length < 4) {
+      usage.locations.push(label);
+    }
+    usage.references.push({
+      kind,
+      label,
+      variableId: safeVariableId,
+      ...reference,
+    });
+  };
+
+  (data?.chapters ?? []).forEach((chapter) => {
+    (chapter.scenes ?? []).forEach((scene) => {
+      const sceneLabel = `${chapter.name ?? "未命名章节"} / ${scene.name ?? scene.id}`;
+      (scene.blocks ?? []).forEach((block, blockIndex) => {
+        const blockLabel = `${sceneLabel} / 第 ${blockIndex + 1} 张`;
+        if (block.type === "variable_set") {
+          addUsage(block.variableId, "set", `${blockLabel}：设置变量`, {
+            chapterId: chapter.chapterId,
+            sceneId: scene.id,
+            blockId: block.id,
+            blockIndex,
+          });
+        }
+        if (block.type === "variable_add") {
+          addUsage(block.variableId, "add", `${blockLabel}：修改数值`, {
+            chapterId: chapter.chapterId,
+            sceneId: scene.id,
+            blockId: block.id,
+            blockIndex,
+          });
+        }
+        if (block.type === "choice") {
+          (block.options ?? []).forEach((option) => {
+            (option.effects ?? []).forEach((effect, effectIndex) => {
+              addUsage(effect.variableId, "choice", `${blockLabel}：选项「${option.text || option.id}」效果`, {
+                chapterId: chapter.chapterId,
+                sceneId: scene.id,
+                blockId: block.id,
+                blockIndex,
+                optionId: option.id,
+                effectIndex,
+              });
+            });
+          });
+        }
+        if (block.type === "condition") {
+          (block.branches ?? []).forEach((branch, branchIndex) => {
+            (branch.when ?? []).forEach((rule, ruleIndex) => {
+              addUsage(rule.variableId, "condition", `${blockLabel}：条件分支 ${branch.id ?? ""}`.trim(), {
+                chapterId: chapter.chapterId,
+                sceneId: scene.id,
+                blockId: block.id,
+                blockIndex,
+                branchId: branch.id,
+                branchIndex,
+                ruleIndex,
+              });
+            });
+          });
+        }
+      });
+    });
+  });
+
+  return usageMap;
+}
+
+function getProjectVariableRangeIssues(variable) {
+  if (variable.type !== "number") {
+    return [];
+  }
+
+  const issues = [];
+  const rawMin = variable.min ?? variable.minValue;
+  const rawMax = variable.max ?? variable.maxValue;
+  const [minValue, maxValue] = getVariableNumberBounds(variable);
+
+  if (rawMin !== null && rawMin !== undefined && minValue === null) {
+    issues.push("最小值不是有效数字");
+  }
+  if (rawMax !== null && rawMax !== undefined && maxValue === null) {
+    issues.push("最大值不是有效数字");
+  }
+  if (minValue !== null && maxValue !== null && minValue > maxValue) {
+    issues.push("范围上下限反了");
+  }
+  if (isRawVariableValueMatchingType(variable, variable.defaultValue)) {
+    const defaultValue = Number.parseFloat(variable.defaultValue);
+    if (
+      (minValue !== null && defaultValue < minValue) ||
+      (maxValue !== null && defaultValue > maxValue)
+    ) {
+      issues.push("默认值超出范围");
+    }
+  }
+
+  return issues;
+}
+
+function getProjectVariableDraftSeed(variableId) {
+  const variable = state.data?.variablesById?.get(variableId);
+  if (!variable) {
+    return null;
+  }
+
+  return {
+    type: getSafeProjectVariableType(variable.type),
+    idText: variable.id ?? "",
+    name: variable.name ?? "",
+    defaultText: getProjectVariableDefaultInputValue(variable),
+    minText: String(variable.min ?? variable.minValue ?? ""),
+    maxText: String(variable.max ?? variable.maxValue ?? ""),
+  };
+}
+
+function getProjectVariableDraft(variableId) {
+  return state.projectVariableDrafts?.[variableId] ?? null;
+}
+
+function setProjectVariableDraft(variableId, draft) {
+  if (!variableId || !draft) {
+    return;
+  }
+  if (!state.projectVariableDrafts) {
+    state.projectVariableDrafts = {};
+  }
+  state.projectVariableDrafts[variableId] = draft;
+}
+
+function clearProjectVariableDraft(variableId) {
+  if (!state.projectVariableDrafts || !variableId) {
+    return;
+  }
+  delete state.projectVariableDrafts[variableId];
+}
+
+function clearAllProjectVariableDrafts() {
+  state.projectVariableDrafts = {};
+}
+
+function captureProjectVariableDraftField(target) {
+  if (!target?.matches?.('[data-field^="project-variable-"]')) {
+    return false;
+  }
+
+  const row = target.closest("[data-project-variable-row]");
+  const variableId = row?.dataset.variableId;
+  const seed = getProjectVariableDraftSeed(variableId);
+  if (!row || !variableId || !seed) {
+    return false;
+  }
+
+  const fieldName = target.dataset.field;
+  const draft = {
+    ...seed,
+    ...(getProjectVariableDraft(variableId) ?? {}),
+  };
+
+  if (fieldName === "project-variable-name") {
+    draft.name = target.value ?? "";
+  } else if (fieldName === "project-variable-id") {
+    draft.idText = target.value ?? "";
+  } else if (fieldName === "project-variable-type") {
+    draft.type = getSafeProjectVariableType(target.value);
+  } else if (fieldName === "project-variable-default") {
+    draft.defaultText = target.value ?? "";
+  } else if (fieldName === "project-variable-min") {
+    draft.minText = target.value ?? "";
+  } else if (fieldName === "project-variable-max") {
+    draft.maxText = target.value ?? "";
+  } else {
+    return false;
+  }
+
+  setProjectVariableDraft(variableId, draft);
+  return true;
+}
+
+function buildProjectVariableDraftModel(variable) {
+  const draft = getProjectVariableDraft(variable.id);
+  if (!draft) {
+    return variable;
+  }
+
+  const type = getSafeProjectVariableType(draft.type);
+  const nextVariable = {
+    ...variable,
+    id: draft.idText ?? variable.id,
+    type,
+    name: draft.name ?? variable.name,
+    defaultValue: draft.defaultText ?? getProjectVariableDefaultInputValue(variable),
+  };
+
+  if (type === "number") {
+    const parsedDefault = Number.parseFloat(draft.defaultText ?? variable.defaultValue);
+    nextVariable.defaultValue = Number.isFinite(parsedDefault)
+      ? parsedDefault
+      : draft.defaultText ?? variable.defaultValue;
+    if (draft.minText) {
+      nextVariable.min = draft.minText;
+    } else {
+      delete nextVariable.min;
+      delete nextVariable.minValue;
+    }
+    if (draft.maxText) {
+      nextVariable.max = draft.maxText;
+    } else {
+      delete nextVariable.max;
+      delete nextVariable.maxValue;
+    }
+  } else {
+    delete nextVariable.min;
+    delete nextVariable.max;
+    delete nextVariable.minValue;
+    delete nextVariable.maxValue;
+  }
+
+  return nextVariable;
+}
+
+function renderProjectVariableRiskTags(variable, usage, currentVariableId = variable.id) {
+  const tags = [];
+  const idIssue = getProjectVariableIdIssue(variable.id, currentVariableId);
+  if (usage.total > 0) {
+    tags.push(`<span class="issue-tag good-text">被引用 ${usage.total} 次</span>`);
+  } else {
+    tags.push(`<span class="issue-tag warn-text">暂未引用</span>`);
+  }
+  if (idIssue) {
+    tags.push(`<span class="issue-tag danger-text">${escapeHtml(idIssue)}</span>`);
+  }
+  getProjectVariableRangeIssues(variable).forEach((issue) => {
+    tags.push(`<span class="issue-tag danger-text">${escapeHtml(issue)}</span>`);
+  });
+  return tags.join("");
+}
+
+function renderProjectVariableEditorRow(variable, usage) {
+  const draft = getProjectVariableDraft(variable.id);
+  const renderVariable = buildProjectVariableDraftModel(variable);
+  const [minValue, maxValue] = getVariableNumberBounds(renderVariable);
+  const rawMin = draft ? draft.minText ?? "" : variable.min ?? variable.minValue ?? "";
+  const rawMax = draft ? draft.maxText ?? "" : variable.max ?? variable.maxValue ?? "";
+  const inputIdBase = `projectVariable-${variable.id}`;
+  const rangeHint =
+    renderVariable.type === "number" && (minValue !== null || maxValue !== null)
+      ? `运行时会夹在 ${minValue !== null ? minValue : "-∞"} ~ ${maxValue !== null ? maxValue : "+∞"}`
+      : "非数字变量不会使用范围。";
+  const locationPreview =
+    usage.references.length > 0
+      ? usage.references
+          .slice(0, 5)
+          .map(
+            (reference) => `
+              <div class="detail-row">
+                <label>${escapeHtml(reference.label)}</label>
+                <button
+                  type="button"
+                  class="toolbar-button"
+                  data-action="jump-to-variable-reference"
+                  data-scene-id="${escapeHtml(reference.sceneId ?? "")}"
+                  data-block-id="${escapeHtml(reference.blockId ?? "")}"
+                >
+                  定位到卡片
+                </button>
+              </div>
+            `
+          )
+          .join("")
+      : `<div class="detail-meta">还没有剧情卡片引用它，可以放心改名或删除。</div>`;
+  const hiddenReferenceCount = Math.max((usage.references?.length ?? 0) - 5, 0);
+
+  return `
+    <article class="detail-card" data-project-variable-row data-variable-id="${escapeHtml(variable.id)}">
+      <div class="panel-heading">
+        <div>
+          <strong>${escapeHtml(renderVariable.name || variable.id)}</strong>
+          <p class="helper-text">ID：<code>${escapeHtml(variable.id)}</code></p>
+        </div>
+        <span class="badge badge-soft">${escapeHtml(getVariableTypeLabel(renderVariable.type))}</span>
+      </div>
+      <div class="story-filter-chip-row">
+        ${renderProjectVariableRiskTags(renderVariable, usage, variable.id)}
+        ${
+          draft?.idText && draft.idText !== variable.id
+            ? `<span class="issue-tag warn-text">保存后会迁移 ID：${escapeHtml(variable.id)} → ${escapeHtml(draft.idText)}</span>`
+            : ""
+        }
+      </div>
+      <div class="playback-setting-grid dialog-config-grid">
+        <label class="playback-setting" for="${escapeHtml(`${inputIdBase}-name`)}">
+          <span>变量名</span>
+          <input id="${escapeHtml(`${inputIdBase}-name`)}" data-field="project-variable-name" type="text" maxlength="48" value="${escapeHtml(draft?.name ?? variable.name ?? "")}" autocomplete="off" spellcheck="false" />
+        </label>
+        <label class="playback-setting" for="${escapeHtml(`${inputIdBase}-id`)}">
+          <span>逻辑 ID</span>
+          <input id="${escapeHtml(`${inputIdBase}-id`)}" data-field="project-variable-id" type="text" maxlength="64" value="${escapeHtml(draft?.idText ?? variable.id ?? "")}" autocomplete="off" spellcheck="false" />
+        </label>
+        <label class="playback-setting" for="${escapeHtml(`${inputIdBase}-type`)}">
+          <span>变量类型</span>
+          <select id="${escapeHtml(`${inputIdBase}-type`)}" data-field="project-variable-type">
+            ${renderProjectVariableTypeOptions(draft?.type ?? variable.type)}
+          </select>
+        </label>
+        <label class="playback-setting" for="${escapeHtml(`${inputIdBase}-default`)}">
+          <span>默认值</span>
+          <input
+            id="${escapeHtml(`${inputIdBase}-default`)}"
+            data-field="project-variable-default"
+            type="text"
+            value="${escapeHtml(draft?.defaultText ?? getProjectVariableDefaultInputValue(variable))}"
+            placeholder="数字 / true false / 文本"
+            autocomplete="off"
+            spellcheck="false"
+          />
+        </label>
+        <label class="playback-setting" for="${escapeHtml(`${inputIdBase}-min`)}">
+          <span>最小值</span>
+          <input id="${escapeHtml(`${inputIdBase}-min`)}" data-field="project-variable-min" type="text" value="${escapeHtml(String(rawMin))}" placeholder="仅数字变量使用" autocomplete="off" spellcheck="false" />
+        </label>
+        <label class="playback-setting" for="${escapeHtml(`${inputIdBase}-max`)}">
+          <span>最大值</span>
+          <input id="${escapeHtml(`${inputIdBase}-max`)}" data-field="project-variable-max" type="text" value="${escapeHtml(String(rawMax))}" placeholder="仅数字变量使用" autocomplete="off" spellcheck="false" />
+        </label>
+      </div>
+      <div class="detail-meta">${escapeHtml(rangeHint)}</div>
+      <div class="detail-stack">
+        ${locationPreview}
+        ${hiddenReferenceCount > 0 ? `<div class="detail-meta">另有 ${hiddenReferenceCount} 处引用，搜索变量名或打开巡检可继续定位。</div>` : ""}
+      </div>
+      <div class="detail-actions">
+        <button class="toolbar-button toolbar-button-primary" data-action="save-project-variable" data-variable-id="${escapeHtml(variable.id)}">
+          保存变量
+        </button>
+        <button class="toolbar-button" data-action="suggest-project-variable-id" data-variable-id="${escapeHtml(variable.id)}">
+          根据变量名生成 ID
+        </button>
+        <button class="toolbar-button" data-action="duplicate-project-variable" data-variable-id="${escapeHtml(variable.id)}">
+          复制一份
+        </button>
+        <button class="toolbar-button" data-action="delete-project-variable" data-variable-id="${escapeHtml(variable.id)}">
+          删除变量
+        </button>
+      </div>
+    </article>
+  `;
+}
+
+function renderProjectVariableLibraryPanel() {
+  const variables = state.data.variables ?? [];
+  const query = String(state.projectVariableSearchQuery ?? "").trim().toLowerCase();
+  const usageMap = buildProjectVariableUsageMap();
+  const filteredVariables = variables.filter((variable) => {
+    const draft = getProjectVariableDraft(variable.id);
+    if (!query) {
+      return true;
+    }
+    return [draft?.idText, draft?.name, variable.id, variable.name, getVariableTypeLabel(draft?.type ?? variable.type)]
+      .some((value) => String(value ?? "").toLowerCase().includes(query));
+  });
+  const referencedCount = variables.filter((variable) => (usageMap.get(variable.id)?.total ?? 0) > 0).length;
+  const riskCount = variables.filter((variable) => getProjectVariableRangeIssues(variable).length > 0).length;
+  const typeCount = (type) => variables.filter((variable) => variable.type === type).length;
+
+  return `
+    <section class="detail-card dialog-config-card" id="projectVariableLibraryPanel">
+      <div class="panel-heading">
+        <div>
+          <strong>变量库管理台</strong>
+          <p class="helper-text">集中管理好感度、路线标记、开关和计数器。这里保存后，剧情条件、选项效果、网页包和原生 Runtime 会一起使用同一套变量定义。</p>
+        </div>
+        <span class="badge badge-soft">Logic Core</span>
+      </div>
+      <div class="route-summary-strip beginner-guide-metrics">
+        ${renderRouteMetricCard("变量总数", variables.length, "项目可用的逻辑状态")}
+        ${renderRouteMetricCard("数字变量", typeCount("number"), "好感度、分数和进度")}
+        ${renderRouteMetricCard("已引用", referencedCount, "被剧情卡片实际使用")}
+        ${renderRouteMetricCard("待整理", riskCount, "范围或默认值需要注意")}
+      </div>
+      <div class="asset-search-row story-tree-filter-row">
+        <label class="asset-search-field">
+          <span class="sr-only">搜索变量</span>
+          <input
+            id="projectVariableSearchInput"
+            type="search"
+            value="${escapeHtml(state.projectVariableSearchQuery)}"
+            placeholder="搜变量名、ID 或类型"
+          />
+        </label>
+        <button class="toolbar-button" data-action="add-project-variable" data-variable-type="number">新增数字</button>
+        <button class="toolbar-button" data-action="add-project-variable" data-variable-type="boolean">新增开关</button>
+        <button class="toolbar-button" data-action="add-project-variable" data-variable-type="string">新增文本</button>
+        <button class="toolbar-button" data-action="repair-project-variable-ranges">一键整理范围</button>
+        <button class="toolbar-button" data-action="create-starter-variables">补齐基础变量包</button>
+      </div>
+      <div class="detail-stack">
+        ${
+          filteredVariables.length > 0
+            ? filteredVariables
+                .map((variable) =>
+                  renderProjectVariableEditorRow(
+                    variable,
+                    usageMap.get(variable.id) ?? {
+                      total: 0,
+                      setCount: 0,
+                      addCount: 0,
+                      conditionCount: 0,
+                      choiceEffectCount: 0,
+                      locations: [],
+                      references: [],
+                    }
+                  )
+                )
+                .join("")
+            : renderEmpty(variables.length > 0 ? "当前搜索没有命中变量。" : "这个项目还没有变量，可以先新增一个数字变量或补齐基础变量包。")
+        }
+      </div>
+    </section>
+  `;
+}
+
+function rerenderProjectVariableLibraryPanel() {
+  const host = document.getElementById("projectVariableLibraryPanelHost");
+  if (host) {
+    host.innerHTML = renderProjectVariableLibraryPanel();
+  }
+}
+
 function renderProjectRuntimeSettingsPanel() {
   const runtimeSettings = getProjectRuntimeSettings();
   const dialogBoxConfig = getProjectDialogBoxConfig();
@@ -31115,6 +31751,9 @@ function renderProjectRuntimeSettingsPanel() {
           </div>
           <div class="detail-meta">当前项目已配置 ${runtimeSettings.formalSaveSlotCount} 个正式存档位，正式读档会自动分页展示。</div>
         </section>
+        <div id="projectVariableLibraryPanelHost">
+          ${renderProjectVariableLibraryPanel()}
+        </div>
         <section class="detail-card dialog-config-card">
           <strong>对话文本框样式</strong>
           <p class="helper-text">先选一个基础预设，再用颜色、透明度、尺寸和 UI 图层继续微调。没有特殊需求时也可以直接用透明无框。</p>
@@ -31731,6 +32370,369 @@ async function saveProjectFormalSaveSlotCount() {
     setSaveStatus("保存正式存档位失败", true);
     showToast("保存正式存档位失败", "error");
     window.alert(`保存正式存档位没有成功：${error.message}`);
+  }
+}
+
+function getProjectVariableEditorRow(variableId) {
+  return Array.from(document.querySelectorAll("[data-project-variable-row]")).find(
+    (row) => row.dataset.variableId === variableId
+  );
+}
+
+function parseProjectVariableBoolean(value) {
+  const cleanValue = String(value ?? "").trim().toLowerCase();
+  return ["true", "1", "yes", "on", "是", "开"].includes(cleanValue);
+}
+
+function readProjectVariableDraft(variableId) {
+  const row = getProjectVariableEditorRow(variableId);
+  const original = state.data.variablesById.get(variableId);
+  const draft = getProjectVariableDraft(variableId);
+  const errors = [];
+
+  if (!row || !original) {
+    return { variable: null, errors: ["没有找到这个变量编辑行。"] };
+  }
+
+  const type = getSafeProjectVariableType(
+    draft?.type ?? row.querySelector('[data-field="project-variable-type"]')?.value
+  );
+  const nextId = String(
+    draft?.idText ?? row.querySelector('[data-field="project-variable-id"]')?.value ?? original.id
+  ).trim();
+  const name = String(
+    draft?.name ?? row.querySelector('[data-field="project-variable-name"]')?.value ?? ""
+  ).trim();
+  const defaultText = String(
+    draft?.defaultText ?? row.querySelector('[data-field="project-variable-default"]')?.value ?? ""
+  ).trim();
+  const minText = String(
+    draft?.minText ?? row.querySelector('[data-field="project-variable-min"]')?.value ?? ""
+  ).trim();
+  const maxText = String(
+    draft?.maxText ?? row.querySelector('[data-field="project-variable-max"]')?.value ?? ""
+  ).trim();
+
+  if (!name) {
+    errors.push("变量名不能为空。");
+  }
+  if (!isSafeProjectVariableId(nextId)) {
+    errors.push("变量 ID 只能使用字母、数字、下划线、短横线或中文，并且不能超过 64 个字符。");
+  }
+  if (state.data.variables.some((item) => item.id === nextId && item.id !== variableId)) {
+    errors.push("这个变量 ID 已经被其他变量使用。");
+  }
+
+  let defaultValue;
+  if (type === "number") {
+    const parsedDefault = Number.parseFloat(defaultText);
+    if (!Number.isFinite(parsedDefault)) {
+      errors.push("数字变量的默认值必须是有效数字。");
+      defaultValue = 0;
+    } else {
+      defaultValue = parsedDefault;
+    }
+  } else if (type === "boolean") {
+    defaultValue = parseProjectVariableBoolean(defaultText);
+  } else {
+    defaultValue = defaultText;
+  }
+
+  const variable = {
+    ...original,
+    id: nextId || original.id,
+    name: name || original.name || original.id,
+    type,
+    defaultValue,
+  };
+
+  if (type === "number") {
+    const minValue = minText ? parseVariableNumberBound(minText) : null;
+    const maxValue = maxText ? parseVariableNumberBound(maxText) : null;
+    if (minText && minValue === null) {
+      errors.push("最小值必须是有效数字，或者留空。");
+    }
+    if (maxText && maxValue === null) {
+      errors.push("最大值必须是有效数字，或者留空。");
+    }
+    if (minValue !== null && maxValue !== null && minValue > maxValue) {
+      errors.push("最小值不能大于最大值。");
+    }
+    if (minValue !== null) {
+      variable.min = minValue;
+    } else {
+      delete variable.min;
+      delete variable.minValue;
+    }
+    if (maxValue !== null) {
+      variable.max = maxValue;
+    } else {
+      delete variable.max;
+      delete variable.maxValue;
+    }
+    if (minValue !== null && typeof variable.defaultValue === "number") {
+      variable.defaultValue = Math.max(variable.defaultValue, minValue);
+    }
+    if (maxValue !== null && typeof variable.defaultValue === "number") {
+      variable.defaultValue = Math.min(variable.defaultValue, maxValue);
+    }
+  } else {
+    delete variable.min;
+    delete variable.max;
+    delete variable.minValue;
+    delete variable.maxValue;
+  }
+
+  return { variable, errors };
+}
+
+async function saveProjectVariables(
+  nextVariables,
+  {
+    statusText = "变量库已保存",
+    toastText = "变量库已保存",
+    clearDraftIds = [],
+    clearAllDrafts = false,
+  } = {}
+) {
+  await postJson(API_SAVE_PROJECT_SETTINGS, {
+    variables: {
+      variables: nextVariables,
+    },
+  });
+  if (clearAllDrafts) {
+    clearAllProjectVariableDrafts();
+  } else {
+    clearDraftIds.forEach((variableId) => clearProjectVariableDraft(variableId));
+  }
+  await reloadProjectData({ ...getCurrentUiState() });
+  setSaveStatus(statusText);
+  showToast(toastText);
+}
+
+async function addProjectVariable(type = "number") {
+  const nextVariable = buildDefaultProjectVariable(type);
+  try {
+    setSaveStatus("正在新增变量...");
+    await saveProjectVariables([...state.data.variables, nextVariable], {
+      statusText: `已新增变量：${nextVariable.name}`,
+      toastText: `已新增变量：${nextVariable.name}`,
+    });
+  } catch (error) {
+    setSaveStatus("新增变量失败", true);
+    showToast("新增变量失败", "error");
+    window.alert(`新增变量没有成功：${error.message}`);
+  }
+}
+
+async function saveProjectVariable(variableId) {
+  const original = state.data.variablesById.get(variableId);
+  const usage = buildProjectVariableUsageMap().get(variableId) ?? { total: 0 };
+  const { variable, errors } = readProjectVariableDraft(variableId);
+
+  if (!variable || errors.length > 0) {
+    setSaveStatus(errors[0] ?? "变量内容还不能保存", true);
+    showToast(errors[0] ?? "变量内容还不能保存", "error");
+    return;
+  }
+
+  if (
+    original &&
+    original.type !== variable.type &&
+    usage.total > 0 &&
+    typeof window.confirm === "function" &&
+    !window.confirm(`变量「${original.name}」已经被引用 ${usage.total} 次。确认要把类型从「${getVariableTypeLabel(original.type)}」改成「${getVariableTypeLabel(variable.type)}」吗？相关卡片可能需要重新检查。`)
+  ) {
+    return;
+  }
+
+  try {
+    setSaveStatus("正在保存变量...");
+    if (original && variable.id !== variableId) {
+      if (
+        usage.total > 0 &&
+        typeof window.confirm === "function" &&
+        !window.confirm(`变量「${original.name}」的逻辑 ID 会从「${variableId}」改成「${variable.id}」，并自动迁移 ${usage.total} 处剧情引用。确认继续吗？`)
+      ) {
+        return;
+      }
+
+      const result = await postJson(API_RENAME_VARIABLE, {
+        oldVariableId: variableId,
+        variable,
+      });
+      clearProjectVariableDraft(variableId);
+      await reloadProjectData({ ...getCurrentUiState() });
+      const migratedCount = Number(result.migration?.referenceCount ?? 0);
+      const statusText =
+        migratedCount > 0
+          ? `变量已保存并迁移 ${migratedCount} 处引用：${variable.name}`
+          : `变量已保存：${variable.name}`;
+      setSaveStatus(statusText);
+      showToast(statusText);
+      return;
+    }
+
+    await saveProjectVariables(
+      state.data.variables.map((item) => (item.id === variableId ? variable : item)),
+      {
+        statusText: `变量已保存：${variable.name}`,
+        toastText: `变量已保存：${variable.name}`,
+        clearDraftIds: [variableId],
+      }
+    );
+  } catch (error) {
+    setSaveStatus("保存变量失败", true);
+    showToast("保存变量失败", "error");
+    window.alert(`保存变量没有成功：${error.message}`);
+  }
+}
+
+function suggestProjectVariableId(variableId) {
+  const variable = state.data.variablesById.get(variableId);
+  const row = getProjectVariableEditorRow(variableId);
+  const seed = getProjectVariableDraftSeed(variableId);
+  if (!variable || !row || !seed) {
+    return;
+  }
+
+  const draft = {
+    ...seed,
+    ...(getProjectVariableDraft(variableId) ?? {}),
+    name: row.querySelector('[data-field="project-variable-name"]')?.value ?? seed.name,
+    type: row.querySelector('[data-field="project-variable-type"]')?.value ?? seed.type,
+    defaultText: row.querySelector('[data-field="project-variable-default"]')?.value ?? seed.defaultText,
+    minText: row.querySelector('[data-field="project-variable-min"]')?.value ?? seed.minText,
+    maxText: row.querySelector('[data-field="project-variable-max"]')?.value ?? seed.maxText,
+  };
+  const existingIds = state.data.variables
+    .filter((item) => item.id !== variableId)
+    .map((item) => item.id);
+  draft.idText = makeProjectVariableId(draft.name || variable.name || variable.id, existingIds);
+  setProjectVariableDraft(variableId, draft);
+  rerenderProjectVariableLibraryPanel();
+  setSaveStatus(`已生成安全变量 ID：${draft.idText}`);
+  showToast(`已生成安全变量 ID：${draft.idText}`);
+}
+
+async function duplicateProjectVariable(variableId) {
+  const variable = state.data.variablesById.get(variableId);
+  if (!variable) {
+    return;
+  }
+
+  const nextVariable = {
+    ...JSON.parse(JSON.stringify(variable)),
+    id: makeProjectVariableId(`${variable.name || variable.id}_copy`, state.data.variables.map((item) => item.id)),
+    name: `${variable.name || variable.id} 副本`,
+  };
+
+  try {
+    setSaveStatus("正在复制变量...");
+    await saveProjectVariables([...state.data.variables, nextVariable], {
+      statusText: `变量副本已创建：${nextVariable.name}`,
+      toastText: `变量副本已创建：${nextVariable.name}`,
+    });
+  } catch (error) {
+    setSaveStatus("复制变量失败", true);
+    showToast("复制变量失败", "error");
+    window.alert(`复制变量没有成功：${error.message}`);
+  }
+}
+
+async function deleteProjectVariable(variableId) {
+  const variable = state.data.variablesById.get(variableId);
+  if (!variable) {
+    return;
+  }
+
+  const usage = buildProjectVariableUsageMap().get(variableId) ?? { total: 0 };
+  const confirmMessage =
+    usage.total > 0
+      ? `变量「${variable.name}」已经被引用 ${usage.total} 次，删除后相关卡片会在巡检里报错。确认删除吗？`
+      : `确定删除变量「${variable.name}」吗？`;
+  if (typeof window.confirm === "function" && !window.confirm(confirmMessage)) {
+    return;
+  }
+
+  try {
+    setSaveStatus("正在删除变量...");
+    await saveProjectVariables(
+      state.data.variables.filter((item) => item.id !== variableId),
+      {
+        statusText: `变量已删除：${variable.name}`,
+        toastText: `变量已删除：${variable.name}`,
+        clearDraftIds: [variableId],
+      }
+    );
+  } catch (error) {
+    setSaveStatus("删除变量失败", true);
+    showToast("删除变量失败", "error");
+    window.alert(`删除变量没有成功：${error.message}`);
+  }
+}
+
+function normalizeProjectVariableRange(variable) {
+  if (variable.type !== "number") {
+    const nextVariable = { ...variable };
+    delete nextVariable.min;
+    delete nextVariable.max;
+    delete nextVariable.minValue;
+    delete nextVariable.maxValue;
+    return nextVariable;
+  }
+
+  const nextVariable = { ...variable };
+  let minValue = parseVariableNumberBound(variable.min ?? variable.minValue);
+  let maxValue = parseVariableNumberBound(variable.max ?? variable.maxValue);
+  if (minValue !== null && maxValue !== null && minValue > maxValue) {
+    [minValue, maxValue] = [maxValue, minValue];
+  }
+  if (minValue !== null) {
+    nextVariable.min = minValue;
+  } else {
+    delete nextVariable.min;
+    delete nextVariable.minValue;
+  }
+  if (maxValue !== null) {
+    nextVariable.max = maxValue;
+  } else {
+    delete nextVariable.max;
+    delete nextVariable.maxValue;
+  }
+  let defaultValue = Number.parseFloat(variable.defaultValue);
+  if (!Number.isFinite(defaultValue)) {
+    defaultValue = 0;
+  }
+  if (minValue !== null) {
+    defaultValue = Math.max(defaultValue, minValue);
+  }
+  if (maxValue !== null) {
+    defaultValue = Math.min(defaultValue, maxValue);
+  }
+  nextVariable.defaultValue = defaultValue;
+  return nextVariable;
+}
+
+async function repairProjectVariableRanges() {
+  const nextVariables = state.data.variables.map((variable) => normalizeProjectVariableRange(variable));
+  if (JSON.stringify(nextVariables) === JSON.stringify(state.data.variables)) {
+    setSaveStatus("变量范围已经是干净状态");
+    showToast("变量范围已经是干净状态");
+    return;
+  }
+
+  try {
+    setSaveStatus("正在整理变量范围...");
+    await saveProjectVariables(nextVariables, {
+      statusText: "变量范围已整理",
+      toastText: "变量范围已整理",
+      clearAllDrafts: true,
+    });
+  } catch (error) {
+    setSaveStatus("整理变量范围失败", true);
+    showToast("整理变量范围失败", "error");
+    window.alert(`整理变量范围没有成功：${error.message}`);
   }
 }
 
@@ -35338,6 +36340,29 @@ function getSafeNumber(value, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function parseVariableNumberBound(value) {
+  if (value === null || value === undefined || typeof value === "boolean") {
+    return null;
+  }
+
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function getVariableNumberBounds(variableOrId) {
+  const variable =
+    typeof variableOrId === "string" ? state.data.variablesById.get(variableOrId) : variableOrId;
+
+  if (!variable) {
+    return [null, null];
+  }
+
+  return [
+    parseVariableNumberBound(variable.min ?? variable.minValue),
+    parseVariableNumberBound(variable.max ?? variable.maxValue),
+  ];
+}
+
 function getFilteredVariables(typeFilter = null) {
   return state.data.variables.filter((variable) => !typeFilter || variable.type === typeFilter);
 }
@@ -35502,7 +36527,8 @@ function formatVariableValue(variableId, value) {
 
 function getVariableDefaultValue(variableId) {
   const variable = state.data.variablesById.get(variableId);
-  return normalizeVariableValue(variableId, variable?.defaultValue);
+  const value = normalizeVariableValue(variableId, variable?.defaultValue);
+  return typeof value === "number" ? clampPreviewVariableNumber(variableId, value) : value;
 }
 
 function renderVariableOptions(selectedVariableId, typeFilter = null) {
@@ -37955,11 +38981,59 @@ function runValidation(data) {
     screen: "story",
   }));
   data.variables.forEach((variable) => {
+    const variableContext = {
+      type: "screen",
+      screen: "preview",
+    };
     if (!isRawVariableValueMatchingType(variable, variable.defaultValue)) {
-      pushIssue("error", "变量默认值类型不正确。", `变量 ${variable.name ?? variable.id}`, {
-        type: "screen",
-        screen: "story",
-      });
+      pushIssue("error", "变量默认值类型不正确。", `变量 ${variable.name ?? variable.id}`, variableContext);
+    }
+
+    if (variable.type === "number") {
+      const rawMin = variable.min ?? variable.minValue;
+      const rawMax = variable.max ?? variable.maxValue;
+      const [minValue, maxValue] = getVariableNumberBounds(variable);
+      if (rawMin !== null && rawMin !== undefined && minValue === null) {
+        pushIssue(
+          "error",
+          "数字变量的最小值不是有效数字。",
+          `变量 ${variable.name ?? variable.id} -> min`,
+          variableContext
+        );
+      }
+      if (rawMax !== null && rawMax !== undefined && maxValue === null) {
+        pushIssue(
+          "error",
+          "数字变量的最大值不是有效数字。",
+          `变量 ${variable.name ?? variable.id} -> max`,
+          variableContext
+        );
+      }
+
+      const rangeOrderIsValid = !(minValue !== null && maxValue !== null && minValue > maxValue);
+      if (!rangeOrderIsValid) {
+        pushIssue(
+          "error",
+          "数字变量的范围上下限反了。",
+          `变量 ${variable.name ?? variable.id} -> min/max`,
+          variableContext
+        );
+      }
+
+      if (rangeOrderIsValid && isRawVariableValueMatchingType(variable, variable.defaultValue)) {
+        const defaultValue = Number.parseFloat(variable.defaultValue);
+        if (
+          (minValue !== null && defaultValue < minValue) ||
+          (maxValue !== null && defaultValue > maxValue)
+        ) {
+          pushIssue(
+            "warning",
+            "数字变量默认值超出了范围，运行时会自动夹回范围内。",
+            `变量 ${variable.name ?? variable.id} -> defaultValue`,
+            variableContext
+          );
+        }
+      }
     }
   });
   validateUniqueIds(data.chapters, "章节", pushIssue, "chapterId", (item, id) =>
