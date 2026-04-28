@@ -294,6 +294,7 @@ NATIVE_RUNTIME_APP_BUILDER_NAME = "build_native_runtime_app.py"
 NATIVE_RUNTIME_RELEASE_CHECK_NAME = "native-runtime-release-check.json"
 NATIVE_RUNTIME_RC_REPORT_NAME = "native-runtime-release-candidate-report.json"
 NATIVE_RUNTIME_3D_ASSET_REPORT_NAME = "native-runtime-3d-asset-report.json"
+NATIVE_RUNTIME_3D_ASSET_SUMMARY_NAME = "native-runtime-3d-asset-summary.md"
 NATIVE_RUNTIME_MAC_COMMAND_NAME = "启动原生Runtime预览.command"
 NATIVE_RUNTIME_LINUX_COMMAND_NAME = "run_native_runtime_preview.sh"
 NATIVE_RUNTIME_WINDOWS_COMMAND_NAME = "run_native_runtime_preview.bat"
@@ -6761,6 +6762,7 @@ def write_native_runtime_files(build_dir: Path, export_payload: dict) -> dict:
     release_check_path = build_dir / NATIVE_RUNTIME_RELEASE_CHECK_NAME
     rc_report_path = build_dir / NATIVE_RUNTIME_RC_REPORT_NAME
     asset3d_report_path = build_dir / NATIVE_RUNTIME_3D_ASSET_REPORT_NAME
+    asset3d_summary_path = build_dir / NATIVE_RUNTIME_3D_ASSET_SUMMARY_NAME
 
     mac_launcher_path.write_text(
         "\n".join(
@@ -7005,6 +7007,35 @@ def write_native_runtime_files(build_dir: Path, export_payload: dict) -> dict:
             + "\n",
             encoding="utf-8",
         )
+    asset3d_summary = subprocess.run(
+        [
+            sys.executable,
+            str(build_dir / NATIVE_RUNTIME_PLAYER_NAME),
+            "--describe-3d-assets-markdown",
+            str(build_dir),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if asset3d_summary.returncode == 0 and asset3d_summary.stdout.strip():
+        asset3d_summary_path.write_text(asset3d_summary.stdout, encoding="utf-8")
+    else:
+        fallback_message = asset3d_summary.stderr.strip() or asset3d_summary.stdout.strip() or "3D 资产摘要生成失败。"
+        asset3d_summary_path.write_text(
+            "\n".join(
+                [
+                    "# 3D 资产清单摘要",
+                    "",
+                    "Markdown 摘要暂不可用。",
+                    "",
+                    f"- 原因：{fallback_message}",
+                    "- 可改用 native-runtime-3d-asset-report.json 查看机器可读清单。",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
     rc_report = subprocess.run(
         [
             sys.executable,
@@ -7060,6 +7091,8 @@ def write_native_runtime_files(build_dir: Path, export_payload: dict) -> dict:
         "releaseCandidateReportPath": str(rc_report_path),
         "asset3dReportName": asset3d_report_path.name,
         "asset3dReportPath": str(asset3d_report_path),
+        "asset3dSummaryName": asset3d_summary_path.name,
+        "asset3dSummaryPath": str(asset3d_summary_path),
         "asset3dReportStatus": asset3d_report_payload.get("status") if isinstance(asset3d_report_payload, dict) else "unavailable",
         "asset3dReportSummary": asset3d_report_summary if isinstance(asset3d_report_summary, dict) else {},
         "releaseCandidateReportStatus": rc_report_payload.get("status") if isinstance(rc_report_payload, dict) else "unavailable",
@@ -7115,6 +7148,7 @@ def export_native_runtime_build() -> dict:
             "releaseCheck": runtime_files["releaseCheckName"],
             "releaseCandidateReport": runtime_files["releaseCandidateReportName"],
             "asset3dReport": runtime_files["asset3dReportName"],
+            "asset3dSummary": runtime_files["asset3dSummaryName"],
             "macLauncher": runtime_files["macLauncherName"],
             "linuxLauncher": runtime_files["linuxLauncherName"],
             "windowsLauncher": runtime_files["windowsLauncherName"],
@@ -7137,6 +7171,7 @@ def export_native_runtime_build() -> dict:
             "releaseCheck": runtime_files["releaseCheckName"],
             "releaseCandidateReport": runtime_files["releaseCandidateReportName"],
             "asset3dReport": runtime_files["asset3dReportName"],
+            "asset3dSummary": runtime_files["asset3dSummaryName"],
             "asset3dReportStatus": runtime_files["asset3dReportStatus"],
             "releaseCandidateReportStatus": runtime_files["releaseCandidateReportStatus"],
         },
@@ -7188,6 +7223,9 @@ def export_native_runtime_build() -> dict:
         "asset3dReportName": runtime_files["asset3dReportName"],
         "asset3dReportPath": runtime_files["asset3dReportPath"],
         "asset3dReportPublicUrl": f"/exports/{build_dir.name}/{runtime_files['asset3dReportName']}",
+        "asset3dSummaryName": runtime_files["asset3dSummaryName"],
+        "asset3dSummaryPath": runtime_files["asset3dSummaryPath"],
+        "asset3dSummaryPublicUrl": f"/exports/{build_dir.name}/{runtime_files['asset3dSummaryName']}",
         "asset3dReportStatus": runtime_files["asset3dReportStatus"],
         "asset3dReportSummary": runtime_files["asset3dReportSummary"],
         "macLauncherName": runtime_files["macLauncherName"],

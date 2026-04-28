@@ -142,6 +142,12 @@ python3 runtime_player.py --describe-3d-assets .
 
 如果项目包含 3D 场景或 3D 角色模型，建议在打包 App 前先看这份清单，再运行 `--doctor` 和 `--release-candidate-report`。
 
+导出包还会自动附带 `native-runtime-3d-asset-summary.md`。它和 JSON 清单内容一致，但排版更适合人直接阅读、复制到 Issue，或作为 Release notes 的资产检查摘要。也可以手动重新生成：
+
+```bash
+python3 runtime_player.py --describe-3d-assets-markdown .
+```
+
 ## 发布前自检
 
 不启动窗口，输出发布前诊断报告。这个检查会覆盖入口场景、缺失素材、素材格式风险、大文件风险、存档位数量、成品 UI 皮肤素材引用等：

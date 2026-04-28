@@ -663,6 +663,9 @@ class RunEditorSmokeTests(unittest.TestCase):
         asset3d_payload = json.loads(
             (Path(export_result["buildPath"]) / run_editor.NATIVE_RUNTIME_3D_ASSET_REPORT_NAME).read_text(encoding="utf-8")
         )
+        asset3d_summary_text = (Path(export_result["buildPath"]) / run_editor.NATIVE_RUNTIME_3D_ASSET_SUMMARY_NAME).read_text(
+            encoding="utf-8"
+        )
         self.assertEqual(asset3d_payload["status"], "ready")
         self.assertEqual(asset3d_payload["summary"]["assetCount"], 1)
         self.assertEqual(asset3d_payload["summary"]["scene3dCount"], 1)
@@ -677,6 +680,9 @@ class RunEditorSmokeTests(unittest.TestCase):
         self.assertEqual(asset3d_payload["entries"][0]["previewProbe"]["lightCount"], 1)
         self.assertEqual(asset3d_payload["entries"][0]["usageCount"], 1)
         self.assertEqual(export_result["asset3dReportStatus"], "ready")
+        self.assertIn("# 3D 资产清单摘要", asset3d_summary_text)
+        self.assertIn("Wall Paint", asset3d_summary_text)
+        self.assertIn("Idle Camera", asset3d_summary_text)
 
         scene3d_description = subprocess.run(
             [
@@ -720,6 +726,24 @@ class RunEditorSmokeTests(unittest.TestCase):
         self.assertEqual(asset3d_description.returncode, 0, asset3d_description.stdout + asset3d_description.stderr)
         asset3d_description_payload = json.loads(asset3d_description.stdout)
         self.assertEqual(asset3d_description_payload["entries"][0]["structureSummary"]["defaultSceneName"], "Classroom")
+
+        asset3d_markdown_description = subprocess.run(
+            [
+                sys.executable,
+                str(Path(export_result["buildPath"]) / run_editor.NATIVE_RUNTIME_PLAYER_NAME),
+                "--describe-3d-assets-markdown",
+                str(export_result["buildPath"]),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(
+            asset3d_markdown_description.returncode,
+            0,
+            asset3d_markdown_description.stdout + asset3d_markdown_description.stderr,
+        )
+        self.assertIn("材质贴图槽", asset3d_markdown_description.stdout)
 
     def test_variable_rename_migrates_story_references(self) -> None:
         _, chapter_result = self.create_blank_project_with_chapter()
@@ -1514,6 +1538,7 @@ class RunEditorSmokeTests(unittest.TestCase):
         self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_RELEASE_CHECK_NAME).is_file())
         self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_RC_REPORT_NAME).is_file())
         self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_3D_ASSET_REPORT_NAME).is_file())
+        self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_3D_ASSET_SUMMARY_NAME).is_file())
         self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_MAC_COMMAND_NAME).is_file())
         self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_LINUX_COMMAND_NAME).is_file())
         self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_WINDOWS_COMMAND_NAME).is_file())
@@ -1532,8 +1557,10 @@ class RunEditorSmokeTests(unittest.TestCase):
         self.assertTrue(manifest["runtime"]["canBuildStandaloneApp"])
         self.assertEqual(manifest["runtime"]["releaseCandidateReport"], run_editor.NATIVE_RUNTIME_RC_REPORT_NAME)
         self.assertEqual(manifest["runtime"]["asset3dReport"], run_editor.NATIVE_RUNTIME_3D_ASSET_REPORT_NAME)
+        self.assertEqual(manifest["runtime"]["asset3dSummary"], run_editor.NATIVE_RUNTIME_3D_ASSET_SUMMARY_NAME)
         self.assertEqual(manifest["files"]["releaseCandidateReport"], run_editor.NATIVE_RUNTIME_RC_REPORT_NAME)
         self.assertEqual(manifest["files"]["asset3dReport"], run_editor.NATIVE_RUNTIME_3D_ASSET_REPORT_NAME)
+        self.assertEqual(manifest["files"]["asset3dSummary"], run_editor.NATIVE_RUNTIME_3D_ASSET_SUMMARY_NAME)
 
         release_check_payload = json.loads((build_dir / run_editor.NATIVE_RUNTIME_RELEASE_CHECK_NAME).read_text(encoding="utf-8"))
         self.assertEqual(release_check_payload["status"], "pass")

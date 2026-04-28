@@ -25223,6 +25223,20 @@ function renderProjectValidationSummary() {
             : ""
         }
         ${
+          exportResult?.target === "native_runtime" && exportResult?.asset3dSummaryPublicUrl
+            ? `
+              <a
+                class="toolbar-button toolbar-button-primary"
+                href="${escapeHtml(exportResult.asset3dSummaryPublicUrl)}"
+                target="_blank"
+                rel="noreferrer"
+              >
+                打开 3D 摘要
+              </a>
+            `
+            : ""
+        }
+        ${
           exportResult?.signingGuidePublicUrl
             ? `
               <a
@@ -25301,6 +25315,8 @@ function renderProjectValidationSummary() {
                   exportResult.releaseCandidateReportPath ?? "未生成"
                 )}<br />3D 资产清单：${escapeHtml(
                   exportResult.asset3dReportPath ?? "未生成"
+                )}<br />3D Markdown 摘要：${escapeHtml(
+                  exportResult.asset3dSummaryPath ?? "未生成"
                 )}<br />3D 清单状态：${escapeHtml(
                   getNativeRuntime3dAssetStatusLabel(exportResult.asset3dReportStatus)
                 )}<br />3D 模型 / 场景 / 问题：${escapeHtml(

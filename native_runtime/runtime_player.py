@@ -3242,6 +3242,121 @@ def print_native_3d_asset_report(bundle_dir: Path) -> None:
     print(json.dumps(report, ensure_ascii=False, indent=2))
 
 
+def format_markdown_value(value: object, fallback: str = "未记录") -> str:
+    text = str(value if value is not None and value != "" else fallback)
+    return text.replace("\n", " ").replace("|", "\\|")
+
+
+def render_native_3d_asset_report_markdown(report: dict) -> str:
+    summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
+    entries = report.get("entries") if isinstance(report.get("entries"), list) else []
+    recommendations = report.get("recommendations") if isinstance(report.get("recommendations"), list) else []
+    lines = [
+        "# 3D 资产清单摘要",
+        "",
+        f"- 状态：{format_markdown_value(report.get('status'))}",
+        f"- 检查时间：{format_markdown_value(report.get('checkedAt'))}",
+        f"- 导出包：{format_markdown_value(report.get('bundleDir'))}",
+        "",
+        "## 总览",
+        "",
+        "| 指标 | 数量 |",
+        "| --- | ---: |",
+        f"| 3D 资产 | {int(summary.get('assetCount') or 0)} |",
+        f"| 3D 模型 | {int(summary.get('model3dCount') or 0)} |",
+        f"| 3D 场景 | {int(summary.get('scene3dCount') or 0)} |",
+        f"| 需要处理 | {int(summary.get('issueCount') or 0)} |",
+        f"| 未使用 | {int(summary.get('unusedCount') or 0)} |",
+        f"| glTF 节点 | {int(summary.get('totalNodes') or 0)} |",
+        f"| glTF 网格 | {int(summary.get('totalMeshes') or 0)} |",
+        f"| 材质 | {int(summary.get('totalMaterials') or 0)} |",
+        f"| 贴图槽 | {int(summary.get('totalTextureSlots') or 0)} |",
+        f"| 可读贴图槽 | {int(summary.get('textureSlotReadyCount') or 0)} |",
+        f"| 贴图槽问题 | {int(summary.get('textureSlotIssueCount') or 0)} |",
+        f"| 动画 | {int(summary.get('totalAnimations') or 0)} |",
+        "",
+    ]
+    if recommendations:
+        lines.extend(["## 建议", ""])
+        for recommendation in recommendations:
+            lines.append(f"- {format_markdown_value(recommendation)}")
+        lines.append("")
+
+    if not entries:
+        lines.extend(["## 资产", "", "当前导出包没有 3D 模型或 3D 场景资产。", ""])
+        return "\n".join(lines).rstrip() + "\n"
+
+    lines.extend(["## 资产详情", ""])
+    for index, entry in enumerate(entries, start=1):
+        dependency = entry.get("dependencyHealth") if isinstance(entry.get("dependencyHealth"), dict) else {}
+        structure = entry.get("structureSummary") if isinstance(entry.get("structureSummary"), dict) else {}
+        probe = entry.get("previewProbe") if isinstance(entry.get("previewProbe"), dict) else {}
+        lines.extend(
+            [
+                f"### {index}. {format_markdown_value(entry.get('typeLabel'))}：{format_markdown_value(entry.get('name'))}",
+                "",
+                "| 项目 | 内容 |",
+                "| --- | --- |",
+                f"| 状态 | {format_markdown_value(entry.get('statusLabel'))} |",
+                f"| 导出路径 | `{format_markdown_value(entry.get('exportUrl'))}` |",
+                f"| 引用次数 | {int(entry.get('usageCount') or 0)} |",
+                f"| 依赖 | {format_markdown_value(dependency.get('label'))} |",
+                f"| 结构 | {format_markdown_value(structure.get('label'))} |",
+                f"| 预览探针 | {format_markdown_value(probe.get('label'))} |",
+                f"| 建议动作 | {format_markdown_value(entry.get('recommendedAction'))} |",
+                "",
+            ]
+        )
+        materials = probe.get("materials") if isinstance(probe.get("materials"), list) else []
+        if materials:
+            lines.extend(["材质贴图槽：", ""])
+            for material in materials[:6]:
+                if not isinstance(material, dict):
+                    continue
+                slots = material.get("textureSlots") if isinstance(material.get("textureSlots"), list) else []
+                slot_label = "；".join(
+                    f"{format_markdown_value(slot.get('label'))}={format_markdown_value(slot.get('uri'), '内嵌/未记录')}({format_markdown_value(slot.get('status'))})"
+                    for slot in slots[:5]
+                    if isinstance(slot, dict)
+                )
+                lines.append(
+                    f"- {format_markdown_value(material.get('name'))}：{slot_label or '未绑定贴图槽'}"
+                )
+            lines.append("")
+        animations = probe.get("animations") if isinstance(probe.get("animations"), list) else []
+        if animations:
+            lines.extend(["动画通道：", ""])
+            for animation in animations[:6]:
+                if not isinstance(animation, dict):
+                    continue
+                paths = animation.get("targetPaths") if isinstance(animation.get("targetPaths"), list) else []
+                nodes = animation.get("targetNodes") if isinstance(animation.get("targetNodes"), list) else []
+                lines.append(
+                    f"- {format_markdown_value(animation.get('name'))}：通道 {int(animation.get('channelCount') or 0)}，"
+                    f"目标 {format_markdown_value(', '.join(paths), '未记录')}，节点 {format_markdown_value(', '.join(nodes), '未记录')}"
+                )
+            lines.append("")
+        usages = entry.get("usages") if isinstance(entry.get("usages"), list) else []
+        if usages:
+            lines.extend(["引用位置：", ""])
+            for usage in usages[:6]:
+                if not isinstance(usage, dict):
+                    continue
+                if usage.get("kind") == "character_model":
+                    lines.append(f"- 角色：{format_markdown_value(usage.get('characterName'))}")
+                else:
+                    lines.append(
+                        f"- 场景：{format_markdown_value(usage.get('chapterName'))} / {format_markdown_value(usage.get('sceneName'))}"
+                    )
+            lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def print_native_3d_asset_markdown_report(bundle_dir: Path) -> None:
+    report = build_native_3d_asset_report(bundle_dir)
+    print(render_native_3d_asset_report_markdown(report), end="")
+
+
 def collect_video_block_usages(chapters: list[dict]) -> dict[str, list[dict]]:
     usages: dict[str, list[dict]] = {}
     for chapter in chapters:
@@ -10930,7 +11045,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--describe-video-bridge", dest="describe_video_bridge", help="输出原生 Runtime 视频桥接摘要，不启动窗口")
     parser.add_argument("--describe-video-backends", dest="describe_video_backends", help="输出原生 Runtime 可选视频后端摘要，不启动窗口")
     parser.add_argument("--probe-video-preview", dest="probe_video_preview", help="输出原生 Runtime 可选视频帧 / 内嵌画面探针，不启动窗口")
-    parser.add_argument("--describe-3d-assets", dest="describe_3d_assets", help="输出 3D 模型 / 3D 场景资产结构与依赖清单，不启动窗口")
+    parser.add_argument("--describe-3d-assets", dest="describe_3d_assets", help="输出 3D 模型 / 3D 场景资产结构与依赖清单 JSON，不启动窗口")
+    parser.add_argument("--describe-3d-assets-markdown", "--describe-3d-assets-md", dest="describe_3d_assets_markdown", help="输出 3D 模型 / 3D 场景资产清单 Markdown 摘要，不启动窗口")
     parser.add_argument("--describe-model-preview", dest="describe_model_preview", help="输出 Live2D / 3D 角色预览桥摘要，不启动窗口")
     parser.add_argument("--describe-scene3d-preview", dest="describe_scene3d_preview", help="输出 3D 场景交互预览桥摘要，不启动窗口")
     parser.add_argument("--describe-save-dialog", dest="describe_save_dialog", help="输出正式存档面板摘要，不启动窗口")
@@ -11052,6 +11168,14 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         except NativeRuntimeError as error:
             print(f"Native runtime 3D asset report failed: {error}")
+            return 1
+
+    if args.describe_3d_assets_markdown:
+        try:
+            print_native_3d_asset_markdown_report(Path(args.describe_3d_assets_markdown).resolve())
+            return 0
+        except NativeRuntimeError as error:
+            print(f"Native runtime 3D asset markdown report failed: {error}")
             return 1
 
     if args.describe_model_preview:
