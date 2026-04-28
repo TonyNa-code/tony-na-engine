@@ -34,6 +34,7 @@ const API_DUPLICATE_SCENE = "/api/duplicate-scene";
 const API_REPLACE_ASSET = "/api/replace-asset";
 const API_DELETE_ASSET = "/api/delete-asset";
 const API_UPDATE_ASSET_META = "/api/update-asset-meta";
+const API_UPDATE_CHARACTER_PRESENTATION = "/api/update-character-presentation";
 const API_BULK_UPDATE_ASSET_TAGS = "/api/bulk-update-asset-tags";
 const API_BULK_DELETE_ASSETS = "/api/bulk-delete-assets";
 const API_CREATIVE_ASSISTANT = "/api/creative-assistant";
@@ -74,6 +75,9 @@ const ASSET_TYPE_LABELS = {
   video: "视频",
   ui: "界面素材",
   font: "字体",
+  live2d: "Live2D",
+  model3d: "3D 模型",
+  scene3d: "3D 场景",
 };
 
 const ASSET_PRESET_TAGS = {
@@ -86,6 +90,16 @@ const ASSET_PRESET_TAGS = {
   video: ["OP", "ED", "PV", "过场"],
   ui: ["按钮", "对话框", "名字框", "图标", "菜单"],
   font: ["正文", "标题", "圆体", "宋体", "手写", "授权确认"],
+  live2d: ["角色", "模型", "表情", "呼吸", "口型"],
+  model3d: ["角色", "GLB", "VRM", "待机", "动作"],
+  scene3d: ["场景", "地图", "房间", "GLB", "交互"],
+};
+
+const CHARACTER_PRESENTATION_MODE_LABELS = {
+  sprite: "普通立绘",
+  layered_sprite: "差分立绘",
+  live2d: "Live2D",
+  model3d: "3D 模型",
 };
 
 const ASSET_FILTER_MODE_LABELS = {
@@ -2085,6 +2099,7 @@ const state = {
   inspectionIssueFilterMode: "all",
   inspectionRegressionResult: null,
   projectVariableSearchQuery: "",
+  projectVariableFilterMode: "all",
   projectVariableDrafts: {},
   previewSceneSearchQuery: "",
   previewSceneFilterMode: "all",
@@ -2825,6 +2840,7 @@ function resetProjectScopedUiState() {
   state.inspectionIssueFilterMode = "all";
   state.inspectionRegressionResult = null;
   state.projectVariableSearchQuery = "";
+  state.projectVariableFilterMode = "all";
   state.projectVariableDrafts = {};
   state.previewSceneSearchQuery = "";
   state.previewSceneFilterMode = "all";
@@ -4805,6 +4821,21 @@ async function handleClick(event) {
     return;
   }
 
+  if (action === "delete-unused-project-variables") {
+    void deleteUnusedProjectVariables();
+    return;
+  }
+
+  if (action === "export-project-variable-report") {
+    exportProjectVariableAuditReport();
+    return;
+  }
+
+  if (action === "set-project-variable-filter") {
+    setProjectVariableFilterMode(actionTarget.dataset.variableFilterMode);
+    return;
+  }
+
   if (action === "suggest-project-variable-id") {
     suggestProjectVariableId(actionTarget.dataset.variableId);
     return;
@@ -5401,6 +5432,11 @@ async function handleClick(event) {
 
   if (action === "export-character-voice-brief") {
     exportCharacterVoiceBrief(actionTarget.dataset.characterId);
+    return;
+  }
+
+  if (action === "save-character-presentation") {
+    await saveCharacterPresentation(actionTarget.dataset.characterId);
     return;
   }
 
@@ -6505,6 +6541,7 @@ function getPreviewVariableSummary(variables) {
 
 function getPreviewSaveBackdropStyle(snapshot) {
   const backgroundAssetId = snapshot?.visualState?.backgroundAssetId ?? null;
+  const scene3dPreview = snapshot?.visualState?.scene3dPreview ?? null;
   const backgroundAsset = state.data?.assetsById?.get(backgroundAssetId);
   const previewUrl =
     backgroundAsset?.fileExists && isImageAssetType(backgroundAsset.type) ? getAssetPublicUrl(backgroundAsset) : "";
@@ -6515,7 +6552,7 @@ function getPreviewSaveBackdropStyle(snapshot) {
     )}") center / cover no-repeat;`;
   }
 
-  return getBackdropStyle(backgroundAssetId);
+  return getBackdropStyle(backgroundAssetId, scene3dPreview);
 }
 
 function toAbsoluteThumbnailUrl(url) {
@@ -13707,6 +13744,290 @@ function renderAssetsScreen() {
     : voiceMatchReviewPanel || renderEmpty(getAssetEmptyMessage("当前没有可查看的素材。"));
 }
 
+function getSafeCharacterPresentationMode(mode) {
+  return Object.prototype.hasOwnProperty.call(CHARACTER_PRESENTATION_MODE_LABELS, mode) ? mode : "sprite";
+}
+
+function getCharacterPresentation(character) {
+  const raw = character?.presentation ?? {};
+  const mode = getSafeCharacterPresentationMode(raw.mode);
+  return {
+    mode,
+    fallbackSpriteAssetId: raw.fallbackSpriteAssetId || character?.defaultSpriteId || "",
+    live2d: {
+      modelAssetId: raw.live2d?.modelAssetId || "",
+      idleMotion: raw.live2d?.idleMotion || "",
+      blink: raw.live2d?.blink !== false,
+      breath: raw.live2d?.breath !== false,
+      lipSync: raw.live2d?.lipSync !== false,
+      cursorTracking: Boolean(raw.live2d?.cursorTracking),
+    },
+    model3d: {
+      modelAssetId: raw.model3d?.modelAssetId || "",
+      idleAnimation: raw.model3d?.idleAnimation || "",
+      cameraPreset: raw.model3d?.cameraPreset || "portrait",
+      lightingPreset: raw.model3d?.lightingPreset || "studio",
+    },
+  };
+}
+
+function getCharacterPresentationModeLabel(character) {
+  const presentation = getCharacterPresentation(character);
+  return CHARACTER_PRESENTATION_MODE_LABELS[presentation.mode] ?? CHARACTER_PRESENTATION_MODE_LABELS.sprite;
+}
+
+function getCharacterPresentationPrimaryAssetId(character) {
+  const presentation = getCharacterPresentation(character);
+  if (presentation.mode === "live2d") {
+    return presentation.live2d.modelAssetId || presentation.fallbackSpriteAssetId || character?.defaultSpriteId || "";
+  }
+  if (presentation.mode === "model3d") {
+    return presentation.model3d.modelAssetId || presentation.fallbackSpriteAssetId || character?.defaultSpriteId || "";
+  }
+  return presentation.fallbackSpriteAssetId || character?.defaultSpriteId || "";
+}
+
+function collectCharacterPresentationAssetIds(character) {
+  const presentation = getCharacterPresentation(character);
+  const assetIds = [
+    presentation.fallbackSpriteAssetId,
+    presentation.live2d.modelAssetId,
+    presentation.model3d.modelAssetId,
+  ];
+  (character?.expressions ?? []).forEach((expression) => {
+    (expression.layerAssetIds ?? []).forEach((assetId) => assetIds.push(assetId));
+  });
+  return Array.from(new Set(assetIds.filter(Boolean)));
+}
+
+function getCharacterPresentationStatus(character) {
+  const presentation = getCharacterPresentation(character);
+  const primaryAssetId = getCharacterPresentationPrimaryAssetId(character);
+  const primaryAsset = primaryAssetId ? state.data.assetsById.get(primaryAssetId) : null;
+  const expectedType =
+    presentation.mode === "live2d" ? "live2d" : presentation.mode === "model3d" ? "model3d" : "sprite";
+
+  if (presentation.mode === "sprite" || presentation.mode === "layered_sprite") {
+    const expressionCount = character?.expressions?.length ?? 0;
+    const layeredCount = (character?.expressions ?? []).filter((expression) => (expression.layerAssetIds ?? []).length > 0).length;
+    return {
+      tone: primaryAsset ? "good-text" : "warn-text",
+      label: primaryAsset ? `${expressionCount} 个表情可用` : "缺少兜底立绘",
+      detail:
+        presentation.mode === "layered_sprite"
+          ? `已配置 ${layeredCount}/${expressionCount} 个差分图层；Runtime 会优先使用普通立绘兜底。`
+          : "普通立绘模式稳定、兼容性最好，适合作为所有高级模型的兜底方案。",
+    };
+  }
+
+  if (!primaryAsset) {
+    return {
+      tone: "warn-text",
+      label: `还没绑定${getAssetTypeLabel(expectedType)}`,
+      detail: `可以先导入 ${getAssetTypeLabel(expectedType)} 素材，再在这里绑定；正式 Runtime 会继续用兜底立绘。`,
+    };
+  }
+
+  return {
+    tone: primaryAsset.fileExists ? "good-text" : "warn-text",
+    label: primaryAsset.fileExists ? `${primaryAsset.name} 已绑定` : `${primaryAsset.name} 待导入文件`,
+    detail:
+      presentation.mode === "live2d"
+        ? "Live2D 配置会保存眨眼、呼吸、口型同步和视线跟随开关；完整渲染层会按这个结构接入。"
+        : "3D 配置会保存模型、待机动作、镜头和灯光预设；后续原生渲染层会按这个结构迁移。",
+  };
+}
+
+function getCharacterExpressionBindingStatus(expression) {
+  const layerCount = (expression?.layerAssetIds ?? []).length;
+  const live2dCount = [expression?.live2dExpression, expression?.live2dMotion].filter(Boolean).length;
+  const model3dCount = [expression?.model3dExpression, expression?.model3dAnimation].filter(Boolean).length;
+  if (layerCount || live2dCount || model3dCount) {
+    return {
+      tone: "good-text",
+      label: `${layerCount} 图层 / ${live2dCount} Live2D / ${model3dCount} 3D`,
+    };
+  }
+  return {
+    tone: "",
+    label: "沿用普通立绘",
+  };
+}
+
+function getCharacterPresentationReadinessTone(score) {
+  if (score >= 85) {
+    return "good-text";
+  }
+  if (score >= 55) {
+    return "warn-text";
+  }
+  return "danger-text";
+}
+
+function getCharacterAssetHealth(assetId, expectedTypes = []) {
+  const cleanAssetId = String(assetId ?? "").trim();
+  if (!cleanAssetId) {
+    return {
+      ok: false,
+      fileOk: false,
+      typeOk: false,
+      label: "未绑定",
+      detail: "还没有选择素材。",
+      asset: null,
+    };
+  }
+
+  const asset = state.data.assetsById.get(cleanAssetId);
+  if (!asset) {
+    return {
+      ok: false,
+      fileOk: false,
+      typeOk: false,
+      label: "素材不存在",
+      detail: `找不到素材 ID：${cleanAssetId}`,
+      asset: null,
+    };
+  }
+
+  const typeOk = expectedTypes.length === 0 || expectedTypes.includes(asset.type);
+  const fileOk = Boolean(asset.fileExists);
+  return {
+    ok: typeOk && fileOk,
+    fileOk,
+    typeOk,
+    label: asset.name || cleanAssetId,
+    detail: [
+      getAssetTypeLabel(asset.type),
+      fileOk ? "文件已导入" : "文件待导入",
+      typeOk ? "" : `期望 ${expectedTypes.map((type) => getAssetTypeLabel(type)).join(" / ")}`,
+    ]
+      .filter(Boolean)
+      .join(" · "),
+    asset,
+  };
+}
+
+function isExpressionMappedForPresentationMode(expression, mode) {
+  if (!expression) {
+    return false;
+  }
+  if (mode === "layered_sprite") {
+    return (expression.layerAssetIds ?? []).length > 0 || Boolean(expression.spriteAssetId);
+  }
+  if (mode === "live2d") {
+    return Boolean(expression.live2dExpression || expression.live2dMotion);
+  }
+  if (mode === "model3d") {
+    return Boolean(expression.model3dExpression || expression.model3dAnimation);
+  }
+  return Boolean(expression.spriteAssetId);
+}
+
+function buildCharacterPresentationReadiness(character) {
+  const presentation = getCharacterPresentation(character);
+  const mode = presentation.mode;
+  const expressions = character?.expressions ?? [];
+  const expressionCount = expressions.length;
+  const mappedExpressionCount = expressions.filter((expression) =>
+    isExpressionMappedForPresentationMode(expression, mode)
+  ).length;
+  const fallbackHealth = getCharacterAssetHealth(
+    presentation.fallbackSpriteAssetId || character?.defaultSpriteId,
+    ["sprite", "cg", "ui"]
+  );
+  const primaryAssetId =
+    mode === "live2d"
+      ? presentation.live2d.modelAssetId
+      : mode === "model3d"
+        ? presentation.model3d.modelAssetId
+        : presentation.fallbackSpriteAssetId || character?.defaultSpriteId;
+  const expectedPrimaryTypes = mode === "live2d" ? ["live2d"] : mode === "model3d" ? ["model3d"] : ["sprite", "cg", "ui"];
+  const primaryHealth = getCharacterAssetHealth(primaryAssetId, expectedPrimaryTypes);
+  const issues = [];
+
+  if (!fallbackHealth.ok) {
+    issues.push({
+      tone: "warn-text",
+      title: "兜底立绘还不稳",
+      detail: "即使后续接入 Live2D/3D，兜底立绘也能保证截图、存档、低配回退和未安装渲染器时不空屏。",
+    });
+  }
+
+  if (mode === "live2d") {
+    if (!primaryHealth.ok) {
+      issues.push({
+        tone: "danger-text",
+        title: "Live2D 模型入口不可用",
+        detail: primaryHealth.detail,
+      });
+    } else if (!String(primaryHealth.asset?.path ?? "").toLowerCase().endsWith(".model3.json")) {
+      issues.push({
+        tone: "warn-text",
+        title: "建议绑定 .model3.json 入口",
+        detail: "Live2D 最稳的入口是 .model3.json，单独 moc3 或 motion 文件后续可能无法自动找到贴图和动作。",
+      });
+    }
+  }
+
+  if (mode === "model3d") {
+    if (!primaryHealth.ok) {
+      issues.push({
+        tone: "danger-text",
+        title: "3D 模型文件不可用",
+        detail: primaryHealth.detail,
+      });
+    } else if (!/\.(glb|gltf|vrm)$/i.test(primaryHealth.asset?.path ?? "")) {
+      issues.push({
+        tone: "warn-text",
+        title: "建议优先使用 glb / gltf / vrm",
+        detail: "fbx 和 obj 可以先记录，但后续原生 Runtime 更可能优先支持 glb、gltf、vrm。",
+      });
+    }
+  }
+
+  if (expressionCount === 0) {
+    issues.push({
+      tone: "warn-text",
+      title: "还没有表情条目",
+      detail: "建议至少保留一个默认表情，后续 Live2D/3D 动作映射会更清晰。",
+    });
+  } else if (mode !== "sprite" && mappedExpressionCount < expressionCount) {
+    issues.push({
+      tone: "warn-text",
+      title: "表情映射还没覆盖完",
+      detail: `当前 ${mappedExpressionCount}/${expressionCount} 个表情有 ${getCharacterPresentationModeLabel(character)} 映射。`,
+    });
+  }
+
+  const fallbackScore = fallbackHealth.ok ? 22 : fallbackHealth.asset ? 10 : 0;
+  const primaryScore = primaryHealth.ok ? 40 : primaryHealth.asset ? 18 : mode === "sprite" ? 18 : 0;
+  const expressionScore =
+    expressionCount === 0
+      ? 6
+      : Math.round((mappedExpressionCount / Math.max(1, expressionCount)) * 26);
+  const safetyScore = fallbackHealth.ok && primaryHealth.ok ? 12 : fallbackHealth.ok || primaryHealth.ok ? 6 : 0;
+  const score = Math.max(0, Math.min(100, fallbackScore + primaryScore + expressionScore + safetyScore));
+
+  return {
+    score,
+    tone: getCharacterPresentationReadinessTone(score),
+    mode,
+    fallbackHealth,
+    primaryHealth,
+    expressionCount,
+    mappedExpressionCount,
+    issues,
+  };
+}
+
+function parseCharacterLayerAssetIds(value) {
+  return String(value ?? "")
+    .split(/[\n,，、;；]+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 12);
+}
+
 function isMajorCharacterStats(stats) {
   return (stats.totalLines ?? 0) >= 12 || (stats.scenesCount ?? 0) >= 3;
 }
@@ -13740,6 +14061,7 @@ function buildCharacterSearchText(character, stats) {
       character.bio,
       character.id,
       getPositionLabel(character.defaultPosition),
+      getCharacterPresentationModeLabel(character),
       (character.expressions ?? []).map((expression) => expression.name).join(" "),
       (stats.topExpressions ?? []).map(([name]) => name).join(" "),
       (stats.missingVoiceCount ?? 0) > 0 ? "待配音" : "语音已齐",
@@ -13883,7 +14205,7 @@ function renderCharactersScreen() {
   }
 
   refs.characterMeta.textContent = character
-    ? `${character.displayName} · ${character.expressions.length} 个表情 · ${selectedStats.totalLines} 句台词 · 语音覆盖 ${selectedStats.voiceCoverage}%`
+    ? `${character.displayName} · ${getCharacterPresentationModeLabel(character)} · ${character.expressions.length} 个表情 · ${selectedStats.totalLines} 句台词 · 语音覆盖 ${selectedStats.voiceCoverage}%`
     : "还没有角色";
 
   refs.characterList.innerHTML =
@@ -13900,12 +14222,20 @@ function renderCharactersScreen() {
     ? character.expressions
         .map((expression) => {
           const asset = state.data.assetsById.get(expression.spriteAssetId);
+          const layerCount = (expression.layerAssetIds ?? []).length;
+          const live2dBinding = [expression.live2dExpression, expression.live2dMotion].filter(Boolean).join(" / ");
+          const model3dBinding = [expression.model3dExpression, expression.model3dAnimation].filter(Boolean).join(" / ");
           return `
             <article class="asset-card">
               <div class="asset-thumb" data-asset-type="sprite"></div>
               <span class="asset-tag">表情</span>
               <strong>${escapeHtml(expression.name)}</strong>
               <div class="asset-meta">${escapeHtml(asset?.name ?? expression.spriteAssetId)}</div>
+              <div class="scene-card-tags">
+                ${layerCount > 0 ? `<span class="issue-tag good-text">差分图层 ${layerCount}</span>` : `<span class="issue-tag">普通立绘</span>`}
+                ${live2dBinding ? `<span class="issue-tag good-text">Live2D ${escapeHtml(live2dBinding)}</span>` : ""}
+                ${model3dBinding ? `<span class="issue-tag good-text">3D ${escapeHtml(model3dBinding)}</span>` : ""}
+              </div>
             </article>
           `;
         })
@@ -17592,11 +17922,226 @@ function renderCharacterVoiceWorkflowPanel(character, stats) {
   `;
 }
 
+function renderCharacterPresentationPanel(character) {
+  const presentation = getCharacterPresentation(character);
+  const status = getCharacterPresentationStatus(character);
+  const readiness = buildCharacterPresentationReadiness(character);
+  const boundAssetIds = collectCharacterPresentationAssetIds(character);
+  const boundAssetNames = boundAssetIds
+    .map((assetId) => state.data.assetsById.get(assetId)?.name ?? assetId)
+    .join(" / ");
+
+  return `
+    <article class="detail-card character-presentation-panel">
+      <div class="character-scene-panel-head">
+        <div>
+          <strong>高级角色表现</strong>
+          <p class="helper-text">这里统一管理普通立绘、差分立绘、Live2D 和 3D 模型。现在先保存配置和兜底关系，后续渲染层会直接读取这套结构。</p>
+        </div>
+        <div class="scene-card-tags">
+          <span class="issue-tag ${status.tone}">${escapeHtml(status.label)}</span>
+          <span class="issue-tag">${escapeHtml(getCharacterPresentationModeLabel(character))}</span>
+        </div>
+      </div>
+      <div class="playback-setting-grid dialog-config-grid">
+        <label class="playback-setting">
+          <span>表现类型</span>
+          <select id="characterPresentationModeSelect">
+            ${Object.entries(CHARACTER_PRESENTATION_MODE_LABELS)
+              .map(
+                ([mode, label]) => `
+                  <option value="${mode}" ${presentation.mode === mode ? "selected" : ""}>${escapeHtml(label)}</option>
+                `
+              )
+              .join("")}
+          </select>
+        </label>
+        <label class="playback-setting">
+          <span>兜底立绘</span>
+          <select id="characterPresentationFallbackSpriteSelect">
+            ${buildGameUiAssetSelectOptions(presentation.fallbackSpriteAssetId, ["sprite", "cg", "ui"], "沿用角色默认立绘")}
+          </select>
+        </label>
+        <label class="playback-setting">
+          <span>Live2D 模型入口</span>
+          <select id="characterPresentationLive2dAssetSelect">
+            ${buildGameUiAssetSelectOptions(presentation.live2d.modelAssetId, ["live2d"], "暂不绑定 Live2D")}
+          </select>
+        </label>
+        <label class="playback-setting">
+          <span>3D 模型入口</span>
+          <select id="characterPresentationModel3dAssetSelect">
+            ${buildGameUiAssetSelectOptions(presentation.model3d.modelAssetId, ["model3d"], "暂不绑定 3D 模型")}
+          </select>
+        </label>
+        <label class="playback-setting">
+          <span>Live2D 待机动作</span>
+          <input id="characterPresentationLive2dIdleInput" type="text" value="${escapeHtml(presentation.live2d.idleMotion)}" placeholder="Idle / idle_01" />
+        </label>
+        <label class="playback-setting">
+          <span>3D 待机动画</span>
+          <input id="characterPresentationModel3dIdleInput" type="text" value="${escapeHtml(presentation.model3d.idleAnimation)}" placeholder="Idle / Stand / Breathing" />
+        </label>
+      </div>
+      <div class="scene-card-tags">
+        <label class="issue-tag">
+          <input id="characterPresentationLive2dBlinkInput" type="checkbox" ${presentation.live2d.blink ? "checked" : ""} />
+          自动眨眼
+        </label>
+        <label class="issue-tag">
+          <input id="characterPresentationLive2dBreathInput" type="checkbox" ${presentation.live2d.breath ? "checked" : ""} />
+          呼吸
+        </label>
+        <label class="issue-tag">
+          <input id="characterPresentationLive2dLipSyncInput" type="checkbox" ${presentation.live2d.lipSync ? "checked" : ""} />
+          口型同步
+        </label>
+        <label class="issue-tag">
+          <input id="characterPresentationLive2dCursorInput" type="checkbox" ${presentation.live2d.cursorTracking ? "checked" : ""} />
+          视线跟随
+        </label>
+      </div>
+      <p class="helper-text">${escapeHtml(status.detail)}</p>
+      <p class="helper-text">已纳入引用保护：${boundAssetNames ? escapeHtml(boundAssetNames) : "当前还没有额外模型素材绑定"}。</p>
+      ${renderCharacterPresentationReadinessPanel(character, readiness)}
+      ${renderCharacterExpressionBindingPanel(character)}
+      <div class="detail-actions">
+        <button
+          type="button"
+          class="toolbar-button toolbar-button-primary"
+          data-action="save-character-presentation"
+          data-character-id="${character.id}"
+        >
+          保存角色表现配置
+        </button>
+        <button type="button" class="toolbar-button" data-action="focus-asset-gap" data-asset-filter-mode="all" data-asset-type="live2d">
+          去导入 Live2D
+        </button>
+        <button type="button" class="toolbar-button" data-action="focus-asset-gap" data-asset-filter-mode="all" data-asset-type="model3d">
+          去导入 3D 模型
+        </button>
+      </div>
+    </article>
+  `;
+}
+
+function renderCharacterPresentationReadinessPanel(character, readiness = buildCharacterPresentationReadiness(character)) {
+  const issueItems = readiness.issues.length
+    ? readiness.issues
+    : [
+        {
+          tone: "good-text",
+          title: "角色表现链路已经比较稳",
+          detail: "模型入口、兜底素材和表情映射都已经达到当前阶段的可迁移标准。",
+        },
+      ];
+  return `
+    <div class="character-presentation-readiness">
+      <div class="character-progress-card">
+        <div class="character-progress-head">
+          <strong>角色表现体检 ${readiness.score}%</strong>
+          <span class="${readiness.tone}">${escapeHtml(getCharacterPresentationModeLabel(character))}</span>
+        </div>
+        <div class="character-progress-track">
+          <span class="character-progress-fill" style="width:${readiness.score}%;"></span>
+        </div>
+        <div class="character-progress-meta">
+          <span>主素材：${escapeHtml(readiness.primaryHealth.label)}</span>
+          <span>兜底：${escapeHtml(readiness.fallbackHealth.label)}</span>
+          <span>映射：${readiness.mappedExpressionCount}/${readiness.expressionCount || 0}</span>
+        </div>
+      </div>
+      <div class="summary-grid character-summary-grid">
+        ${renderStatCard("体检分", `${readiness.score}%`)}
+        ${renderStatCard("主素材", readiness.primaryHealth.ok ? "可用" : readiness.primaryHealth.asset ? "待补文件" : "未绑定")}
+        ${renderStatCard("兜底素材", readiness.fallbackHealth.ok ? "安全" : readiness.fallbackHealth.asset ? "待补文件" : "未绑定")}
+        ${renderStatCard("表情映射", `${readiness.mappedExpressionCount}/${readiness.expressionCount || 0}`)}
+      </div>
+      <div class="character-presentation-issue-list">
+        ${issueItems
+          .map(
+            (issue) => `
+              <article class="character-presentation-issue">
+                <span class="issue-tag ${issue.tone}">${escapeHtml(issue.title)}</span>
+                <p class="helper-text">${escapeHtml(issue.detail)}</p>
+              </article>
+            `
+          )
+          .join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderCharacterExpressionBindingPanel(character) {
+  const expressions = character?.expressions ?? [];
+  if (!expressions.length) {
+    return `
+      <div class="character-expression-binding-shell">
+        <strong>表情映射</strong>
+        <p class="helper-text">这个角色还没有表情条目。先保留兜底立绘配置，后续补表情后可以逐个绑定 Live2D 表情、动作或 3D 动画。</p>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="character-expression-binding-shell">
+      <div class="character-expression-binding-head">
+        <strong>表情级映射</strong>
+        <span class="helper-text">可选项：不给新手增加负担，但高级项目可以逐个表情绑定 Live2D/3D 动作。</span>
+      </div>
+      <div class="character-expression-binding-grid">
+        ${expressions
+          .map((expression) => {
+            const bindingStatus = getCharacterExpressionBindingStatus(expression);
+            return `
+              <article class="character-expression-binding-card" data-expression-id="${escapeHtml(expression.id)}">
+                <div class="character-expression-binding-title">
+                  <strong>${escapeHtml(expression.name || expression.id)}</strong>
+                  <span class="issue-tag ${bindingStatus.tone}">${escapeHtml(bindingStatus.label)}</span>
+                </div>
+                <label class="playback-setting">
+                  <span>差分图层素材 ID</span>
+                  <input
+                    class="characterExpressionLayerAssetsInput"
+                    type="text"
+                    value="${escapeHtml((expression.layerAssetIds ?? []).join(", "))}"
+                    placeholder="sprite_hair, sprite_eye, sprite_mouth"
+                  />
+                </label>
+                <div class="character-expression-binding-fields">
+                  <label class="playback-setting">
+                    <span>Live2D 表情</span>
+                    <input class="characterExpressionLive2dExpressionInput" type="text" value="${escapeHtml(expression.live2dExpression ?? "")}" placeholder="smile.exp3.json / smile" />
+                  </label>
+                  <label class="playback-setting">
+                    <span>Live2D 动作</span>
+                    <input class="characterExpressionLive2dMotionInput" type="text" value="${escapeHtml(expression.live2dMotion ?? "")}" placeholder="tap_body.motion3.json / idle_01" />
+                  </label>
+                  <label class="playback-setting">
+                    <span>3D 表情</span>
+                    <input class="characterExpressionModel3dExpressionInput" type="text" value="${escapeHtml(expression.model3dExpression ?? "")}" placeholder="joy / blink / aa" />
+                  </label>
+                  <label class="playback-setting">
+                    <span>3D 动画</span>
+                    <input class="characterExpressionModel3dAnimationInput" type="text" value="${escapeHtml(expression.model3dAnimation ?? "")}" placeholder="Wave / IdleHappy / Talk" />
+                  </label>
+                </div>
+              </article>
+            `;
+          })
+          .join("")}
+      </div>
+    </div>
+  `;
+}
+
 function renderCharacterOverview(character, stats) {
   const detailRows = renderDetailRows([
     ["角色名称", character.displayName],
     ["名字颜色", character.nameColor],
     ["默认站位", getPositionLabel(character.defaultPosition)],
+    ["表现类型", getCharacterPresentationModeLabel(character)],
     ["角色简介", character.bio || "暂时还没有填写角色简介"],
     [
       "默认立绘",
@@ -17618,6 +18163,7 @@ function renderCharacterOverview(character, stats) {
         ${detailRows}
       </div>
     </article>
+    ${renderCharacterPresentationPanel(character)}
     <article class="detail-card">
       <strong>台词与配音进度</strong>
       <div class="summary-grid character-summary-grid">
@@ -19695,6 +20241,8 @@ function createInitialPreviewVisualState() {
   return {
     backgroundAssetId: null,
     backgroundName: "未设置背景",
+    scene3dPreview: null,
+    scene3dPreview: null,
     musicName: "未播放",
     particleEffect: null,
     screenShake: null,
@@ -19720,6 +20268,7 @@ function clonePreviewVisualState(visualState) {
     particleEffect: visualState?.particleEffect
       ? normalizeParticleEffectConfig(visualState.particleEffect)
       : null,
+    scene3dPreview: visualState?.scene3dPreview ? getSafeScene3dPreviewConfig(visualState.scene3dPreview) : null,
     screenShake: visualState?.screenShake
       ? {
           intensity: getSafeShakeIntensity(visualState.screenShake.intensity),
@@ -19977,8 +20526,13 @@ function applyBlockToPreviewState(block, visualState, variables) {
       const asset = state.data.assetsById.get(block.assetId);
       visualState.backgroundAssetId = block.assetId;
       visualState.backgroundName = asset?.name ?? block.assetId;
+      visualState.scene3dPreview =
+        asset?.type === "scene3d" ? getSafeScene3dPreviewConfig(block.scene3dPreview) : null;
       visualState.speakerName = "画面";
-      visualState.dialogueText = `背景切换到：${asset?.name ?? block.assetId}`;
+      visualState.dialogueText =
+        asset?.type === "scene3d"
+          ? `进入 3D 场景：${asset?.name ?? block.assetId} / yaw ${visualState.scene3dPreview.yaw} / pitch ${visualState.scene3dPreview.pitch} / zoom ${visualState.scene3dPreview.zoom}`
+          : `背景切换到：${asset?.name ?? block.assetId}`;
       return null;
     }
     case "music_play": {
@@ -20850,7 +21404,7 @@ function renderCharacterCard(character, isSelected, stats = null) {
     >
       <strong>${escapeHtml(character.displayName)}</strong>
       <div class="scene-meta">
-        ${escapeHtml(getPositionLabel(character.defaultPosition))} · ${character.expressions.length} 个表情 · ${safeStats.totalLines} 句台词
+        ${escapeHtml(getCharacterPresentationModeLabel(character))} · ${escapeHtml(getPositionLabel(character.defaultPosition))} · ${character.expressions.length} 个表情 · ${safeStats.totalLines} 句台词
       </div>
       <div class="character-card-metrics">
         <span class="issue-tag ${safeStats.missingVoiceCount > 0 ? "warn-text" : "good-text"}">
@@ -21355,6 +21909,58 @@ async function toggleAssetFavorite(assetId) {
   }
 }
 
+async function saveCharacterPresentation(characterId) {
+  const character = state.data?.charactersById.get(characterId);
+  if (!character) {
+    setSaveStatus("先选中一个角色", true);
+    return;
+  }
+
+  const presentation = {
+    mode: getSafeCharacterPresentationMode(document.getElementById("characterPresentationModeSelect")?.value),
+    fallbackSpriteAssetId: document.getElementById("characterPresentationFallbackSpriteSelect")?.value || "",
+    live2d: {
+      modelAssetId: document.getElementById("characterPresentationLive2dAssetSelect")?.value || "",
+      idleMotion: String(document.getElementById("characterPresentationLive2dIdleInput")?.value ?? "").trim(),
+      blink: Boolean(document.getElementById("characterPresentationLive2dBlinkInput")?.checked),
+      breath: Boolean(document.getElementById("characterPresentationLive2dBreathInput")?.checked),
+      lipSync: Boolean(document.getElementById("characterPresentationLive2dLipSyncInput")?.checked),
+      cursorTracking: Boolean(document.getElementById("characterPresentationLive2dCursorInput")?.checked),
+    },
+    model3d: {
+      modelAssetId: document.getElementById("characterPresentationModel3dAssetSelect")?.value || "",
+      idleAnimation: String(document.getElementById("characterPresentationModel3dIdleInput")?.value ?? "").trim(),
+    },
+  };
+  const expressionBindings = Array.from(document.querySelectorAll(".character-expression-binding-card")).map((card) => ({
+    expressionId: card.dataset.expressionId || "",
+    layerAssetIds: parseCharacterLayerAssetIds(card.querySelector(".characterExpressionLayerAssetsInput")?.value),
+    live2dExpression: String(card.querySelector(".characterExpressionLive2dExpressionInput")?.value ?? "").trim(),
+    live2dMotion: String(card.querySelector(".characterExpressionLive2dMotionInput")?.value ?? "").trim(),
+    model3dExpression: String(card.querySelector(".characterExpressionModel3dExpressionInput")?.value ?? "").trim(),
+    model3dAnimation: String(card.querySelector(".characterExpressionModel3dAnimationInput")?.value ?? "").trim(),
+  }));
+
+  try {
+    setSaveStatus(`正在保存角色表现：${character.displayName}`);
+    await postJson(API_UPDATE_CHARACTER_PRESENTATION, {
+      characterId: character.id,
+      presentation,
+      expressionBindings,
+    });
+    await reloadProjectData({
+      ...getCurrentUiState(),
+      selectedCharacterId: character.id,
+    });
+    setSaveStatus(`角色表现已保存：${character.displayName}`);
+    showToast(`角色表现已保存：${character.displayName}`);
+  } catch (error) {
+    setSaveStatus("保存角色表现失败", true);
+    showToast("保存角色表现失败", "error");
+    window.alert(`保存角色表现没有成功：${error.message}`);
+  }
+}
+
 async function applyBulkAssetTags(mode) {
   const checkedAssets = getCurrentCheckedAssetsOfSelectedType();
   const assets = checkedAssets.length > 0 ? checkedAssets : getCurrentFilteredAssetsOfSelectedType();
@@ -21552,7 +22158,7 @@ function renderMiniStage(scene, blockIndex) {
 }
 
 function renderStage(visualState, large, options = {}) {
-  const backdrop = `${getBackdropStyle(visualState.backgroundAssetId)}; ${getDepthBlurBackdropStyle(visualState.depthBlur)}`;
+  const backdrop = `${getBackdropStyle(visualState.backgroundAssetId, visualState.scene3dPreview)}; ${getDepthBlurBackdropStyle(visualState.depthBlur)}`;
   const dialogPresentation = buildDialogBoxPresentation(options.dialogTheme, state.data?.project, state.data?.assetsById);
   const particleMarkup = renderParticleEffectLayer(
     visualState.particleEffect,
@@ -21715,6 +22321,9 @@ function renderStageSpriteCard(
   const character = state.data.charactersById.get(characterState.characterId);
   const classes = ["sprite-card"];
   const isGhostHide = characterState.__ghostMode === "hide";
+  const presentationLabel = character ? getCharacterPresentationModeLabel(character) : "普通立绘";
+  const expression = (character?.expressions ?? []).find((item) => item.id === characterState.expressionId);
+  const expressionBindingStatus = getCharacterExpressionBindingStatus(expression);
 
   if (shouldBlurStageCharacter(characterState.position, depthBlur)) {
     classes.push("is-depth-muted");
@@ -21742,10 +22351,11 @@ function renderStageSpriteCard(
   }
 
   return `
-    <div class="${classes.join(" ")}" data-position="${characterState.position}">
+    <div class="${classes.join(" ")}" data-position="${characterState.position}" data-presentation="${escapeHtml(getCharacterPresentation(character).mode)}">
       <div class="sprite-card-inner">
         <div class="sprite-name">${escapeHtml(character?.displayName ?? characterState.characterId)}</div>
         <div class="sprite-expression">${escapeHtml(characterState.expressionName)}</div>
+        <div class="sprite-presentation">${escapeHtml(presentationLabel)} · ${escapeHtml(expressionBindingStatus.label)}</div>
       </div>
     </div>
   `;
@@ -25289,7 +25899,7 @@ function renderLocationArchiveOverviewPanel() {
       }
 
       const asset = assetsById.get(block.assetId);
-      if (!asset || asset.type !== "background") {
+      if (!asset || !["background", "scene3d"].includes(asset.type)) {
         return;
       }
 
@@ -25557,12 +26167,17 @@ function renderRelationshipArchiveOverviewPanel() {
 
 function renderCharacterArchiveOverviewPanel() {
   const characters = state.data?.characters ?? [];
-  const readyCharacterCount = characters.filter((character) =>
-    (character.expressions ?? []).some((expression) => {
+  const readyCharacterCount = characters.filter((character) => {
+    const primaryAssetId = getCharacterPresentationPrimaryAssetId(character);
+    const primaryAsset = primaryAssetId ? state.data.assetsById.get(primaryAssetId) : null;
+    if (primaryAsset?.fileExists) {
+      return true;
+    }
+    return (character.expressions ?? []).some((expression) => {
       const asset = state.data.assetsById.get(expression.spriteAssetId);
       return Boolean(asset?.fileExists);
-    })
-  ).length;
+    });
+  }).length;
   const missingVisualCount = Math.max(characters.length - readyCharacterCount, 0);
 
   return `
@@ -25593,8 +26208,8 @@ function renderCharacterArchiveOverviewPanel() {
         )}
         ${renderRouteMetricCard(
           "展示内容",
-          "简介 + 立绘 + 表情",
-          "图鉴会优先显示角色简介、默认立绘和已配置表情"
+          "简介 + 表现类型 + 兜底立绘",
+          "图鉴会优先显示角色简介、表现类型、默认立绘和已配置表情"
         )}
       </div>
       <div class="detail-actions">
@@ -27294,23 +27909,24 @@ function renderChoiceCountQualityTools(optionCount) {
 }
 
 function renderBackgroundEditor(block) {
-  const backgroundAssets = state.data.assetList.filter((asset) => asset.type === "background");
+  const backgroundAssets = state.data.assetList.filter((asset) => ["background", "scene3d"].includes(asset.type));
   const transition = getSafeTransition(block.transition);
+  const scene3dPreview = getSafeScene3dPreviewConfig(block.scene3dPreview);
 
   return `
     <article class="editor-card">
       <h3>编辑背景切换</h3>
-      <p>这里决定这一张卡片出现时，画面切到哪张背景，以及怎么切。</p>
+      <p>这里决定这一张卡片出现时，画面切到哪张背景；也可以选择 3D 场景资产，原生 Runtime 会进入交互预览桥。</p>
     </article>
     <div class="field-grid">
       <div class="detail-row">
-        <label for="editorBackgroundAssetId">背景图片</label>
+        <label for="editorBackgroundAssetId">背景 / 3D 场景</label>
         <select id="editorBackgroundAssetId">
           ${backgroundAssets
             .map(
               (asset) => `
                 <option value="${asset.id}" ${asset.id === block.assetId ? "selected" : ""}>
-                  ${escapeHtml(asset.name)}
+                  ${escapeHtml(asset.name)}${asset.type === "scene3d" ? " · 3D 场景" : ""}
                 </option>
               `
             )
@@ -27323,6 +27939,28 @@ function renderBackgroundEditor(block) {
           ${renderTransitionOptions(transition)}
         </select>
       </div>
+      <div class="detail-row">
+        <label>3D 场景默认视角</label>
+        <div class="field-grid compact-grid">
+          <label>
+            <span>Yaw 旋转</span>
+            <input id="editorScene3dYaw" type="number" min="0" max="359" step="1" value="${scene3dPreview.yaw}" />
+          </label>
+          <label>
+            <span>Pitch 俯仰</span>
+            <input id="editorScene3dPitch" type="number" min="12" max="72" step="1" value="${scene3dPreview.pitch}" />
+          </label>
+          <label>
+            <span>Zoom 缩放</span>
+            <input id="editorScene3dZoom" type="number" min="0.55" max="1.9" step="0.05" value="${scene3dPreview.zoom}" />
+          </label>
+        </div>
+        <p class="helper-text">当这里选择的是 3D 场景素材时，原生 Runtime 会用这组参数初始化空间预览桥。</p>
+      </div>
+      <label class="toggle-row">
+        <input id="editorScene3dInteractionEnabled" type="checkbox" ${scene3dPreview.interactionEnabled ? "checked" : ""} />
+        <span>允许玩家在原生 Runtime 中用方向键和 +/- 微调 3D 场景视角</span>
+      </label>
     </div>
     <div class="detail-actions">
       <button class="toolbar-button toolbar-button-primary" data-action="save-block">保存这张卡片</button>
@@ -31185,6 +31823,47 @@ function renderProjectVariableTypeOptions(selectedType) {
     .join("");
 }
 
+const PROJECT_VARIABLE_FILTER_LABELS = {
+  all: "全部",
+  referenced: "已引用",
+  unused: "未引用",
+  risky: "有风险",
+  number: "数字",
+  boolean: "开关",
+  string: "文本",
+  active: "使用中",
+  reserved: "预留",
+  deprecated: "废弃",
+  draft: "有草稿",
+};
+
+function getSafeProjectVariableFilterMode(mode) {
+  return Object.prototype.hasOwnProperty.call(PROJECT_VARIABLE_FILTER_LABELS, mode) ? mode : "all";
+}
+
+const PROJECT_VARIABLE_STATUS_LABELS = {
+  active: "使用中",
+  reserved: "预留",
+  deprecated: "废弃",
+};
+
+function getSafeProjectVariableStatus(status) {
+  return Object.prototype.hasOwnProperty.call(PROJECT_VARIABLE_STATUS_LABELS, status) ? status : "active";
+}
+
+function renderProjectVariableStatusOptions(selectedStatus) {
+  const safeStatus = getSafeProjectVariableStatus(selectedStatus);
+  return Object.entries(PROJECT_VARIABLE_STATUS_LABELS)
+    .map(
+      ([status, label]) => `
+        <option value="${status}" ${status === safeStatus ? "selected" : ""}>
+          ${escapeHtml(label)}
+        </option>
+      `
+    )
+    .join("");
+}
+
 function makeProjectVariableId(name, existingIds = []) {
   const base =
     String(name ?? "")
@@ -31234,6 +31913,9 @@ function buildDefaultProjectVariable(type = "number") {
     id,
     name: labels[safeType],
     type: safeType,
+    group: "默认",
+    status: "active",
+    description: "",
   };
 
   if (safeType === "number") {
@@ -31402,6 +32084,9 @@ function getProjectVariableDraftSeed(variableId) {
     type: getSafeProjectVariableType(variable.type),
     idText: variable.id ?? "",
     name: variable.name ?? "",
+    group: variable.group ?? "",
+    status: getSafeProjectVariableStatus(variable.status),
+    description: variable.description ?? "",
     defaultText: getProjectVariableDefaultInputValue(variable),
     minText: String(variable.min ?? variable.minValue ?? ""),
     maxText: String(variable.max ?? variable.maxValue ?? ""),
@@ -31455,6 +32140,12 @@ function captureProjectVariableDraftField(target) {
     draft.name = target.value ?? "";
   } else if (fieldName === "project-variable-id") {
     draft.idText = target.value ?? "";
+  } else if (fieldName === "project-variable-group") {
+    draft.group = target.value ?? "";
+  } else if (fieldName === "project-variable-status") {
+    draft.status = getSafeProjectVariableStatus(target.value);
+  } else if (fieldName === "project-variable-description") {
+    draft.description = target.value ?? "";
   } else if (fieldName === "project-variable-type") {
     draft.type = getSafeProjectVariableType(target.value);
   } else if (fieldName === "project-variable-default") {
@@ -31483,6 +32174,9 @@ function buildProjectVariableDraftModel(variable) {
     id: draft.idText ?? variable.id,
     type,
     name: draft.name ?? variable.name,
+    group: draft.group ?? variable.group ?? "",
+    status: getSafeProjectVariableStatus(draft.status ?? variable.status),
+    description: draft.description ?? variable.description ?? "",
     defaultValue: draft.defaultText ?? getProjectVariableDefaultInputValue(variable),
   };
 
@@ -31516,6 +32210,8 @@ function buildProjectVariableDraftModel(variable) {
 function renderProjectVariableRiskTags(variable, usage, currentVariableId = variable.id) {
   const tags = [];
   const idIssue = getProjectVariableIdIssue(variable.id, currentVariableId);
+  const status = getSafeProjectVariableStatus(variable.status);
+  tags.push(`<span class="issue-tag">${escapeHtml(PROJECT_VARIABLE_STATUS_LABELS[status])}</span>`);
   if (usage.total > 0) {
     tags.push(`<span class="issue-tag good-text">被引用 ${usage.total} 次</span>`);
   } else {
@@ -31523,6 +32219,12 @@ function renderProjectVariableRiskTags(variable, usage, currentVariableId = vari
   }
   if (idIssue) {
     tags.push(`<span class="issue-tag danger-text">${escapeHtml(idIssue)}</span>`);
+  }
+  if (status === "deprecated" && usage.total > 0) {
+    tags.push(`<span class="issue-tag danger-text">废弃变量仍被引用</span>`);
+  }
+  if (status === "reserved" && usage.total === 0) {
+    tags.push(`<span class="issue-tag good-text">清理保护</span>`);
   }
   getProjectVariableRangeIssues(variable).forEach((issue) => {
     tags.push(`<span class="issue-tag danger-text">${escapeHtml(issue)}</span>`);
@@ -31591,6 +32293,16 @@ function renderProjectVariableEditorRow(variable, usage) {
           <span>逻辑 ID</span>
           <input id="${escapeHtml(`${inputIdBase}-id`)}" data-field="project-variable-id" type="text" maxlength="64" value="${escapeHtml(draft?.idText ?? variable.id ?? "")}" autocomplete="off" spellcheck="false" />
         </label>
+        <label class="playback-setting" for="${escapeHtml(`${inputIdBase}-group`)}">
+          <span>变量分组</span>
+          <input id="${escapeHtml(`${inputIdBase}-group`)}" data-field="project-variable-group" type="text" maxlength="40" value="${escapeHtml(draft?.group ?? variable.group ?? "")}" placeholder="例如：主线 / 好感度 / 系统" autocomplete="off" spellcheck="false" />
+        </label>
+        <label class="playback-setting" for="${escapeHtml(`${inputIdBase}-status`)}">
+          <span>维护状态</span>
+          <select id="${escapeHtml(`${inputIdBase}-status`)}" data-field="project-variable-status">
+            ${renderProjectVariableStatusOptions(draft?.status ?? variable.status)}
+          </select>
+        </label>
         <label class="playback-setting" for="${escapeHtml(`${inputIdBase}-type`)}">
           <span>变量类型</span>
           <select id="${escapeHtml(`${inputIdBase}-type`)}" data-field="project-variable-type">
@@ -31618,6 +32330,10 @@ function renderProjectVariableEditorRow(variable, usage) {
           <input id="${escapeHtml(`${inputIdBase}-max`)}" data-field="project-variable-max" type="text" value="${escapeHtml(String(rawMax))}" placeholder="仅数字变量使用" autocomplete="off" spellcheck="false" />
         </label>
       </div>
+      <label class="playback-setting" for="${escapeHtml(`${inputIdBase}-description`)}">
+        <span>用途说明</span>
+        <textarea id="${escapeHtml(`${inputIdBase}-description`)}" data-field="project-variable-description" rows="2" maxlength="220" placeholder="写清楚这个变量控制什么、什么时候可以删除。">${escapeHtml(draft?.description ?? variable.description ?? "")}</textarea>
+      </label>
       <div class="detail-meta">${escapeHtml(rangeHint)}</div>
       <div class="detail-stack">
         ${locationPreview}
@@ -31641,19 +32357,210 @@ function renderProjectVariableEditorRow(variable, usage) {
   `;
 }
 
+function getProjectVariableGovernanceItems(variables, usageMap) {
+  return variables.map((variable) => {
+    const draft = getProjectVariableDraft(variable.id);
+    const renderVariable = buildProjectVariableDraftModel(variable);
+  const usage = usageMap.get(variable.id) ?? { total: 0, references: [] };
+  const rangeIssues = getProjectVariableRangeIssues(renderVariable);
+  const idIssue = getProjectVariableIdIssue(renderVariable.id, variable.id);
+  const status = getSafeProjectVariableStatus(renderVariable.status);
+  const issues = [...rangeIssues];
+  if (idIssue) {
+    issues.push(idIssue);
+  }
+  if (status === "deprecated" && usage.total > 0) {
+    issues.push("废弃变量仍被引用");
+  }
+  return {
+    variable,
+    renderVariable,
+    usage,
+    issues,
+    status,
+    hasDraft: Boolean(draft),
+  };
+});
+}
+
+function isProjectVariableMatchingFilter(item, filterMode) {
+  if (filterMode === "referenced") {
+    return item.usage.total > 0;
+  }
+  if (filterMode === "unused") {
+    return item.usage.total === 0;
+  }
+  if (filterMode === "risky") {
+    return item.issues.length > 0;
+  }
+  if (filterMode === "draft") {
+    return item.hasDraft;
+  }
+  if (["active", "reserved", "deprecated"].includes(filterMode)) {
+    return item.status === filterMode;
+  }
+  if (["number", "boolean", "string"].includes(filterMode)) {
+    return item.renderVariable.type === filterMode;
+  }
+  return true;
+}
+
+function getProjectVariableGovernanceScore(items) {
+  if (items.length === 0) {
+    return 100;
+  }
+  const riskCount = items.filter((item) => item.issues.length > 0).length;
+  const unusedCount = items.filter((item) => item.usage.total === 0 && item.status !== "reserved").length;
+  const draftCount = items.filter((item) => item.hasDraft).length;
+  const penalty = riskCount * 18 + unusedCount * 4 + draftCount * 2;
+  return clamp(100 - penalty, 0, 100);
+}
+
+function renderProjectVariableGovernancePanel(items) {
+  const totalCount = items.length;
+  const referencedCount = items.filter((item) => item.usage.total > 0).length;
+  const unusedCount = items.filter((item) => item.usage.total === 0).length;
+  const riskItems = items.filter((item) => item.issues.length > 0);
+  const draftCount = items.filter((item) => item.hasDraft).length;
+  const reservedCount = items.filter((item) => item.status === "reserved").length;
+  const deprecatedCount = items.filter((item) => item.status === "deprecated").length;
+  const score = getProjectVariableGovernanceScore(items);
+  const hotItems = items
+    .filter((item) => item.usage.total > 0)
+    .sort((a, b) => b.usage.total - a.usage.total)
+    .slice(0, 3);
+  const unusedPreview = items
+    .filter((item) => item.usage.total === 0)
+    .slice(0, 4);
+
+  return `
+    <section class="detail-card">
+      <div class="panel-heading">
+        <div>
+          <strong>变量治理雷达</strong>
+          <p class="helper-text">用项目级视角看变量健康度：风险越少、废弃变量越少，后期做分支和导出就越稳。</p>
+        </div>
+        <span class="badge badge-soft">Health ${score}</span>
+      </div>
+      <div class="route-summary-strip beginner-guide-metrics">
+        ${renderRouteMetricCard("健康分", score, "范围风险、草稿和未引用变量越少越高")}
+        ${renderRouteMetricCard("引用覆盖", `${referencedCount} / ${totalCount}`, "至少被一张剧情卡片使用")}
+        ${renderRouteMetricCard("未引用", unusedCount, "可清理，也可能是预留变量")}
+        ${renderRouteMetricCard("风险变量", riskItems.length, "ID、范围或默认值需要处理")}
+        ${renderRouteMetricCard("草稿中", draftCount, "已修改但还没保存")}
+        ${renderRouteMetricCard("预留 / 废弃", `${reservedCount} / ${deprecatedCount}`, "预留不会被自动清理；废弃仍引用会报风险")}
+      </div>
+      <div class="playback-setting-grid dialog-config-grid">
+        <article class="detail-card">
+          <strong>热点变量</strong>
+          <div class="detail-stack">
+            ${
+              hotItems.length > 0
+                ? hotItems
+                    .map(
+                      (item) => `
+                        <div class="detail-row">
+                          <label>${escapeHtml(item.renderVariable.name || item.variable.id)}</label>
+                          <div class="value">${item.usage.total} 处引用</div>
+                        </div>
+                      `
+                    )
+                    .join("")
+                : renderEmpty("还没有变量被剧情卡片引用。")
+            }
+          </div>
+        </article>
+        <article class="detail-card">
+          <strong>优先处理</strong>
+          <div class="detail-stack">
+            ${
+              riskItems.length > 0
+                ? riskItems
+                    .slice(0, 4)
+                    .map(
+                      (item) => `
+                        <div class="detail-row">
+                          <label>${escapeHtml(item.renderVariable.name || item.variable.id)}</label>
+                          <div class="value">${escapeHtml(item.issues.join("、"))}</div>
+                        </div>
+                      `
+                    )
+                    .join("")
+                : renderEmpty("变量 ID、默认值和范围目前没有明显风险。")
+            }
+          </div>
+        </article>
+        <article class="detail-card">
+          <strong>未引用预览</strong>
+          <div class="detail-stack">
+            ${
+              unusedPreview.length > 0
+                ? unusedPreview
+                    .map(
+                      (item) => `
+                        <div class="detail-row">
+                          <label>${escapeHtml(item.renderVariable.name || item.variable.id)}</label>
+                          <div class="value">${escapeHtml(getVariableTypeLabel(item.renderVariable.type))}</div>
+                        </div>
+                      `
+                    )
+                    .join("")
+                : renderEmpty("没有未引用变量，逻辑库很干净。")
+            }
+          </div>
+        </article>
+      </div>
+    </section>
+  `;
+}
+
+function renderProjectVariableFilterButtons(items) {
+  const filterMode = getSafeProjectVariableFilterMode(state.projectVariableFilterMode);
+  return Object.entries(PROJECT_VARIABLE_FILTER_LABELS)
+    .map(([mode, label]) => {
+      const count = items.filter((item) => isProjectVariableMatchingFilter(item, mode)).length;
+      return `
+        <button
+          type="button"
+          class="toolbar-button ${filterMode === mode ? "toolbar-button-primary" : ""}"
+          data-action="set-project-variable-filter"
+          data-variable-filter-mode="${mode}"
+        >
+          ${escapeHtml(label)} · ${count}
+        </button>
+      `;
+    })
+    .join("");
+}
+
 function renderProjectVariableLibraryPanel() {
   const variables = state.data.variables ?? [];
   const query = String(state.projectVariableSearchQuery ?? "").trim().toLowerCase();
+  const filterMode = getSafeProjectVariableFilterMode(state.projectVariableFilterMode);
   const usageMap = buildProjectVariableUsageMap();
-  const filteredVariables = variables.filter((variable) => {
-    const draft = getProjectVariableDraft(variable.id);
+  const governanceItems = getProjectVariableGovernanceItems(variables, usageMap);
+  const filteredItems = governanceItems.filter((item) => {
+    const { variable, renderVariable } = item;
+    if (!isProjectVariableMatchingFilter(item, filterMode)) {
+      return false;
+    }
     if (!query) {
       return true;
     }
-    return [draft?.idText, draft?.name, variable.id, variable.name, getVariableTypeLabel(draft?.type ?? variable.type)]
+    return [
+      renderVariable.id,
+      renderVariable.name,
+      renderVariable.group,
+      renderVariable.description,
+      variable.id,
+      variable.name,
+      getVariableTypeLabel(renderVariable.type),
+      PROJECT_VARIABLE_STATUS_LABELS[getSafeProjectVariableStatus(renderVariable.status)],
+    ]
       .some((value) => String(value ?? "").toLowerCase().includes(query));
   });
   const referencedCount = variables.filter((variable) => (usageMap.get(variable.id)?.total ?? 0) > 0).length;
+  const unusedCount = Math.max(variables.length - referencedCount, 0);
   const riskCount = variables.filter((variable) => getProjectVariableRangeIssues(variable).length > 0).length;
   const typeCount = (type) => variables.filter((variable) => variable.type === type).length;
 
@@ -31670,8 +32577,10 @@ function renderProjectVariableLibraryPanel() {
         ${renderRouteMetricCard("变量总数", variables.length, "项目可用的逻辑状态")}
         ${renderRouteMetricCard("数字变量", typeCount("number"), "好感度、分数和进度")}
         ${renderRouteMetricCard("已引用", referencedCount, "被剧情卡片实际使用")}
+        ${renderRouteMetricCard("未引用", unusedCount, "可能是废弃变量或预留变量")}
         ${renderRouteMetricCard("待整理", riskCount, "范围或默认值需要注意")}
       </div>
+      ${renderProjectVariableGovernancePanel(governanceItems)}
       <div class="asset-search-row story-tree-filter-row">
         <label class="asset-search-field">
           <span class="sr-only">搜索变量</span>
@@ -31686,13 +32595,18 @@ function renderProjectVariableLibraryPanel() {
         <button class="toolbar-button" data-action="add-project-variable" data-variable-type="boolean">新增开关</button>
         <button class="toolbar-button" data-action="add-project-variable" data-variable-type="string">新增文本</button>
         <button class="toolbar-button" data-action="repair-project-variable-ranges">一键整理范围</button>
+        <button class="toolbar-button" data-action="delete-unused-project-variables">清理未引用</button>
+        <button class="toolbar-button" data-action="export-project-variable-report">导出治理报告</button>
         <button class="toolbar-button" data-action="create-starter-variables">补齐基础变量包</button>
+      </div>
+      <div class="story-filter-chip-row">
+        ${renderProjectVariableFilterButtons(governanceItems)}
       </div>
       <div class="detail-stack">
         ${
-          filteredVariables.length > 0
-            ? filteredVariables
-                .map((variable) =>
+          filteredItems.length > 0
+            ? filteredItems
+                .map(({ variable }) =>
                   renderProjectVariableEditorRow(
                     variable,
                     usageMap.get(variable.id) ?? {
@@ -31707,7 +32621,11 @@ function renderProjectVariableLibraryPanel() {
                   )
                 )
                 .join("")
-            : renderEmpty(variables.length > 0 ? "当前搜索没有命中变量。" : "这个项目还没有变量，可以先新增一个数字变量或补齐基础变量包。")
+            : renderEmpty(
+                variables.length > 0
+                  ? `当前「${PROJECT_VARIABLE_FILTER_LABELS[filterMode]}」视图没有命中变量。`
+                  : "这个项目还没有变量，可以先新增一个数字变量或补齐基础变量包。"
+              )
         }
       </div>
     </section>
@@ -31719,6 +32637,106 @@ function rerenderProjectVariableLibraryPanel() {
   if (host) {
     host.innerHTML = renderProjectVariableLibraryPanel();
   }
+}
+
+function setProjectVariableFilterMode(mode) {
+  state.projectVariableFilterMode = getSafeProjectVariableFilterMode(mode);
+  rerenderProjectVariableLibraryPanel();
+  setSaveStatus(`变量库视图：${PROJECT_VARIABLE_FILTER_LABELS[state.projectVariableFilterMode]}`);
+}
+
+function buildProjectVariableAuditReportContent(items) {
+  const projectTitle = state.data?.project?.title ?? "未命名项目";
+  const score = getProjectVariableGovernanceScore(items);
+  const referencedCount = items.filter((item) => item.usage.total > 0).length;
+  const unusedItems = items.filter((item) => item.usage.total === 0);
+  const riskItems = items.filter((item) => item.issues.length > 0);
+  const draftItems = items.filter((item) => item.hasDraft);
+  const hotItems = [...items]
+    .filter((item) => item.usage.total > 0)
+    .sort((a, b) => b.usage.total - a.usage.total);
+  const lines = [
+    "Tony Na Engine 变量治理报告",
+    `项目：${projectTitle}`,
+    `生成时间：${new Date().toLocaleString()}`,
+    "",
+    "一、总体概览",
+    `- 健康分：${score}`,
+    `- 变量总数：${items.length}`,
+    `- 已引用变量：${referencedCount}`,
+    `- 未引用变量：${unusedItems.length}`,
+    `- 风险变量：${riskItems.length}`,
+    `- 草稿变量：${draftItems.length}`,
+    "",
+    "二、热点变量",
+  ];
+
+  if (hotItems.length > 0) {
+    hotItems.slice(0, 12).forEach((item, index) => {
+      lines.push(
+        `${index + 1}. ${item.renderVariable.name || item.variable.id} (${item.variable.id})：${item.usage.total} 处引用`
+      );
+    });
+  } else {
+    lines.push("暂无变量被剧情卡片引用。");
+  }
+
+  lines.push("", "三、优先处理风险");
+  if (riskItems.length > 0) {
+    riskItems.forEach((item, index) => {
+      lines.push(
+        `${index + 1}. ${item.renderVariable.name || item.variable.id} (${item.variable.id})：${item.issues.join("、")}`
+      );
+    });
+  } else {
+    lines.push("未发现变量 ID、默认值或范围风险。");
+  }
+
+  lines.push("", "四、未引用变量");
+  if (unusedItems.length > 0) {
+    unusedItems.forEach((item, index) => {
+      lines.push(
+        `${index + 1}. ${item.renderVariable.name || item.variable.id} (${item.variable.id}) · ${getVariableTypeLabel(item.renderVariable.type)}`
+      );
+    });
+  } else {
+    lines.push("没有未引用变量。");
+  }
+
+  lines.push("", "五、变量明细");
+  items.forEach((item, index) => {
+    lines.push(
+      `${index + 1}. ${item.renderVariable.name || item.variable.id}`,
+      `   ID：${item.variable.id}`,
+      `   类型：${getVariableTypeLabel(item.renderVariable.type)}`,
+      `   分组：${item.renderVariable.group || "未分组"}`,
+      `   状态：${PROJECT_VARIABLE_STATUS_LABELS[item.status]}`,
+      `   说明：${item.renderVariable.description || "未填写"}`,
+      `   默认值：${getProjectVariableDefaultInputValue(item.renderVariable)}`,
+      `   引用数：${item.usage.total}`,
+      `   风险：${item.issues.length > 0 ? item.issues.join("、") : "无"}`
+    );
+    if (item.usage.references.length > 0) {
+      item.usage.references.slice(0, 8).forEach((reference) => {
+        lines.push(`   - ${reference.label}`);
+      });
+      if (item.usage.references.length > 8) {
+        lines.push(`   - 另有 ${item.usage.references.length - 8} 处引用`);
+      }
+    }
+  });
+
+  return `\uFEFF${lines.join("\n")}`;
+}
+
+function exportProjectVariableAuditReport() {
+  const usageMap = buildProjectVariableUsageMap();
+  const items = getProjectVariableGovernanceItems(state.data.variables ?? [], usageMap);
+  const safeProjectTitle = sanitizeFileName(state.data?.project?.title ?? "project") || "project";
+  const fileName = `${safeProjectTitle}_variable_audit.txt`;
+  downloadTextFile(fileName, buildProjectVariableAuditReportContent(items), "text/plain;charset=utf-8");
+  setSaveStatus(`已导出变量治理报告：${fileName}`);
+  showToast(`变量治理报告已导出：${fileName}`);
 }
 
 function renderProjectRuntimeSettingsPanel() {
@@ -32412,6 +33430,15 @@ function readProjectVariableDraft(variableId) {
   const maxText = String(
     draft?.maxText ?? row.querySelector('[data-field="project-variable-max"]')?.value ?? ""
   ).trim();
+  const group = String(
+    draft?.group ?? row.querySelector('[data-field="project-variable-group"]')?.value ?? ""
+  ).trim();
+  const status = getSafeProjectVariableStatus(
+    draft?.status ?? row.querySelector('[data-field="project-variable-status"]')?.value
+  );
+  const description = String(
+    draft?.description ?? row.querySelector('[data-field="project-variable-description"]')?.value ?? ""
+  ).trim();
 
   if (!name) {
     errors.push("变量名不能为空。");
@@ -32443,6 +33470,9 @@ function readProjectVariableDraft(variableId) {
     id: nextId || original.id,
     name: name || original.name || original.id,
     type,
+    group,
+    status,
+    description,
     defaultValue,
   };
 
@@ -32600,6 +33630,9 @@ function suggestProjectVariableId(variableId) {
     ...seed,
     ...(getProjectVariableDraft(variableId) ?? {}),
     name: row.querySelector('[data-field="project-variable-name"]')?.value ?? seed.name,
+    group: row.querySelector('[data-field="project-variable-group"]')?.value ?? seed.group,
+    status: row.querySelector('[data-field="project-variable-status"]')?.value ?? seed.status,
+    description: row.querySelector('[data-field="project-variable-description"]')?.value ?? seed.description,
     type: row.querySelector('[data-field="project-variable-type"]')?.value ?? seed.type,
     defaultText: row.querySelector('[data-field="project-variable-default"]')?.value ?? seed.defaultText,
     minText: row.querySelector('[data-field="project-variable-min"]')?.value ?? seed.minText,
@@ -32669,6 +33702,51 @@ async function deleteProjectVariable(variableId) {
     setSaveStatus("删除变量失败", true);
     showToast("删除变量失败", "error");
     window.alert(`删除变量没有成功：${error.message}`);
+  }
+}
+
+async function deleteUnusedProjectVariables() {
+  const usageMap = buildProjectVariableUsageMap();
+  const unusedVariables = state.data.variables.filter(
+    (variable) =>
+      (usageMap.get(variable.id)?.total ?? 0) === 0 &&
+      getSafeProjectVariableStatus(variable.status) !== "reserved"
+  );
+
+  if (unusedVariables.length === 0) {
+    setSaveStatus("没有可清理的未引用变量");
+    showToast("没有可清理的未引用变量");
+    return;
+  }
+
+  const previewNames = unusedVariables
+    .slice(0, 6)
+    .map((variable) => variable.name || variable.id)
+    .join("、");
+  const suffix = unusedVariables.length > 6 ? ` 等 ${unusedVariables.length} 个` : "";
+  const shouldDelete =
+    typeof window.confirm === "function"
+      ? window.confirm(`确认清理未引用变量「${previewNames}${suffix}」吗？这不会删除任何已被剧情卡片引用的变量。`)
+      : true;
+  if (!shouldDelete) {
+    return;
+  }
+
+  try {
+    const unusedIds = new Set(unusedVariables.map((variable) => variable.id));
+    setSaveStatus("正在清理未引用变量...");
+    await saveProjectVariables(
+      state.data.variables.filter((variable) => !unusedIds.has(variable.id)),
+      {
+        statusText: `已清理 ${unusedVariables.length} 个未引用变量`,
+        toastText: `已清理 ${unusedVariables.length} 个未引用变量`,
+        clearDraftIds: [...unusedIds],
+      }
+    );
+  } catch (error) {
+    setSaveStatus("清理未引用变量失败", true);
+    showToast("清理未引用变量失败", "error");
+    window.alert(`清理未引用变量没有成功：${error.message}`);
   }
 }
 
@@ -33749,9 +34827,15 @@ function collectEditedBlock(block) {
       ...block,
       assetId:
         document.getElementById("editorBackgroundAssetId")?.value ??
-        state.data.assetList.find((asset) => asset.type === "background")?.id ??
+        state.data.assetList.find((asset) => asset.type === "background" || asset.type === "scene3d")?.id ??
         "",
       transition: getSafeTransition(document.getElementById("editorTransition")?.value),
+      scene3dPreview: getSafeScene3dPreviewConfig({
+        yaw: document.getElementById("editorScene3dYaw")?.value,
+        pitch: document.getElementById("editorScene3dPitch")?.value,
+        zoom: document.getElementById("editorScene3dZoom")?.value,
+        interactionEnabled: document.getElementById("editorScene3dInteractionEnabled")?.checked !== false,
+      }),
     };
   }
 
@@ -36340,6 +37424,16 @@ function getSafeNumber(value, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function getSafeScene3dPreviewConfig(source = {}) {
+  const raw = source && typeof source === "object" ? source : {};
+  return {
+    yaw: Math.round(clamp(getSafeNumber(raw.yaw, 32), 0, 359)),
+    pitch: Math.round(clamp(getSafeNumber(raw.pitch, 34), 12, 72)),
+    zoom: Number(clamp(getSafeNumber(raw.zoom, 1), 0.55, 1.9).toFixed(2)),
+    interactionEnabled: raw.interactionEnabled !== false,
+  };
+}
+
 function parseVariableNumberBound(value) {
   if (value === null || value === undefined || typeof value === "boolean") {
     return null;
@@ -38649,6 +39743,8 @@ function computeVisualState(scene, blockIndex) {
         const asset = state.data.assetsById.get(block.assetId);
         visual.backgroundAssetId = block.assetId;
         visual.backgroundName = asset?.name ?? block.assetId;
+        visual.scene3dPreview =
+          asset?.type === "scene3d" ? getSafeScene3dPreviewConfig(block.scene3dPreview) : null;
         break;
       }
       case "music_play": {
@@ -38902,12 +39998,39 @@ function buildAssetUsageMap({ chapters, characters, charactersById }) {
       label: `角色默认立绘：${character.displayName}`,
       meta: "角色资料页 / 默认立绘",
     });
+    const presentation = getCharacterPresentation(character);
+    addUsage(presentation.fallbackSpriteAssetId, {
+      kind: "character",
+      characterId: character.id,
+      label: `角色高级表现兜底：${character.displayName}`,
+      meta: "角色资料页 / 高级表现",
+    });
+    addUsage(presentation.live2d.modelAssetId, {
+      kind: "character",
+      characterId: character.id,
+      label: `角色 Live2D 模型：${character.displayName}`,
+      meta: "角色资料页 / 高级表现",
+    });
+    addUsage(presentation.model3d.modelAssetId, {
+      kind: "character",
+      characterId: character.id,
+      label: `角色 3D 模型：${character.displayName}`,
+      meta: "角色资料页 / 高级表现",
+    });
     for (const expression of character.expressions ?? []) {
       addUsage(expression.spriteAssetId, {
         kind: "character",
         characterId: character.id,
         label: `角色表情：${character.displayName} / ${expression.name}`,
         meta: "角色资料页 / 表情设置",
+      });
+      (expression.layerAssetIds ?? []).forEach((layerAssetId) => {
+        addUsage(layerAssetId, {
+          kind: "character",
+          characterId: character.id,
+          label: `角色差分图层：${character.displayName} / ${expression.name}`,
+          meta: "角色资料页 / 表情差分",
+        });
       });
     }
   }
@@ -39051,11 +40174,51 @@ function runValidation(data) {
   }
 
   data.characters.forEach((character) => {
-    if (!data.assetsById.has(character.defaultSpriteId)) {
+    const presentation = getCharacterPresentation(character);
+    const primaryAdvancedAssetId =
+      presentation.mode === "live2d"
+        ? presentation.live2d.modelAssetId
+        : presentation.mode === "model3d"
+          ? presentation.model3d.modelAssetId
+          : "";
+    const canUseAdvancedAsset = primaryAdvancedAssetId && data.assetsById.has(primaryAdvancedAssetId);
+    if (!data.assetsById.has(character.defaultSpriteId) && !canUseAdvancedAsset) {
       pushIssue("error", "角色默认立绘找不到。", `角色 ${character.displayName}`, {
         type: "character",
         characterId: character.id,
       });
+    }
+    if (presentation.fallbackSpriteAssetId && !data.assetsById.has(presentation.fallbackSpriteAssetId)) {
+      pushIssue("warning", "角色高级表现的兜底立绘找不到。", `角色 ${character.displayName}`, {
+        type: "character",
+        characterId: character.id,
+      });
+    }
+    if (presentation.mode === "live2d") {
+      if (!presentation.live2d.modelAssetId) {
+        pushIssue("warning", "Live2D 角色还没有绑定模型入口文件。", `角色 ${character.displayName}`, {
+          type: "character",
+          characterId: character.id,
+        });
+      } else if (!data.assetsById.has(presentation.live2d.modelAssetId)) {
+        pushIssue("error", "Live2D 角色绑定的模型素材找不到。", `角色 ${character.displayName}`, {
+          type: "character",
+          characterId: character.id,
+        });
+      }
+    }
+    if (presentation.mode === "model3d") {
+      if (!presentation.model3d.modelAssetId) {
+        pushIssue("warning", "3D 角色还没有绑定模型文件。", `角色 ${character.displayName}`, {
+          type: "character",
+          characterId: character.id,
+        });
+      } else if (!data.assetsById.has(presentation.model3d.modelAssetId)) {
+        pushIssue("error", "3D 角色绑定的模型素材找不到。", `角色 ${character.displayName}`, {
+          type: "character",
+          characterId: character.id,
+        });
+      }
     }
     const seenExpressionIds = new Set();
     (character.expressions ?? []).forEach((expression) => {
@@ -39068,7 +40231,7 @@ function runValidation(data) {
       seenExpressionIds.add(expression.id);
       if (!data.assetsById.has(expression.spriteAssetId)) {
         pushIssue(
-          "error",
+          presentation.mode === "sprite" || presentation.mode === "layered_sprite" ? "error" : "warning",
           "角色表情绑定的立绘素材找不到。",
           `角色 ${character.displayName} / 表情 ${expression.name}`,
           {
@@ -39077,6 +40240,14 @@ function runValidation(data) {
           }
         );
       }
+      (expression.layerAssetIds ?? []).forEach((layerAssetId) => {
+        if (!data.assetsById.has(layerAssetId)) {
+          pushIssue("warning", "角色差分图层绑定的素材找不到。", `角色 ${character.displayName} / 表情 ${expression.name}`, {
+            type: "character",
+            characterId: character.id,
+          });
+        }
+      });
     });
   });
 
@@ -39580,6 +40751,10 @@ function isVideoAssetType(type) {
   return type === "video";
 }
 
+function isScene3dAssetType(type) {
+  return type === "scene3d";
+}
+
 function getSafeVideoFit(value) {
   return Object.prototype.hasOwnProperty.call(VIDEO_FIT_LABELS, value) ? value : "contain";
 }
@@ -39663,9 +40838,16 @@ function formatFileSize(bytes) {
   return `${(size / (1024 * 1024)).toFixed(size < 10 * 1024 * 1024 ? 1 : 0)} MB`;
 }
 
-function getBackdropStyle(backgroundAssetId) {
+function getBackdropStyle(backgroundAssetId, scene3dPreview = null) {
   const asset = state.data?.assetsById?.get(backgroundAssetId);
   const previewUrl = getAssetPublicUrl(asset);
+  if (asset?.fileExists && isScene3dAssetType(asset.type)) {
+    const preview = getSafeScene3dPreviewConfig(scene3dPreview);
+    const pitchGlow = Math.round(clamp((preview.pitch - 12) / 60, 0, 1) * 24 + 22);
+    const gridSize = Math.round(clamp(44 / preview.zoom, 24, 76));
+    const yawOffset = Math.round(((preview.yaw % 360) / 360) * gridSize);
+    return `background: radial-gradient(circle at 50% ${pitchGlow}%, rgba(102, 180, 255, 0.30), transparent 24%), linear-gradient(135deg, rgba(7, 18, 36, 0.92), rgba(28, 42, 76, 0.86)), repeating-linear-gradient(${90 + preview.yaw / 8}deg, rgba(126, 190, 255, 0.12) 0 1px, transparent 1px ${gridSize}px), repeating-linear-gradient(${preview.pitch}deg, rgba(126, 190, 255, 0.10) ${yawOffset}px ${yawOffset + 1}px, transparent ${yawOffset + 1}px ${gridSize}px);`;
+  }
   if (asset?.fileExists && previewUrl && isImageAssetType(asset.type)) {
     return `background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.24)), url("${escapeHtml(
       previewUrl

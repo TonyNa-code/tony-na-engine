@@ -8,6 +8,24 @@
       "defaultPosition": "left",
       "bio": "看起来温柔，实际有点小恶作剧。",
       "defaultSpriteId": "",
+      "presentation": {
+        "mode": "sprite",
+        "fallbackSpriteAssetId": "",
+        "live2d": {
+          "modelAssetId": "",
+          "idleMotion": "",
+          "blink": true,
+          "breath": true,
+          "lipSync": true,
+          "cursorTracking": false
+        },
+        "model3d": {
+          "modelAssetId": "",
+          "idleAnimation": "",
+          "cameraPreset": "portrait",
+          "lightingPreset": "studio"
+        }
+      },
       "expressions": []
     },
     {
@@ -17,6 +35,24 @@
       "defaultPosition": "center",
       "bio": "玩家主角，平时看起来冷静，实际上很会观察别人。",
       "defaultSpriteId": "",
+      "presentation": {
+        "mode": "sprite",
+        "fallbackSpriteAssetId": "",
+        "live2d": {
+          "modelAssetId": "",
+          "idleMotion": "",
+          "blink": true,
+          "breath": true,
+          "lipSync": true,
+          "cursorTracking": false
+        },
+        "model3d": {
+          "modelAssetId": "",
+          "idleAnimation": "",
+          "cameraPreset": "portrait",
+          "lightingPreset": "studio"
+        }
+      },
       "expressions": []
     }
   ]

@@ -97,12 +97,25 @@ class NativeRuntimeRenderSmokeTests(unittest.TestCase):
             "tags": ["OP"],
         }
 
+    def write_model_asset(self) -> dict:
+        asset_path = self.bundle_dir / "assets" / "models" / "heroine.glb"
+        asset_path.parent.mkdir(parents=True, exist_ok=True)
+        asset_path.write_bytes(b"fake-model-data")
+        return {
+            "id": "heroine_model",
+            "type": "model3d",
+            "name": "Heroine 3D Model",
+            "exportUrl": asset_path.relative_to(self.bundle_dir).as_posix(),
+            "tags": ["3D"],
+        }
+
     def write_game_data(self) -> Path:
         assets = [
             self.write_ui_asset(asset_id, (70 + index * 11, 92 + index * 7, 180, 235))
             for index, asset_id in enumerate(UI_ASSET_IDS)
         ]
         assets.append(self.write_video_asset())
+        assets.append(self.write_model_asset())
         game_data = {
             "project": {
                 "projectId": "native_render_smoke",
@@ -144,7 +157,20 @@ class NativeRuntimeRenderSmokeTests(unittest.TestCase):
                         "id": "heroine",
                         "displayName": "Heroine",
                         "defaultPosition": "center",
-                        "expressions": [],
+                        "presentation": {
+                            "mode": "model3d",
+                            "fallbackSpriteAssetId": "",
+                            "model3d": {"modelAssetId": "heroine_model", "idleAnimation": "Idle"},
+                        },
+                        "expressions": [
+                            {
+                                "id": "expr_default",
+                                "name": "Default",
+                                "spriteAssetId": "",
+                                "model3dExpression": "joy",
+                                "model3dAnimation": "IdleHappy",
+                            }
+                        ],
                     }
                 ]
             },
@@ -613,6 +639,19 @@ class NativeRuntimeRenderSmokeTests(unittest.TestCase):
             warnings.filterwarnings("ignore", message="The system font .*", category=UserWarning)
             player = NativeRuntimePlayer(pygame, data_path)
 
+        self.assertIn("主题", player.get_system_menu_item_description("settings"))
+        self.assertIn("正式存档", player.get_system_menu_item_description("load"))
+        self.assertEqual(player.get_character_presentation_mode_label(player.characters_by_id["heroine"]), "3D 模型")
+        self.assertEqual(player.get_character_model_asset_label(player.characters_by_id["heroine"]), "Heroine 3D Model")
+        self.assertIn(
+            "3D joy / IdleHappy",
+            player.get_character_expression_binding_label(player.characters_by_id["heroine"], "expr_default"),
+        )
+        model_preview = player.get_character_model_preview_report(player.characters_by_id["heroine"], "expr_default")
+        self.assertEqual(model_preview["status"], "ready")
+        self.assertIn("GLB 单文件", model_preview["dependencyHealth"]["label"])
+        self.assertIn("3D 模型 预览桥：资源完整", player.get_character_model_preview_lines(player.characters_by_id["heroine"], "expr_default"))
+
         render_steps = [
             lambda: player.render(),
             lambda: (player.open_save_dialog("save"), player.render()),
@@ -637,8 +676,25 @@ class NativeRuntimeRenderSmokeTests(unittest.TestCase):
         self.assertGreater(screenshot_files[0].stat().st_size, 0)
         player.handle_event(pygame.event.Event(pygame.KEYDOWN, {"key": pygame.K_F2}))
         self.assertEqual(player.overlay_mode, "help")
+        help_sections = player.get_help_overlay_sections()
+        self.assertIn("当前状态", [section["title"] for section in help_sections])
+        self.assertTrue(any("主题：" in line for section in help_sections for line in section["lines"]))
+        self.assertIn("settings", [action["key"] for action in player.get_help_quick_actions()])
         player.render()
         self.assert_screen_has_pixels(player)
+        history_target = next(
+            target
+            for target in player.overlay_hotspots
+            if target.get("kind") == "help-action" and target.get("value") == "history"
+        )
+        player.handle_event(pygame.event.Event(pygame.MOUSEBUTTONDOWN, {"button": 1, "pos": history_target["rect"].center}))
+        self.assertEqual(player.overlay_mode, "history")
+        player.close_overlay(preserve_status=True)
+        player.open_help_overlay()
+        player.handle_event(pygame.event.Event(pygame.KEYDOWN, {"key": pygame.K_s}))
+        self.assertEqual(player.overlay_mode, "settings")
+        player.close_overlay(preserve_status=True)
+        player.open_help_overlay()
         player.handle_event(pygame.event.Event(pygame.KEYDOWN, {"key": pygame.K_RETURN}))
         self.assertIsNone(player.overlay_mode)
         player.handle_event(

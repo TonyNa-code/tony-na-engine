@@ -432,6 +432,233 @@ class RunEditorSmokeTests(unittest.TestCase):
         self.assertEqual(bundle["variables"]["variables"][0]["id"], "var_affection")
         self.assertEqual(bundle["variables"]["variables"][1]["defaultValue"], "common")
 
+    def test_character_presentation_can_bind_live2d_and_model3d_assets(self) -> None:
+        self.create_blank_project_with_chapter()
+        sprite_asset = run_editor.import_assets(
+            "sprite",
+            [build_upload_payload("fallback.png", build_fake_png_bytes())],
+        )["assets"][0]
+        live2d_asset = run_editor.import_assets(
+            "live2d",
+            [
+                build_upload_payload(
+                    "hero.model3.json",
+                    json.dumps(
+                        {
+                            "Version": 3,
+                            "FileReferences": {
+                                "Moc": "hero.moc3",
+                                "Textures": ["textures/texture_00.png"],
+                                "Motions": {"Idle": [{"File": "motions/idle.motion3.json"}]},
+                            },
+                        }
+                    ).encode("utf-8"),
+                )
+            ],
+        )["assets"][0]
+        live2d_source_path = run_editor.resolve_asset_source_path(live2d_asset["path"])
+        self.assertIsNotNone(live2d_source_path)
+        assert live2d_source_path is not None
+        (live2d_source_path.parent / "textures").mkdir(parents=True, exist_ok=True)
+        (live2d_source_path.parent / "motions").mkdir(parents=True, exist_ok=True)
+        (live2d_source_path.parent / "hero.moc3").write_bytes(b"fake-moc3")
+        (live2d_source_path.parent / "textures" / "texture_00.png").write_bytes(build_fake_png_bytes())
+        (live2d_source_path.parent / "motions" / "idle.motion3.json").write_text("{}", encoding="utf-8")
+        model3d_asset = run_editor.import_assets(
+            "model3d",
+            [
+                build_upload_payload(
+                    "hero.gltf",
+                    json.dumps(
+                        {
+                            "asset": {"version": "2.0"},
+                            "buffers": [{"uri": "hero.bin"}],
+                            "images": [{"uri": "textures/body.png"}],
+                        }
+                    ).encode("utf-8"),
+                )
+            ],
+        )["assets"][0]
+        model3d_source_path = run_editor.resolve_asset_source_path(model3d_asset["path"])
+        self.assertIsNotNone(model3d_source_path)
+        assert model3d_source_path is not None
+        (model3d_source_path.parent / "textures").mkdir(parents=True, exist_ok=True)
+        (model3d_source_path.parent / "hero.bin").write_bytes(b"fake-bin")
+        (model3d_source_path.parent / "textures" / "body.png").write_bytes(build_fake_png_bytes())
+        run_editor.write_json(
+            run_editor.DATA_DIR / "characters.json",
+            {
+                "characters": [
+                    {
+                        "id": "char_hero",
+                        "displayName": "高级角色",
+                        "defaultSpriteId": sprite_asset["id"],
+                        "expressions": [
+                            {"id": "expr_default", "name": "默认", "spriteAssetId": sprite_asset["id"]},
+                            {"id": "expr_smile", "name": "微笑", "spriteAssetId": sprite_asset["id"]},
+                        ],
+                    }
+                ]
+            },
+        )
+
+        result = run_editor.update_character_presentation(
+            "char_hero",
+            {
+                "mode": "model3d",
+                "fallbackSpriteAssetId": sprite_asset["id"],
+                "live2d": {"modelAssetId": live2d_asset["id"], "blink": True, "breath": True, "lipSync": True},
+                "model3d": {"modelAssetId": model3d_asset["id"], "idleAnimation": "Idle"},
+            },
+            [
+                {
+                    "expressionId": "expr_default",
+                    "layerAssetIds": [sprite_asset["id"]],
+                    "live2dExpression": "smile",
+                    "live2dMotion": "idle_01",
+                    "model3dExpression": "joy",
+                    "model3dAnimation": "IdleHappy",
+                }
+            ],
+        )
+
+        self.assertEqual(result["character"]["presentation"]["mode"], "model3d")
+        self.assertEqual(result["character"]["presentation"]["model3d"]["modelAssetId"], model3d_asset["id"])
+        self.assertEqual(result["character"]["expressions"][0]["live2dExpression"], "smile")
+        self.assertEqual(result["character"]["expressions"][0]["model3dAnimation"], "IdleHappy")
+        self.assertIn("角色3D 模型入口：高级角色", run_editor.collect_asset_usages(model3d_asset["id"]))
+        self.assertIn("角色差分图层：高级角色 / 默认", run_editor.collect_asset_usages(sprite_asset["id"]))
+        self.assertEqual(run_editor.choose_smart_asset_type("hero.model3.json"), "live2d")
+        self.assertEqual(run_editor.choose_smart_asset_type("smile.exp3.json"), "live2d")
+        self.assertEqual(run_editor.choose_smart_asset_type("hero.vrm"), "model3d")
+        self.assertEqual(
+            run_editor.get_asset_export_suffix({"type": "live2d", "path": "assets/live2d/hero.model3.json"}, None),
+            ".model3.json",
+        )
+        export_result = run_editor.export_native_runtime_build()
+        release_check_payload = json.loads(
+            (Path(export_result["buildPath"]) / run_editor.NATIVE_RUNTIME_RELEASE_CHECK_NAME).read_text(encoding="utf-8")
+        )
+        issue_codes = {issue.get("code") for issue in release_check_payload["issues"]}
+        exported_game_data = json.loads(
+            (Path(export_result["buildPath"]) / "game_data.json").read_text(encoding="utf-8")
+        )
+        model_preview_description = subprocess.run(
+            [
+                sys.executable,
+                str(Path(export_result["buildPath"]) / run_editor.NATIVE_RUNTIME_PLAYER_NAME),
+                "--describe-model-preview",
+                str(export_result["buildPath"]),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(model_preview_description.returncode, 0, model_preview_description.stdout + model_preview_description.stderr)
+        model_preview_payload = json.loads(model_preview_description.stdout)
+        self.assertEqual(model_preview_payload["summary"]["advancedCharacterCount"], 1)
+        self.assertEqual(model_preview_payload["entries"][0]["status"], "ready")
+        self.assertEqual(model_preview_payload["entries"][0]["dependencyHealth"]["status"], "ready")
+        self.assertTrue(model_preview_payload["entries"][0]["expressionMapping"]["incomplete"])
+        exported_live2d = next(
+            asset for asset in exported_game_data["assets"]["assets"] if asset["id"] == live2d_asset["id"]
+        )
+        live2d_export_path = Path(export_result["buildPath"]) / exported_live2d["exportUrl"]
+        self.assertTrue(live2d_export_path.is_file())
+        self.assertTrue((live2d_export_path.parent / "hero.moc3").is_file())
+        self.assertTrue((live2d_export_path.parent / "textures" / "texture_00.png").is_file())
+        self.assertTrue((live2d_export_path.parent / "motions" / "idle.motion3.json").is_file())
+        exported_model3d = next(
+            asset for asset in exported_game_data["assets"]["assets"] if asset["id"] == model3d_asset["id"]
+        )
+        model3d_export_path = Path(export_result["buildPath"]) / exported_model3d["exportUrl"]
+        self.assertTrue(model3d_export_path.is_file())
+        self.assertTrue((model3d_export_path.parent / "hero.bin").is_file())
+        self.assertTrue((model3d_export_path.parent / "textures" / "body.png").is_file())
+        self.assertIn("character_presentation_mapping_incomplete", issue_codes)
+        self.assertNotIn("live2d_model3_dependency_missing", issue_codes)
+        self.assertNotIn("model3d_gltf_dependency_missing", issue_codes)
+        self.assertNotIn("character_presentation_asset_missing", issue_codes)
+
+    def test_scene3d_assets_export_with_dependencies_and_native_preview_report(self) -> None:
+        _, chapter_result = self.create_blank_project_with_chapter()
+        scene3d_asset = run_editor.import_assets(
+            "scene3d",
+            [
+                build_upload_payload(
+                    "classroom_scene.gltf",
+                    json.dumps(
+                        {
+                            "asset": {"version": "2.0"},
+                            "buffers": [{"uri": "classroom.bin"}],
+                            "images": [{"uri": "textures/walls.png"}],
+                        }
+                    ).encode("utf-8"),
+                )
+            ],
+        )["assets"][0]
+        scene3d_source_path = run_editor.resolve_asset_source_path(scene3d_asset["path"])
+        self.assertIsNotNone(scene3d_source_path)
+        assert scene3d_source_path is not None
+        (scene3d_source_path.parent / "textures").mkdir(parents=True, exist_ok=True)
+        (scene3d_source_path.parent / "classroom.bin").write_bytes(b"fake-scene-bin")
+        (scene3d_source_path.parent / "textures" / "walls.png").write_bytes(build_fake_png_bytes())
+
+        self.save_scene_with_blocks(
+            chapter_result["chapterId"],
+            chapter_result["scene"],
+            [
+                {
+                    "id": "block_001",
+                    "type": "background",
+                    "assetId": scene3d_asset["id"],
+                    "scene3dPreview": {"yaw": 118, "pitch": 46, "zoom": 1.35, "interactionEnabled": False},
+                },
+                {"id": "block_002", "type": "narration", "text": "这是一个 3D 可交互场景入口。"},
+            ],
+        )
+
+        self.assertEqual(run_editor.choose_smart_asset_type("classroom_scene.gltf"), "scene3d")
+        self.assertEqual(run_editor.choose_smart_asset_type("hero.glb"), "model3d")
+
+        export_result = run_editor.export_native_runtime_build()
+        exported_game_data = json.loads((Path(export_result["buildPath"]) / "game_data.json").read_text(encoding="utf-8"))
+        exported_scene3d = next(
+            asset for asset in exported_game_data["assets"]["assets"] if asset["id"] == scene3d_asset["id"]
+        )
+        scene3d_export_path = Path(export_result["buildPath"]) / exported_scene3d["exportUrl"]
+        self.assertTrue(scene3d_export_path.is_file())
+        self.assertTrue((scene3d_export_path.parent / "classroom.bin").is_file())
+        self.assertTrue((scene3d_export_path.parent / "textures" / "walls.png").is_file())
+
+        release_check_payload = json.loads(
+            (Path(export_result["buildPath"]) / run_editor.NATIVE_RUNTIME_RELEASE_CHECK_NAME).read_text(encoding="utf-8")
+        )
+        issue_codes = {issue.get("code") for issue in release_check_payload["issues"]}
+        self.assertNotIn("scene3d_gltf_dependency_missing", issue_codes)
+
+        scene3d_description = subprocess.run(
+            [
+                sys.executable,
+                str(Path(export_result["buildPath"]) / run_editor.NATIVE_RUNTIME_PLAYER_NAME),
+                "--describe-scene3d-preview",
+                str(export_result["buildPath"]),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(scene3d_description.returncode, 0, scene3d_description.stdout + scene3d_description.stderr)
+        scene3d_payload = json.loads(scene3d_description.stdout)
+        self.assertEqual(scene3d_payload["status"], "ready")
+        self.assertEqual(scene3d_payload["summary"]["scene3dAssetCount"], 1)
+        self.assertEqual(scene3d_payload["entries"][0]["usageCount"], 1)
+        self.assertEqual(scene3d_payload["entries"][0]["dependencyHealth"]["status"], "ready")
+        self.assertEqual(scene3d_payload["entries"][0]["usages"][0]["previewConfig"]["yaw"], 118)
+        self.assertEqual(scene3d_payload["entries"][0]["usages"][0]["previewConfig"]["pitch"], 46)
+        self.assertEqual(scene3d_payload["entries"][0]["usages"][0]["previewConfig"]["zoom"], 1.35)
+        self.assertFalse(scene3d_payload["entries"][0]["usages"][0]["previewConfig"]["interactionEnabled"])
+
     def test_variable_rename_migrates_story_references(self) -> None:
         _, chapter_result = self.create_blank_project_with_chapter()
         run_editor.save_project_settings(
@@ -953,7 +1180,13 @@ class RunEditorSmokeTests(unittest.TestCase):
         self.assertEqual(len(characters_doc["characters"]), 1)
         self.assertTrue(characters_doc["characters"][0]["id"].startswith("char_"))
         self.assertEqual(characters_doc["characters"][0]["defaultPosition"], "center")
+        self.assertEqual(characters_doc["characters"][0]["presentation"]["mode"], "sprite")
+        self.assertIn("live2d", characters_doc["characters"][0]["presentation"])
         self.assertTrue(characters_doc["characters"][0]["expressions"][0]["id"].startswith("expr_"))
+        self.assertEqual(characters_doc["characters"][0]["expressions"][0]["layerAssetIds"], [])
+        self.assertEqual(run_editor.choose_smart_asset_type("hero.model3.json"), "live2d")
+        self.assertEqual(run_editor.choose_smart_asset_type("hero.pose3.json"), "live2d")
+        self.assertEqual(run_editor.choose_smart_asset_type("hero.glb"), "model3d")
 
         variables_doc = run_editor.read_json(legacy_dir / "data" / "variables.json")
         self.assertEqual(variables_doc["formatVersion"], run_editor.PROJECT_FORMAT_VERSION)
@@ -1265,7 +1498,15 @@ class RunEditorSmokeTests(unittest.TestCase):
         self.assertEqual(doctor_payload["status"], "pass")
         self.assertEqual(doctor_payload["summary"]["failed"], 0)
         self.assertTrue(
-            {"bundle_structure", "release_check", "save_load", "settings", "video_preview_probe"}
+            {
+                "bundle_structure",
+                "release_check",
+                "save_load",
+                "settings",
+                "model_preview_bridge",
+                "scene3d_preview_bridge",
+                "video_preview_probe",
+            }
             <= {check["id"] for check in doctor_payload["checks"]}
         )
 

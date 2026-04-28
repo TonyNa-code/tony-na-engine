@@ -626,6 +626,8 @@ class BrowserPlaywrightSmokeTests(unittest.TestCase):
 
         variable_row = self.page.locator("[data-project-variable-row]").filter(has_text="新数字变量").last
         variable_row.locator('[data-field="project-variable-name"]').fill("压力值")
+        variable_row.locator('[data-field="project-variable-group"]').fill("数值组")
+        variable_row.locator('[data-field="project-variable-description"]').fill("测试变量说明")
         variable_row.locator('[data-field="project-variable-default"]').fill("140")
         variable_row.locator('[data-field="project-variable-min"]').fill("0")
         variable_row.locator('[data-field="project-variable-max"]').fill("120")
@@ -647,6 +649,8 @@ class BrowserPlaywrightSmokeTests(unittest.TestCase):
         self.assertEqual(saved_row.locator('[data-field="project-variable-default"]').input_value(), "120")
         self.assertEqual(saved_row.locator('[data-field="project-variable-min"]').input_value(), "0")
         self.assertEqual(saved_row.locator('[data-field="project-variable-max"]').input_value(), "120")
+        self.assertEqual(saved_row.locator('[data-field="project-variable-group"]').input_value(), "数值组")
+        self.assertEqual(saved_row.locator('[data-field="project-variable-description"]').input_value(), "测试变量说明")
 
     def test_preview_variable_library_can_rename_id_and_jump_to_reference(self) -> None:
         project_title = "浏览器烟测项目_VariableRename"
@@ -711,6 +715,91 @@ class BrowserPlaywrightSmokeTests(unittest.TestCase):
             """() => {
                 return document.querySelector('#screen-story')?.classList.contains('is-active')
                     && document.querySelector('.block-card.is-selected[data-block-id="block_score"]');
+            }""",
+            timeout=15000,
+        )
+
+    def test_preview_variable_library_can_delete_only_unused_variables(self) -> None:
+        project_title = "浏览器烟测项目_UnusedVariables"
+        self.create_blank_project(project_title)
+        self.create_first_chapter()
+        self.page.evaluate(
+            """async () => {
+                const bundleResponse = await fetch('/api/project-data');
+                const bundle = await bundleResponse.json();
+                const chapter = bundle.chapters[0];
+                const scene = chapter.scenes[0];
+                await fetch('/api/save-project-settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        variables: {
+                            variables: [
+                                { id: 'var_used', name: '被使用变量', type: 'number', defaultValue: 0, group: '主线', status: 'active', description: '被剧情引用，不能清理' },
+                                { id: 'var_unused', name: '未使用变量', type: 'string', defaultValue: 'draft', group: '临时', status: 'active', description: '应该被清理' },
+                                { id: 'var_reserved', name: '预留变量', type: 'boolean', defaultValue: false, group: '系统', status: 'reserved', description: '未来路线使用，清理时要保留' },
+                            ],
+                        },
+                    }),
+                });
+                await fetch('/api/save-scene', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        chapterId: chapter.chapterId,
+                        sceneId: scene.id,
+                        scene: {
+                            ...scene,
+                            blocks: [
+                                { id: 'block_used_variable', type: 'variable_add', variableId: 'var_used', value: 1 },
+                            ],
+                        },
+                    }),
+                });
+            }"""
+        )
+        self.open_project_by_title(project_title)
+        self.open_preview_screen()
+
+        self.page.get_by_text("变量治理雷达").wait_for(timeout=15000)
+        self.page.get_by_role("button", name=re.compile(r"未引用 · 2")).click()
+        self.page.locator("[data-project-variable-row]").filter(has_text="未使用变量").first.wait_for(
+            timeout=15000
+        )
+        self.page.locator("[data-project-variable-row]").filter(has_text="预留变量").first.wait_for(
+            timeout=15000
+        )
+        self.assertEqual(self.page.locator("[data-project-variable-row]").filter(has_text="被使用变量").count(), 0)
+        self.page.get_by_role("button", name=re.compile(r"已引用 · 1")).click()
+        self.page.locator("[data-project-variable-row]").filter(has_text="被使用变量").first.wait_for(
+            timeout=15000
+        )
+        self.assertEqual(self.page.locator("[data-project-variable-row]").filter(has_text="未使用变量").count(), 0)
+        self.page.get_by_role("button", name=re.compile(r"预留 · 1")).click()
+        self.page.locator("[data-project-variable-row]").filter(has_text="预留变量").first.wait_for(
+            timeout=15000
+        )
+        self.page.get_by_role("button", name=re.compile(r"全部 · 3")).click()
+        with self.page.expect_download() as download_info:
+            self.page.get_by_role("button", name="导出治理报告").click()
+        download = download_info.value
+        download_path = self.repo_copy / download.suggested_filename
+        download.save_as(str(download_path))
+        report_content = download_path.read_text(encoding="utf-8-sig")
+        self.assertIn("Tony Na Engine 变量治理报告", report_content)
+        self.assertIn("被使用变量", report_content)
+        self.assertIn("未使用变量", report_content)
+        self.assertIn("预留变量", report_content)
+        self.assertIn("未来路线使用，清理时要保留", report_content)
+
+        self.page.once("dialog", lambda dialog: dialog.accept())
+        self.page.get_by_role("button", name="清理未引用").click()
+        self.page.wait_for_function(
+            """async () => {
+                const response = await fetch('/api/project-data');
+                const bundle = await response.json();
+                const variableIds = bundle.variables.variables.map((item) => item.id);
+                return variableIds.includes('var_used') && variableIds.includes('var_reserved') && !variableIds.includes('var_unused');
             }""",
             timeout=15000,
         )

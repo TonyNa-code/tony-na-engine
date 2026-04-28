@@ -352,6 +352,13 @@ SETTINGS_MENU_ITEMS = [
     ("voiceVolume", "语音音量"),
 ]
 NATIVE_VIDEO_PREVIEW_MODE = "cinematic_bridge_card"
+DEFAULT_SCENE3D_PREVIEW = {"yaw": 32.0, "pitch": 34.0, "zoom": 1.0, "interactionEnabled": True}
+CHARACTER_PRESENTATION_MODE_LABELS = {
+    "sprite": "普通立绘",
+    "layered_sprite": "差分立绘",
+    "live2d": "Live2D",
+    "model3d": "3D 模型",
+}
 ARCHIVE_MENU_ITEMS = {
     "chapters": "章节回放",
     "music": "音乐鉴赏",
@@ -415,6 +422,19 @@ SUPPORTED_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".webp"}
 SUPPORTED_AUDIO_EXTENSIONS = {".ogg", ".wav", ".mp3"}
 SUPPORTED_VIDEO_EXTENSIONS = {".mp4", ".webm", ".mov", ".m4v"}
 SUPPORTED_FONT_EXTENSIONS = {".ttf", ".otf", ".ttc"}
+SUPPORTED_LIVE2D_SUFFIXES = (
+    ".model3.json",
+    ".moc3",
+    ".motion3.json",
+    ".physics3.json",
+    ".cdi3.json",
+    ".pose3.json",
+    ".exp3.json",
+    ".userdata3.json",
+)
+LIVE2D_REFERENCE_SUFFIXES = SUPPORTED_LIVE2D_SUFFIXES[1:] + (".png", ".jpg", ".jpeg", ".webp", ".bmp")
+SUPPORTED_MODEL3D_EXTENSIONS = {".glb", ".gltf", ".vrm", ".fbx", ".obj"}
+SUPPORTED_SCENE3D_EXTENSIONS = SUPPORTED_MODEL3D_EXTENSIONS
 LARGE_IMAGE_WARNING_BYTES = 18 * 1024 * 1024
 LARGE_AUDIO_WARNING_BYTES = 30 * 1024 * 1024
 LARGE_VIDEO_WARNING_BYTES = 300 * 1024 * 1024
@@ -429,6 +449,112 @@ def load_game_data(game_data_path: Path) -> dict:
     if not game_data_path.is_file():
         raise NativeRuntimeError(f"没有找到游戏数据文件：{game_data_path}")
     return json.loads(game_data_path.read_text(encoding="utf-8"))
+
+
+def looks_like_live2d_file_reference(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    clean_value = value.strip().replace("\\", "/")
+    if not clean_value or "://" in clean_value or clean_value.startswith(("data:", "#")):
+        return False
+    lower_value = clean_value.split("?", 1)[0].split("#", 1)[0].lower()
+    if any(lower_value.endswith(suffix) for suffix in LIVE2D_REFERENCE_SUFFIXES):
+        return True
+    return "/" in clean_value and "." in clean_value.rsplit("/", 1)[-1]
+
+
+def collect_live2d_model3_references(model3_payload: object) -> list[str]:
+    if not isinstance(model3_payload, dict):
+        return []
+    file_references = model3_payload.get("FileReferences")
+    if not isinstance(file_references, (dict, list)):
+        return []
+
+    references: list[str] = []
+
+    def visit(value: object) -> None:
+        if isinstance(value, str):
+            clean_value = value.strip().replace("\\", "/")
+            if looks_like_live2d_file_reference(clean_value):
+                references.append(clean_value)
+            return
+        if isinstance(value, list):
+            for item in value:
+                visit(item)
+            return
+        if isinstance(value, dict):
+            for item in value.values():
+                visit(item)
+
+    visit(file_references)
+    unique_references: list[str] = []
+    seen_references: set[str] = set()
+    for reference in references:
+        if reference in seen_references:
+            continue
+        unique_references.append(reference)
+        seen_references.add(reference)
+    return unique_references
+
+
+def resolve_live2d_dependency_path(model3_path: Path, reference: str, bundle_dir: Path) -> Path | None:
+    clean_reference = reference.strip().replace("\\", "/")
+    if not clean_reference or "://" in clean_reference:
+        return None
+    relative_reference = Path(clean_reference)
+    if relative_reference.is_absolute() or clean_reference.startswith("/"):
+        return None
+    candidate_path = (model3_path.parent / relative_reference).resolve()
+    bundle_root = bundle_dir.resolve()
+    try:
+        candidate_path.relative_to(bundle_root)
+    except ValueError:
+        return None
+    return candidate_path
+
+
+def collect_gltf_references(gltf_payload: object) -> list[str]:
+    references: list[str] = []
+
+    def visit(value: object, key: str = "") -> None:
+        if isinstance(value, str):
+            clean_value = value.strip().replace("\\", "/")
+            if key == "uri" and clean_value and not clean_value.startswith(("data:", "#")) and "://" not in clean_value:
+                references.append(clean_value)
+            return
+        if isinstance(value, list):
+            for item in value:
+                visit(item, key)
+            return
+        if isinstance(value, dict):
+            for item_key, item_value in value.items():
+                visit(item_value, str(item_key))
+
+    visit(gltf_payload)
+    unique_references: list[str] = []
+    seen_references: set[str] = set()
+    for reference in references:
+        if reference in seen_references:
+            continue
+        unique_references.append(reference)
+        seen_references.add(reference)
+    return unique_references
+
+
+def resolve_model3d_dependency_path(model_path: Path, reference: str, bundle_dir: Path) -> Path | None:
+    clean_reference = reference.strip().replace("\\", "/")
+    if not clean_reference or "://" in clean_reference or clean_reference.startswith(("data:", "#")):
+        return None
+    relative_reference = Path(clean_reference)
+    if relative_reference.is_absolute() or clean_reference.startswith("/"):
+        return None
+    candidate_path = (model_path.parent / relative_reference).resolve()
+    bundle_root = bundle_dir.resolve()
+    try:
+        candidate_path.relative_to(bundle_root)
+    except ValueError:
+        return None
+    return candidate_path
 
 
 def resolve_default_game_data_path() -> Path:
@@ -1709,7 +1835,124 @@ def build_release_check_report(bundle_dir: Path) -> dict:
     assets_doc = payload.get("assets") if isinstance(payload.get("assets"), dict) else {}
     assets = assets_doc.get("assets") if isinstance(assets_doc.get("assets"), list) else []
     assets_by_id = {str(asset.get("id")): asset for asset in assets if isinstance(asset, dict) and asset.get("id")}
+    characters_doc = payload.get("characters") if isinstance(payload.get("characters"), dict) else {}
+    characters = characters_doc.get("characters") if isinstance(characters_doc.get("characters"), list) else []
     game_ui_config = project.get("gameUiConfig") if isinstance(project.get("gameUiConfig"), dict) else {}
+
+    for scene in scenes:
+        scene_name = str(scene.get("name") or scene.get("id") or "未命名场景")
+        for block_index, block in enumerate(scene.get("blocks", []) or []):
+            if not isinstance(block, dict) or str(block.get("type") or "").strip() != "background":
+                continue
+            asset_id = str(block.get("assetId") or "").strip()
+            block_path = f"{scene_name}#{block_index + 1}/background"
+            if not asset_id:
+                continue
+            asset = assets_by_id.get(asset_id)
+            if not asset:
+                add_release_check_issue(
+                    issues,
+                    "error",
+                    "background_asset_missing",
+                    f"背景卡片引用了不存在的素材：{asset_id}",
+                    "回到剧情编辑器重新选择仍然存在的背景、CG 或 3D 场景。",
+                    block_path,
+                )
+                continue
+            asset_type = str(asset.get("type") or "")
+            if asset_type not in {"background", "cg", "scene3d"}:
+                add_release_check_issue(
+                    issues,
+                    "warning",
+                    "background_asset_type_risk",
+                    f"背景卡片绑定的不是背景/CG/3D 场景：{asset.get('name') or asset_id}",
+                    f"当前素材类型是 {asset_type or '未知'}；建议改用 background、cg 或 scene3d。",
+                    block_path,
+                )
+            if asset_type == "scene3d":
+                raw_config = block.get("scene3dPreview") if isinstance(block.get("scene3dPreview"), dict) else {}
+                safe_config = normalize_scene3d_preview_config(raw_config)
+                raw_tuple = (
+                    raw_config.get("yaw"),
+                    raw_config.get("pitch"),
+                    raw_config.get("zoom"),
+                    raw_config.get("interactionEnabled", True),
+                )
+                safe_tuple = (
+                    safe_config["yaw"],
+                    safe_config["pitch"],
+                    safe_config["zoom"],
+                    safe_config["interactionEnabled"],
+                )
+                try:
+                    raw_numbers = (float(raw_tuple[0]), float(raw_tuple[1]), float(raw_tuple[2]), raw_tuple[3] is not False)
+                except (TypeError, ValueError):
+                    raw_numbers = None
+                if raw_config and raw_numbers != safe_tuple:
+                    add_release_check_issue(
+                        issues,
+                        "warning",
+                        "scene3d_preview_config_clamped",
+                        f"3D 场景默认视角参数需要修正：{asset.get('name') or asset_id}",
+                        "Runtime 会自动夹到安全范围内；建议在背景卡里重新保存 yaw、pitch、zoom 和交互开关。",
+                        block_path,
+                    )
+
+    def check_character_asset_reference(
+        asset_id: str,
+        *,
+        label: str,
+        path: str,
+        expected_types: set[str],
+        missing_severity: str = "warning",
+    ) -> dict | None:
+        clean_asset_id = str(asset_id or "").strip()
+        if not clean_asset_id:
+            add_release_check_issue(
+                issues,
+                missing_severity,
+                "character_presentation_asset_unbound",
+                f"{label}还没有绑定素材。",
+                "如果这是高级角色表现，建议至少绑定模型入口和兜底立绘；否则 Runtime 会回退到占位显示。",
+                path,
+            )
+            return None
+
+        asset = assets_by_id.get(clean_asset_id)
+        if not asset:
+            add_release_check_issue(
+                issues,
+                "error",
+                "character_presentation_asset_missing",
+                f"{label}引用了不存在的素材：{clean_asset_id}",
+                "回到角色页重新选择仍然存在的素材，或先在素材库导入该模型 / 兜底立绘。",
+                path,
+            )
+            return None
+
+        asset_type = str(asset.get("type") or "")
+        if expected_types and asset_type not in expected_types:
+            add_release_check_issue(
+                issues,
+                "warning",
+                "character_presentation_asset_type_mismatch",
+                f"{label}素材类型不匹配：{asset.get('name') or clean_asset_id}",
+                f"当前类型是 {asset_type or '未知'}，建议改用 {', '.join(sorted(expected_types))} 类型素材。",
+                path,
+            )
+
+        export_url = str(asset.get("exportUrl") or "").strip()
+        if asset.get("isMissing") or not export_url or not (bundle_dir / export_url).is_file():
+            add_release_check_issue(
+                issues,
+                "warning",
+                "character_presentation_asset_file_missing",
+                f"{label}素材文件不可用：{asset.get('name') or clean_asset_id}",
+                "重新导入或替换这个素材后再导出；否则高级角色表现会在 Runtime 里回退到占位或兜底立绘。",
+                export_url or path,
+            )
+        return asset
+
     for field_name, label in GAME_UI_ASSET_REFERENCE_LABELS.items():
         asset_id = str(game_ui_config.get(field_name) or "").strip()
         if not asset_id:
@@ -1780,6 +2023,97 @@ def build_release_check_report(bundle_dir: Path) -> dict:
                     font_export_url,
                 )
 
+    for character in characters:
+        if not isinstance(character, dict):
+            continue
+        character_id = str(character.get("id") or "unknown")
+        character_name = str(character.get("displayName") or character_id)
+        presentation = character.get("presentation") if isinstance(character.get("presentation"), dict) else {}
+        mode = str(presentation.get("mode") or "sprite")
+        if mode not in CHARACTER_PRESENTATION_MODE_LABELS:
+            continue
+
+        fallback_asset_id = str(presentation.get("fallbackSpriteAssetId") or character.get("defaultSpriteId") or "").strip()
+        check_character_asset_reference(
+            fallback_asset_id,
+            label=f"角色 {character_name} 的兜底立绘",
+            path=f"characters.{character_id}.presentation.fallbackSpriteAssetId",
+            expected_types=set(ASSET_TYPE_IMAGE),
+            missing_severity="warning",
+        )
+
+        if mode == "live2d":
+            live2d = presentation.get("live2d") if isinstance(presentation.get("live2d"), dict) else {}
+            model_asset_id = str(live2d.get("modelAssetId") or "").strip()
+            model_asset = check_character_asset_reference(
+                model_asset_id,
+                label=f"角色 {character_name} 的 Live2D 模型入口",
+                path=f"characters.{character_id}.presentation.live2d.modelAssetId",
+                expected_types={"live2d"},
+                missing_severity="warning",
+            )
+            if model_asset:
+                export_url = str(model_asset.get("exportUrl") or model_asset.get("path") or "").lower()
+                if not export_url.endswith(".model3.json"):
+                    add_release_check_issue(
+                        issues,
+                        "warning",
+                        "character_live2d_entry_not_model3_json",
+                        f"角色 {character_name} 的 Live2D 入口建议使用 .model3.json。",
+                        "绑定 .model3.json 后，后续渲染层更容易自动找到 moc3、贴图、物理和动作文件。",
+                        f"characters.{character_id}.presentation.live2d.modelAssetId",
+                    )
+
+        if mode == "model3d":
+            model3d = presentation.get("model3d") if isinstance(presentation.get("model3d"), dict) else {}
+            model_asset_id = str(model3d.get("modelAssetId") or "").strip()
+            model_asset = check_character_asset_reference(
+                model_asset_id,
+                label=f"角色 {character_name} 的 3D 模型",
+                path=f"characters.{character_id}.presentation.model3d.modelAssetId",
+                expected_types={"model3d"},
+                missing_severity="warning",
+            )
+            if model_asset:
+                export_url = str(model_asset.get("exportUrl") or model_asset.get("path") or "").lower()
+                if not re.search(r"\.(glb|gltf|vrm)$", export_url):
+                    add_release_check_issue(
+                        issues,
+                        "warning",
+                        "character_model3d_format_risk",
+                        f"角色 {character_name} 的 3D 模型建议优先使用 glb、gltf 或 vrm。",
+                        "fbx / obj 可以作为记录格式，但后续跨平台 Runtime 更适合先支持 glb、gltf、vrm。",
+                        f"characters.{character_id}.presentation.model3d.modelAssetId",
+                    )
+
+        expressions = character.get("expressions") if isinstance(character.get("expressions"), list) else []
+        if mode in {"layered_sprite", "live2d", "model3d"} and not expressions:
+            add_release_check_issue(
+                issues,
+                "warning",
+                "character_presentation_no_expressions",
+                f"角色 {character_name} 还没有表情条目。",
+                "至少保留一个默认表情，后续差分、Live2D 表情或 3D 动作映射会更稳定。",
+                f"characters.{character_id}.expressions",
+            )
+        if mode == "layered_sprite":
+            mapped_count = sum(1 for expression in expressions if expression.get("layerAssetIds"))
+        elif mode == "live2d":
+            mapped_count = sum(1 for expression in expressions if expression.get("live2dExpression") or expression.get("live2dMotion"))
+        elif mode == "model3d":
+            mapped_count = sum(1 for expression in expressions if expression.get("model3dExpression") or expression.get("model3dAnimation"))
+        else:
+            mapped_count = len(expressions)
+        if mode in {"layered_sprite", "live2d", "model3d"} and expressions and mapped_count < len(expressions):
+            add_release_check_issue(
+                issues,
+                "warning",
+                "character_presentation_mapping_incomplete",
+                f"角色 {character_name} 的高级表情映射未覆盖完：{mapped_count}/{len(expressions)}。",
+                "不覆盖也能运行，但对应表情会回退到默认外观；正式发布前建议补齐主角和高频角色。",
+                f"characters.{character_id}.expressions",
+            )
+
     for asset in assets:
         if not isinstance(asset, dict):
             continue
@@ -1838,6 +2172,129 @@ def build_release_check_report(bundle_dir: Path) -> dict:
                 "建议使用 ttf、otf 或 ttc，并确认字体授权允许随游戏分发。",
                 export_url,
             )
+        if asset_type == "live2d" and not any(str(asset_path.name).lower().endswith(suffix) for suffix in SUPPORTED_LIVE2D_SUFFIXES):
+            add_release_check_issue(
+                issues,
+                "warning",
+                "live2d_extension_risk",
+                f"Live2D 素材入口可能不完整：{asset_name} ({asset_path.name})",
+                "建议至少绑定 .model3.json 作为模型入口，并随包保留 textures、motions 和 moc3 等依赖文件。",
+                export_url,
+            )
+        if asset_type == "live2d" and str(asset_path.name).lower().endswith(".model3.json"):
+            try:
+                model3_payload = json.loads(asset_path.read_text(encoding="utf-8"))
+            except Exception as error:
+                add_release_check_issue(
+                    issues,
+                    "error",
+                    "live2d_model3_json_invalid",
+                    f"Live2D 模型入口无法解析：{asset_name}",
+                    f"确认 .model3.json 是有效 JSON，并且不是被压缩或损坏的文件。错误：{error}",
+                    export_url,
+                )
+            else:
+                live2d_references = collect_live2d_model3_references(model3_payload)
+                if not live2d_references:
+                    add_release_check_issue(
+                        issues,
+                        "warning",
+                        "live2d_model3_no_file_references",
+                        f"Live2D 模型入口没有检测到依赖文件：{asset_name}",
+                        "正常的 .model3.json 通常会引用 moc3、textures、motions、physics 等文件；建议确认导入的是完整模型入口。",
+                        export_url,
+                    )
+                unsafe_references: list[str] = []
+                missing_references: list[str] = []
+                for reference in live2d_references:
+                    dependency_path = resolve_live2d_dependency_path(asset_path, reference, bundle_dir)
+                    if dependency_path is None:
+                        unsafe_references.append(reference)
+                    elif not dependency_path.is_file():
+                        missing_references.append(reference)
+                if unsafe_references:
+                    reference_preview = ", ".join(unsafe_references[:4])
+                    if len(unsafe_references) > 4:
+                        reference_preview += f" 等 {len(unsafe_references)} 项"
+                    add_release_check_issue(
+                        issues,
+                        "warning",
+                        "live2d_model3_dependency_path_unsafe",
+                        f"Live2D 模型入口引用了导出包外的路径：{asset_name}",
+                        f"请把这些引用改成模型目录内的相对路径：{reference_preview}",
+                        export_url,
+                    )
+                if missing_references:
+                    reference_preview = ", ".join(missing_references[:4])
+                    if len(missing_references) > 4:
+                        reference_preview += f" 等 {len(missing_references)} 项"
+                    add_release_check_issue(
+                        issues,
+                        "warning",
+                        "live2d_model3_dependency_missing",
+                        f"Live2D 模型入口缺少依赖文件：{asset_name}",
+                        f"请随 .model3.json 一起导入并导出这些文件：{reference_preview}",
+                        export_url,
+                    )
+        if asset_type in {"model3d", "scene3d"} and extension not in SUPPORTED_MODEL3D_EXTENSIONS:
+            asset_label = "3D 场景" if asset_type == "scene3d" else "3D 模型"
+            issue_code = "scene3d_extension_risk" if asset_type == "scene3d" else "model3d_extension_risk"
+            add_release_check_issue(
+                issues,
+                "warning",
+                issue_code,
+                f"{asset_label}格式可能不稳定：{asset_name} ({extension or '无扩展名'})",
+                "建议优先使用 glb、gltf 或 vrm；fbx/obj 后续需要转换层或专门渲染后端。",
+                export_url,
+            )
+        if asset_type in {"model3d", "scene3d"} and extension == ".gltf":
+            asset_label = "3D 场景" if asset_type == "scene3d" else "3D 模型"
+            issue_prefix = "scene3d" if asset_type == "scene3d" else "model3d"
+            try:
+                gltf_payload = json.loads(asset_path.read_text(encoding="utf-8"))
+            except Exception as error:
+                add_release_check_issue(
+                    issues,
+                    "error",
+                    f"{issue_prefix}_gltf_json_invalid",
+                    f"{asset_label}入口无法解析：{asset_name}",
+                    f"确认 .gltf 是有效 JSON；如果想单文件分发，建议改用 .glb。错误：{error}",
+                    export_url,
+                )
+            else:
+                gltf_references = collect_gltf_references(gltf_payload)
+                unsafe_references: list[str] = []
+                missing_references: list[str] = []
+                for reference in gltf_references:
+                    dependency_path = resolve_model3d_dependency_path(asset_path, reference, bundle_dir)
+                    if dependency_path is None:
+                        unsafe_references.append(reference)
+                    elif not dependency_path.is_file():
+                        missing_references.append(reference)
+                if unsafe_references:
+                    reference_preview = ", ".join(unsafe_references[:4])
+                    if len(unsafe_references) > 4:
+                        reference_preview += f" 等 {len(unsafe_references)} 项"
+                    add_release_check_issue(
+                        issues,
+                        "warning",
+                        f"{issue_prefix}_gltf_dependency_path_unsafe",
+                        f"{asset_label}入口引用了导出包外的路径：{asset_name}",
+                        f"请把这些引用改成模型目录内的相对路径，或导出为自包含 .glb：{reference_preview}",
+                        export_url,
+                    )
+                if missing_references:
+                    reference_preview = ", ".join(missing_references[:4])
+                    if len(missing_references) > 4:
+                        reference_preview += f" 等 {len(missing_references)} 项"
+                    add_release_check_issue(
+                        issues,
+                        "warning",
+                        f"{issue_prefix}_gltf_dependency_missing",
+                        f"{asset_label}入口缺少依赖文件：{asset_name}",
+                        f"请随 .gltf 一起导入并导出这些文件，或改用 .glb：{reference_preview}",
+                        export_url,
+                    )
         if asset_type == "video":
             if extension not in SUPPORTED_VIDEO_EXTENSIONS:
                 add_release_check_issue(
@@ -1919,6 +2376,301 @@ def build_release_check_report(bundle_dir: Path) -> dict:
 
 def print_release_check_report(bundle_dir: Path) -> None:
     report = build_release_check_report(bundle_dir)
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+
+
+def get_report_character_presentation(character: dict | None) -> dict:
+    character = character or {}
+    source = character.get("presentation") if isinstance(character.get("presentation"), dict) else {}
+    mode = str(source.get("mode") or "sprite")
+    if mode not in CHARACTER_PRESENTATION_MODE_LABELS:
+        mode = "sprite"
+    live2d = source.get("live2d") if isinstance(source.get("live2d"), dict) else {}
+    model3d = source.get("model3d") if isinstance(source.get("model3d"), dict) else {}
+    return {
+        "mode": mode,
+        "fallbackSpriteAssetId": str(source.get("fallbackSpriteAssetId") or character.get("defaultSpriteId") or ""),
+        "live2d": {
+            "modelAssetId": str(live2d.get("modelAssetId") or ""),
+            "idleMotion": str(live2d.get("idleMotion") or ""),
+        },
+        "model3d": {
+            "modelAssetId": str(model3d.get("modelAssetId") or ""),
+            "idleAnimation": str(model3d.get("idleAnimation") or ""),
+        },
+    }
+
+
+def get_report_character_model_asset_id(character: dict | None) -> str:
+    presentation = get_report_character_presentation(character)
+    mode = str(presentation.get("mode") or "sprite")
+    if mode == "live2d":
+        return str((presentation.get("live2d") or {}).get("modelAssetId") or "").strip()
+    if mode == "model3d":
+        return str((presentation.get("model3d") or {}).get("modelAssetId") or "").strip()
+    return ""
+
+
+def summarize_native_model_dependency_health(bundle_dir: Path, mode: str, model_path: Path | None) -> dict:
+    if not model_path:
+        return {"total": 0, "missing": [], "unsafe": [], "status": "unknown", "label": "依赖：待检测"}
+
+    lower_name = model_path.name.lower()
+    references: list[str] = []
+    missing: list[str] = []
+    unsafe: list[str] = []
+    status = "ready"
+
+    if mode == "live2d" and lower_name.endswith(".model3.json"):
+        try:
+            references = collect_live2d_model3_references(json.loads(model_path.read_text(encoding="utf-8")))
+        except Exception:
+            return {"total": 0, "missing": [], "unsafe": [], "status": "invalid", "label": "依赖：入口 JSON 异常"}
+        for reference in references:
+            dependency_path = resolve_live2d_dependency_path(model_path, reference, bundle_dir)
+            if dependency_path is None:
+                unsafe.append(reference)
+            elif not dependency_path.is_file():
+                missing.append(reference)
+    elif mode == "model3d" and model_path.suffix.lower() == ".gltf":
+        try:
+            references = collect_gltf_references(json.loads(model_path.read_text(encoding="utf-8")))
+        except Exception:
+            return {"total": 0, "missing": [], "unsafe": [], "status": "invalid", "label": "依赖：gltf JSON 异常"}
+        for reference in references:
+            dependency_path = resolve_model3d_dependency_path(model_path, reference, bundle_dir)
+            if dependency_path is None:
+                unsafe.append(reference)
+            elif not dependency_path.is_file():
+                missing.append(reference)
+    elif mode == "model3d" and model_path.suffix.lower() in {".glb", ".vrm"}:
+        return {"total": 0, "missing": [], "unsafe": [], "status": "ready", "label": f"依赖：{model_path.suffix.upper()[1:]} 单文件"}
+    elif mode == "model3d" and model_path.suffix.lower() in {".fbx", ".obj"}:
+        return {"total": 0, "missing": [], "unsafe": [], "status": "partial", "label": "依赖：需转换/材质复核"}
+    elif mode == "live2d":
+        return {"total": 0, "missing": [], "unsafe": [], "status": "partial", "label": "依赖：建议绑定 model3.json"}
+
+    if unsafe or missing:
+        status = "partial"
+    if not references:
+        return {"total": 0, "missing": missing, "unsafe": unsafe, "status": status, "label": "依赖：无外部引用"}
+    ready_count = max(0, len(references) - len(missing) - len(unsafe))
+    label = f"依赖：{ready_count}/{len(references)} 已就绪" if status == "ready" else f"依赖：缺 {len(missing) + len(unsafe)}/{len(references)} 项"
+    return {"total": len(references), "missing": missing, "unsafe": unsafe, "status": status, "label": label}
+
+
+def count_character_model_expression_bindings(character: dict, mode: str) -> tuple[int, int]:
+    expressions = character.get("expressions") if isinstance(character.get("expressions"), list) else []
+    if mode == "live2d":
+        mapped_count = sum(1 for expression in expressions if expression.get("live2dExpression") or expression.get("live2dMotion"))
+    elif mode == "model3d":
+        mapped_count = sum(1 for expression in expressions if expression.get("model3dExpression") or expression.get("model3dAnimation"))
+    elif mode == "layered_sprite":
+        mapped_count = sum(1 for expression in expressions if expression.get("layerAssetIds"))
+    else:
+        mapped_count = len(expressions)
+    return len(expressions), mapped_count
+
+
+def build_native_character_model_preview_report(bundle_dir: Path) -> dict:
+    payload = load_game_data(bundle_dir / DEFAULT_GAME_DATA_NAME)
+    assets_doc = payload.get("assets") if isinstance(payload.get("assets"), dict) else {}
+    assets = assets_doc.get("assets") if isinstance(assets_doc.get("assets"), list) else []
+    assets_by_id = {str(asset.get("id")): asset for asset in assets if isinstance(asset, dict) and asset.get("id")}
+    characters_doc = payload.get("characters") if isinstance(payload.get("characters"), dict) else {}
+    characters = characters_doc.get("characters") if isinstance(characters_doc.get("characters"), list) else []
+
+    entries = []
+    for character in characters:
+        if not isinstance(character, dict):
+            continue
+        presentation = get_report_character_presentation(character)
+        mode = str(presentation.get("mode") or "sprite")
+        if mode not in {"live2d", "model3d"}:
+            continue
+        fallback_asset_id = str(presentation.get("fallbackSpriteAssetId") or character.get("defaultSpriteId") or "").strip()
+        fallback_asset = assets_by_id.get(fallback_asset_id) if fallback_asset_id else None
+        fallback_path = get_asset_runtime_path(bundle_dir, fallback_asset)
+        model_asset_id = get_report_character_model_asset_id(character)
+        model_asset = assets_by_id.get(model_asset_id) if model_asset_id else None
+        model_path = get_asset_runtime_path(bundle_dir, model_asset)
+        dependency_health = summarize_native_model_dependency_health(bundle_dir, mode, model_path)
+        expression_count, mapped_count = count_character_model_expression_bindings(character, mode)
+
+        if not model_asset_id:
+            status = "unbound"
+        elif not model_asset:
+            status = "missing_asset"
+        elif not model_path:
+            status = "missing_file"
+        elif dependency_health.get("status") == "invalid":
+            status = "invalid"
+        elif dependency_health.get("status") == "partial":
+            status = "partial"
+        else:
+            status = "ready"
+
+        entries.append(
+            {
+                "characterId": str(character.get("id") or ""),
+                "name": str(character.get("displayName") or character.get("id") or "未命名角色"),
+                "mode": mode,
+                "modeLabel": CHARACTER_PRESENTATION_MODE_LABELS.get(mode, mode),
+                "status": status,
+                "statusLabel": {
+                    "unbound": "模型未绑定",
+                    "missing_asset": "素材记录缺失",
+                    "missing_file": "模型文件缺失",
+                    "invalid": "入口异常",
+                    "partial": "需要补强",
+                    "ready": "资源完整",
+                }.get(status, "待检查"),
+                "modelAssetId": model_asset_id,
+                "modelAssetName": str((model_asset or {}).get("name") or model_asset_id or "未绑定"),
+                "modelExportUrl": str((model_asset or {}).get("exportUrl") or ""),
+                "modelFileExists": bool(model_path),
+                "dependencyHealth": dependency_health,
+                "fallback": {
+                    "assetId": fallback_asset_id,
+                    "assetName": str((fallback_asset or {}).get("name") or fallback_asset_id or "未绑定"),
+                    "status": "ready" if fallback_path else ("missing" if fallback_asset_id else "none"),
+                },
+                "expressionMapping": {
+                    "expressionCount": expression_count,
+                    "mappedCount": mapped_count,
+                    "incomplete": expression_count > 0 and mapped_count < expression_count,
+                },
+                "nativePreviewMode": "metadata_bridge",
+            }
+        )
+
+    asset_issue_count = sum(1 for entry in entries if entry["status"] != "ready")
+    mapping_gap_count = sum(1 for entry in entries if entry["expressionMapping"]["incomplete"])
+    status = "no_advanced_models" if not entries else ("ready" if asset_issue_count == 0 and mapping_gap_count == 0 else "needs_attention")
+    return {
+        "status": status,
+        "checkedAt": now_iso(),
+        "bundleDir": str(bundle_dir),
+        "summary": {
+            "advancedCharacterCount": len(entries),
+            "readyCount": sum(1 for entry in entries if entry["status"] == "ready"),
+            "assetIssueCount": asset_issue_count,
+            "mappingGapCount": mapping_gap_count,
+        },
+        "entries": entries,
+    }
+
+
+def print_native_character_model_preview_report(bundle_dir: Path) -> None:
+    report = build_native_character_model_preview_report(bundle_dir)
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+
+
+def normalize_scene3d_preview_config(source: dict | None = None) -> dict:
+    raw = source if isinstance(source, dict) else {}
+
+    def read_number(key: str, fallback: float, minimum: float, maximum: float) -> float:
+        try:
+            value = float(raw.get(key, fallback))
+        except (TypeError, ValueError):
+            value = fallback
+        return float(clamp(value, minimum, maximum))
+
+    return {
+        "yaw": read_number("yaw", float(DEFAULT_SCENE3D_PREVIEW["yaw"]), 0.0, 359.0),
+        "pitch": read_number("pitch", float(DEFAULT_SCENE3D_PREVIEW["pitch"]), 12.0, 72.0),
+        "zoom": read_number("zoom", float(DEFAULT_SCENE3D_PREVIEW["zoom"]), 0.55, 1.9),
+        "interactionEnabled": raw.get("interactionEnabled", DEFAULT_SCENE3D_PREVIEW["interactionEnabled"]) is not False,
+    }
+
+
+def build_native_scene3d_preview_report(bundle_dir: Path) -> dict:
+    payload = load_game_data(bundle_dir / DEFAULT_GAME_DATA_NAME)
+    assets_doc = payload.get("assets") if isinstance(payload.get("assets"), dict) else {}
+    assets = assets_doc.get("assets") if isinstance(assets_doc.get("assets"), list) else []
+    chapters = payload.get("chapters") if isinstance(payload.get("chapters"), list) else []
+
+    scene_usage_by_asset: dict[str, list[dict]] = {}
+    for chapter in chapters:
+        chapter_name = str(chapter.get("name") or chapter.get("chapterId") or "未命名章节")
+        for scene in chapter.get("scenes") or []:
+            scene_name = str(scene.get("name") or scene.get("id") or "未命名场景")
+            for block_index, block in enumerate(scene.get("blocks") or []):
+                if str(block.get("type") or "").strip() != "background":
+                    continue
+                asset_id = str(block.get("assetId") or "").strip()
+                if not asset_id:
+                    continue
+                scene_usage_by_asset.setdefault(asset_id, []).append(
+                    {
+                        "chapterName": chapter_name,
+                        "sceneId": str(scene.get("id") or ""),
+                        "sceneName": scene_name,
+                        "blockIndex": block_index,
+                        "previewConfig": normalize_scene3d_preview_config(
+                            block.get("scene3dPreview") if isinstance(block.get("scene3dPreview"), dict) else None
+                        ),
+                    }
+                )
+
+    entries = []
+    for asset in assets:
+        if not isinstance(asset, dict) or asset.get("type") != "scene3d":
+            continue
+        asset_id = str(asset.get("id") or "")
+        export_url = str(asset.get("exportUrl") or "").strip()
+        asset_path = get_asset_runtime_path(bundle_dir, asset)
+        dependency_health = summarize_native_model_dependency_health(bundle_dir, "model3d", asset_path)
+        if asset.get("isMissing") or not asset_path:
+            status = "missing_file"
+        elif dependency_health.get("status") == "invalid":
+            status = "invalid"
+        elif dependency_health.get("status") == "partial":
+            status = "partial"
+        else:
+            status = "ready"
+        entries.append(
+            {
+                "assetId": asset_id,
+                "name": str(asset.get("name") or asset_id or "未命名 3D 场景"),
+                "exportUrl": export_url,
+                "fileExists": bool(asset_path),
+                "extension": asset_path.suffix.lower() if asset_path else Path(export_url).suffix.lower(),
+                "status": status,
+                "statusLabel": {
+                    "missing_file": "场景文件缺失",
+                    "invalid": "入口异常",
+                    "partial": "需要补强",
+                    "ready": "资源完整",
+                }.get(status, "待检查"),
+                "dependencyHealth": dependency_health,
+                "usageCount": len(scene_usage_by_asset.get(asset_id, [])),
+                "usages": scene_usage_by_asset.get(asset_id, []),
+                "nativePreviewMode": "interactive_spatial_bridge",
+                "controls": ["Left/Right yaw", "Up/Down pitch", "+/- zoom", "0 reset"],
+            }
+        )
+
+    issue_count = sum(1 for entry in entries if entry["status"] != "ready")
+    unused_count = sum(1 for entry in entries if entry["usageCount"] == 0)
+    status = "no_scene3d" if not entries else ("ready" if issue_count == 0 else "needs_attention")
+    return {
+        "status": status,
+        "checkedAt": now_iso(),
+        "bundleDir": str(bundle_dir),
+        "summary": {
+            "scene3dAssetCount": len(entries),
+            "readyCount": sum(1 for entry in entries if entry["status"] == "ready"),
+            "assetIssueCount": issue_count,
+            "unusedCount": unused_count,
+            "usageCount": sum(entry["usageCount"] for entry in entries),
+        },
+        "entries": entries,
+    }
+
+
+def print_native_scene3d_preview_report(bundle_dir: Path) -> None:
+    report = build_native_scene3d_preview_report(bundle_dir)
     print(json.dumps(report, ensure_ascii=False, indent=2))
 
 
@@ -2346,6 +3098,64 @@ def build_video_preview_doctor_check(bundle_dir: Path) -> dict:
     )
 
 
+def build_model_preview_doctor_check(bundle_dir: Path) -> dict:
+    report = build_native_character_model_preview_report(bundle_dir)
+    report_status = str(report.get("status") or "")
+    summary = report.get("summary") or {}
+    if report_status == "no_advanced_models":
+        return build_doctor_check(
+            "model_preview_bridge",
+            "Live2D/3D 预览桥",
+            "pass",
+            "当前项目没有高级模型角色，跳过模型预览桥风险。",
+            details=report,
+        )
+    if report_status == "ready":
+        return build_doctor_check(
+            "model_preview_bridge",
+            "Live2D/3D 预览桥",
+            "pass",
+            f"{summary.get('readyCount', 0)} 个高级模型角色资源完整。",
+            details=report,
+        )
+    return build_doctor_check(
+        "model_preview_bridge",
+        "Live2D/3D 预览桥",
+        "warn",
+        f"高级模型角色还有 {summary.get('assetIssueCount', 0)} 个资源问题 / {summary.get('mappingGapCount', 0)} 个映射缺口。",
+        details=report,
+    )
+
+
+def build_scene3d_preview_doctor_check(bundle_dir: Path) -> dict:
+    report = build_native_scene3d_preview_report(bundle_dir)
+    report_status = str(report.get("status") or "")
+    summary = report.get("summary") or {}
+    if report_status == "no_scene3d":
+        return build_doctor_check(
+            "scene3d_preview_bridge",
+            "3D 场景预览桥",
+            "pass",
+            "当前项目没有 3D 场景资产，跳过空间预览桥风险。",
+            details=report,
+        )
+    if report_status == "ready":
+        return build_doctor_check(
+            "scene3d_preview_bridge",
+            "3D 场景预览桥",
+            "pass",
+            f"{summary.get('readyCount', 0)} 个 3D 场景资源完整。",
+            details=report,
+        )
+    return build_doctor_check(
+        "scene3d_preview_bridge",
+        "3D 场景预览桥",
+        "warn",
+        f"3D 场景还有 {summary.get('assetIssueCount', 0)} 个资源问题。",
+        details=report,
+    )
+
+
 def build_native_runtime_doctor_report(bundle_dir: Path) -> dict:
     checks: list[dict] = []
     checks.append(run_doctor_callable_check("bundle_structure", "导出包结构", validate_bundle, bundle_dir))
@@ -2372,6 +3182,8 @@ def build_native_runtime_doctor_report(bundle_dir: Path) -> dict:
     checks.extend(run_doctor_with_temporary_home(run_stateful_checks))
     checks.append(run_doctor_callable_check("particles", "粒子配置", exercise_particle_effect, bundle_dir))
     checks.append(run_doctor_callable_check("visual_effects", "高级演出配置", exercise_visual_effects, bundle_dir))
+    checks.append(build_model_preview_doctor_check(bundle_dir))
+    checks.append(build_scene3d_preview_doctor_check(bundle_dir))
     checks.append(build_video_bridge_doctor_check(bundle_dir))
     checks.append(build_report_doctor_check("video_backends", "视频后端能力", build_native_video_backend_report, bundle_dir))
     checks.append(build_video_preview_doctor_check(bundle_dir))
@@ -4158,6 +4970,10 @@ class NativeRuntimePlayer:
         self.current_line_full_text = ""
         self.current_line_revealed_chars = 0
         self.runtime_elapsed_seconds = 0.0
+        self.scene3d_preview_yaw = float(DEFAULT_SCENE3D_PREVIEW["yaw"])
+        self.scene3d_preview_pitch = float(DEFAULT_SCENE3D_PREVIEW["pitch"])
+        self.scene3d_preview_zoom = float(DEFAULT_SCENE3D_PREVIEW["zoom"])
+        self.scene3d_preview_interaction_enabled = bool(DEFAULT_SCENE3D_PREVIEW["interactionEnabled"])
         self.active_particle_effect: dict | None = None
         self.particle_items: list[dict] = []
         self.screen_shake_effect: dict | None = None
@@ -4606,7 +5422,7 @@ class NativeRuntimePlayer:
                     if not asset_id or asset_id in seen_asset_ids:
                         continue
                     asset = self.assets_by_id.get(asset_id) or {}
-                    if asset.get("type") != "background":
+                    if asset.get("type") not in {"background", "scene3d"}:
                         continue
                     seen_asset_ids.add(asset_id)
                     tags = " / ".join(asset.get("tags") or [])
@@ -4615,11 +5431,12 @@ class NativeRuntimePlayer:
                             "id": asset_id,
                             "name": str(asset.get("name") or asset_id),
                             "subtitle": f"{chapter_name} · {scene.get('name') or '未命名场景'}",
-                            "notes": tags or "推进到这张背景第一次出现的位置后会自动收录。",
+                            "notes": tags or ("推进到这个 3D 场景第一次出现的位置后会自动收录。" if asset.get("type") == "scene3d" else "推进到这张背景第一次出现的位置后会自动收录。"),
                             "actionLabel": "查看地点",
                             "actionEnabled": asset_id in unlocked_ids,
                             "previewAssetId": asset_id,
-                            "previewText": str(tags or "这个地点来自剧情里的背景切换。"),
+                            "previewText": str(tags or ("这个地点来自剧情里的 3D 场景切换。" if asset.get("type") == "scene3d" else "这个地点来自剧情里的背景切换。")),
+                            "assetType": str(asset.get("type") or ""),
                             "unlocked": asset_id in unlocked_ids,
                         }
                     )
@@ -4633,15 +5450,17 @@ class NativeRuntimePlayer:
             if not character_id:
                 continue
             expressions = character.get("expressions") or []
+            presentation = self.get_character_presentation(character)
+            mode_label = self.get_character_presentation_mode_label(character)
             entries.append(
                 {
                     "id": character_id,
                     "name": str(character.get("displayName") or character_id),
-                    "subtitle": f"{character.get('defaultPosition') or 'center'} · {len(expressions)} 个表情",
+                    "subtitle": f"{mode_label} · {character.get('defaultPosition') or 'center'} · {len(expressions)} 个表情",
                     "notes": str(character.get("bio") or "推进到角色出场或开口后自动收录。"),
                     "actionLabel": "查看角色",
                     "actionEnabled": character_id in unlocked_ids,
-                    "previewAssetId": str(character.get("defaultSpriteId") or ""),
+                    "previewAssetId": str(presentation.get("fallbackSpriteAssetId") or character.get("defaultSpriteId") or ""),
                     "previewText": str(character.get("bio") or "这个角色会在剧情推进后自动收录进图鉴。"),
                     "unlocked": character_id in unlocked_ids,
                 }
@@ -5942,6 +6761,12 @@ class NativeRuntimePlayer:
             "blockIndex": self.current_block_index,
             "variableState": dict(self.variable_state),
             "stageBackgroundAssetId": self.stage_background_asset_id,
+            "scene3dPreview": {
+                "yaw": round(float(self.scene3d_preview_yaw), 2),
+                "pitch": round(float(self.scene3d_preview_pitch), 2),
+                "zoom": round(float(self.scene3d_preview_zoom), 3),
+                "interactionEnabled": bool(self.scene3d_preview_interaction_enabled),
+            },
             "visibleCharacters": dict(self.visible_characters),
             "currentBgmAssetId": self.current_bgm_asset_id,
             "finished": self.finished,
@@ -6013,6 +6838,7 @@ class NativeRuntimePlayer:
         self.current_block_index = int(snapshot.get("blockIndex") or 0)
         self.variable_state = self.merge_variable_state(snapshot.get("variableState") or {})
         self.stage_background_asset_id = snapshot.get("stageBackgroundAssetId")
+        self.apply_scene3d_preview_config(snapshot.get("scene3dPreview") if isinstance(snapshot.get("scene3dPreview"), dict) else None)
         self.visible_characters = dict(snapshot.get("visibleCharacters") or {})
         self.current_bgm_asset_id = None
         self.clear_particle_effect()
@@ -6257,9 +7083,11 @@ class NativeRuntimePlayer:
             if block_type == "background":
                 self.stage_background_asset_id = block.get("assetId")
                 background_asset = self.assets_by_id.get(self.stage_background_asset_id) or {}
+                if background_asset.get("type") == "scene3d":
+                    self.apply_scene3d_preview_config(block.get("scene3dPreview") if isinstance(block.get("scene3dPreview"), dict) else None)
                 if background_asset.get("type") == "cg":
                     self.unlock_archive_entry("cgUnlocked", self.stage_background_asset_id)
-                elif background_asset.get("type") == "background":
+                elif background_asset.get("type") in {"background", "scene3d"}:
                     self.unlock_archive_entry("locationUnlocked", self.stage_background_asset_id)
                 self.current_block_index += 1
                 continue
@@ -6851,7 +7679,328 @@ class NativeRuntimePlayer:
         selected = expression_map.get(expression_id) or expression_map.get("expr_default")
         if selected and selected.get("spriteAssetId"):
             return selected["spriteAssetId"]
-        return character.get("defaultSpriteId")
+        presentation = self.get_character_presentation(character)
+        return presentation.get("fallbackSpriteAssetId") or character.get("defaultSpriteId")
+
+    def get_character_presentation(self, character: dict | None) -> dict:
+        character = character or {}
+        source = character.get("presentation") if isinstance(character.get("presentation"), dict) else {}
+        mode = str(source.get("mode") or "sprite")
+        if mode not in CHARACTER_PRESENTATION_MODE_LABELS:
+            mode = "sprite"
+        live2d = source.get("live2d") if isinstance(source.get("live2d"), dict) else {}
+        model3d = source.get("model3d") if isinstance(source.get("model3d"), dict) else {}
+        return {
+            "mode": mode,
+            "fallbackSpriteAssetId": str(source.get("fallbackSpriteAssetId") or character.get("defaultSpriteId") or ""),
+            "live2d": {
+                "modelAssetId": str(live2d.get("modelAssetId") or ""),
+                "idleMotion": str(live2d.get("idleMotion") or ""),
+            },
+            "model3d": {
+                "modelAssetId": str(model3d.get("modelAssetId") or ""),
+                "idleAnimation": str(model3d.get("idleAnimation") or ""),
+            },
+        }
+
+    def get_character_presentation_mode_label(self, character: dict | None) -> str:
+        return CHARACTER_PRESENTATION_MODE_LABELS.get(
+            str(self.get_character_presentation(character).get("mode") or "sprite"),
+            CHARACTER_PRESENTATION_MODE_LABELS["sprite"],
+        )
+
+    def get_character_model_asset_label(self, character: dict | None) -> str:
+        presentation = self.get_character_presentation(character)
+        mode = str(presentation.get("mode") or "sprite")
+        model_asset_id = ""
+        if mode == "live2d":
+            model_asset_id = str((presentation.get("live2d") or {}).get("modelAssetId") or "")
+        elif mode == "model3d":
+            model_asset_id = str((presentation.get("model3d") or {}).get("modelAssetId") or "")
+        if not model_asset_id:
+            return "模型未绑定"
+        asset = self.assets_by_id.get(model_asset_id) or {}
+        return str(asset.get("name") or model_asset_id)
+
+    def get_character_expression_binding_label(self, character: dict | None, expression_id: str | None) -> str:
+        character = character or {}
+        expressions = character.get("expressions", []) or []
+        expression_map = {item.get("id"): item for item in expressions if item.get("id")}
+        selected = expression_map.get(expression_id) or expression_map.get("expr_default")
+        if not selected:
+            return "表情映射：未配置"
+        labels = []
+        layer_count = len(selected.get("layerAssetIds") or [])
+        if layer_count:
+            labels.append(f"差分 {layer_count}")
+        live2d_binding = " / ".join(
+            item
+            for item in [
+                str(selected.get("live2dExpression") or "").strip(),
+                str(selected.get("live2dMotion") or "").strip(),
+            ]
+            if item
+        )
+        if live2d_binding:
+            labels.append(f"Live2D {live2d_binding}")
+        model3d_binding = " / ".join(
+            item
+            for item in [
+                str(selected.get("model3dExpression") or "").strip(),
+                str(selected.get("model3dAnimation") or "").strip(),
+            ]
+            if item
+        )
+        if model3d_binding:
+            labels.append(f"3D {model3d_binding}")
+        return "表情映射：" + (" · ".join(labels) if labels else "沿用默认")
+
+    def get_character_model_asset_id(self, character: dict | None) -> str:
+        presentation = self.get_character_presentation(character)
+        mode = str(presentation.get("mode") or "sprite")
+        if mode == "live2d":
+            return str((presentation.get("live2d") or {}).get("modelAssetId") or "").strip()
+        if mode == "model3d":
+            return str((presentation.get("model3d") or {}).get("modelAssetId") or "").strip()
+        return ""
+
+    def summarize_model_dependency_health(self, mode: str, model_path: Path | None) -> dict:
+        if not model_path:
+            return {"total": 0, "missing": [], "unsafe": [], "status": "unknown", "label": "依赖：待检测"}
+
+        lower_name = model_path.name.lower()
+        references: list[str] = []
+        missing: list[str] = []
+        unsafe: list[str] = []
+        status = "ready"
+
+        if mode == "live2d" and lower_name.endswith(".model3.json"):
+            try:
+                references = collect_live2d_model3_references(json.loads(model_path.read_text(encoding="utf-8")))
+            except Exception:
+                return {"total": 0, "missing": [], "unsafe": [], "status": "invalid", "label": "依赖：入口 JSON 异常"}
+            for reference in references:
+                dependency_path = resolve_live2d_dependency_path(model_path, reference, self.bundle_dir)
+                if dependency_path is None:
+                    unsafe.append(reference)
+                elif not dependency_path.is_file():
+                    missing.append(reference)
+        elif mode == "model3d" and model_path.suffix.lower() == ".gltf":
+            try:
+                references = collect_gltf_references(json.loads(model_path.read_text(encoding="utf-8")))
+            except Exception:
+                return {"total": 0, "missing": [], "unsafe": [], "status": "invalid", "label": "依赖：gltf JSON 异常"}
+            for reference in references:
+                dependency_path = resolve_model3d_dependency_path(model_path, reference, self.bundle_dir)
+                if dependency_path is None:
+                    unsafe.append(reference)
+                elif not dependency_path.is_file():
+                    missing.append(reference)
+        elif mode == "model3d" and model_path.suffix.lower() in {".glb", ".vrm"}:
+            return {"total": 0, "missing": [], "unsafe": [], "status": "ready", "label": f"依赖：{model_path.suffix.upper()[1:]} 单文件"}
+        elif mode == "model3d" and model_path.suffix.lower() in {".fbx", ".obj"}:
+            return {"total": 0, "missing": [], "unsafe": [], "status": "partial", "label": "依赖：需转换/材质复核"}
+        elif mode == "live2d":
+            return {"total": 0, "missing": [], "unsafe": [], "status": "partial", "label": "依赖：建议绑定 model3.json"}
+
+        if unsafe or missing:
+            status = "partial"
+        if not references:
+            return {"total": 0, "missing": missing, "unsafe": unsafe, "status": status, "label": "依赖：无外部引用"}
+        ready_count = max(0, len(references) - len(missing) - len(unsafe))
+        if status == "ready":
+            label = f"依赖：{ready_count}/{len(references)} 已就绪"
+        else:
+            label = f"依赖：缺 {len(missing) + len(unsafe)}/{len(references)} 项"
+        return {"total": len(references), "missing": missing, "unsafe": unsafe, "status": status, "label": label}
+
+    def get_character_model_preview_report(self, character: dict | None, expression_id: str | None = None) -> dict:
+        character = character or {}
+        presentation = self.get_character_presentation(character)
+        mode = str(presentation.get("mode") or "sprite")
+        mode_label = self.get_character_presentation_mode_label(character)
+        fallback_asset_id = str(presentation.get("fallbackSpriteAssetId") or character.get("defaultSpriteId") or "").strip()
+        fallback_asset = self.assets_by_id.get(fallback_asset_id) if fallback_asset_id else None
+        fallback_path = get_asset_runtime_path(self.bundle_dir, fallback_asset)
+        fallback_status = "ready" if fallback_path else ("missing" if fallback_asset_id else "none")
+        model_asset_id = self.get_character_model_asset_id(character)
+        model_asset = self.assets_by_id.get(model_asset_id) if model_asset_id else None
+        model_path = get_asset_runtime_path(self.bundle_dir, model_asset)
+        dependency_health = self.summarize_model_dependency_health(mode, model_path)
+
+        if mode not in {"live2d", "model3d"}:
+            status = "sprite"
+        elif not model_asset_id:
+            status = "unbound"
+        elif not model_asset:
+            status = "missing_asset"
+        elif not model_path:
+            status = "missing_file"
+        elif dependency_health.get("status") == "invalid":
+            status = "invalid"
+        elif dependency_health.get("status") == "partial":
+            status = "partial"
+        else:
+            status = "ready"
+
+        status_label = {
+            "sprite": "普通立绘",
+            "unbound": "模型未绑定",
+            "missing_asset": "素材记录缺失",
+            "missing_file": "模型文件缺失",
+            "invalid": "入口异常",
+            "partial": "需要补强",
+            "ready": "资源完整",
+        }.get(status, "待检查")
+
+        return {
+            "isAdvanced": mode in {"live2d", "model3d"},
+            "mode": mode,
+            "modeLabel": mode_label,
+            "status": status,
+            "statusLabel": status_label,
+            "modelAssetId": model_asset_id,
+            "modelAssetName": str((model_asset or {}).get("name") or model_asset_id or "未绑定"),
+            "modelExportUrl": str((model_asset or {}).get("exportUrl") or ""),
+            "modelPath": model_path,
+            "dependencyHealth": dependency_health,
+            "fallbackStatus": fallback_status,
+            "fallbackAssetName": str((fallback_asset or {}).get("name") or fallback_asset_id or "未绑定"),
+            "bindingLabel": self.get_character_expression_binding_label(character, expression_id),
+        }
+
+    def get_character_model_preview_lines(self, character: dict | None, expression_id: str | None = None) -> list[str]:
+        report = self.get_character_model_preview_report(character, expression_id)
+        if not report.get("isAdvanced"):
+            return []
+        fallback_label = {
+            "ready": f"兜底：{report['fallbackAssetName']}",
+            "missing": "兜底：素材文件缺失",
+            "none": "兜底：未绑定",
+        }.get(str(report.get("fallbackStatus") or ""), "兜底：待检查")
+        binding_label = str(report.get("bindingLabel") or "表情映射：沿用默认").replace("表情映射：", "映射：", 1)
+        return [
+            f"{report['modeLabel']} 预览桥：{report['statusLabel']}",
+            f"入口：{report['modelAssetName']}",
+            str((report.get("dependencyHealth") or {}).get("label") or "依赖：待检测"),
+            binding_label,
+            fallback_label,
+        ]
+
+    def get_scene3d_asset(self, asset_id: str | None = None) -> dict | None:
+        safe_asset_id = str(asset_id or self.stage_background_asset_id or "").strip()
+        if not safe_asset_id:
+            return None
+        asset = self.assets_by_id.get(safe_asset_id)
+        return asset if asset and asset.get("type") == "scene3d" else None
+
+    def get_scene3d_preview_config(self, source: dict | None = None) -> dict:
+        return normalize_scene3d_preview_config(source)
+
+    def apply_scene3d_preview_config(self, source: dict | None = None) -> None:
+        config = self.get_scene3d_preview_config(source)
+        self.scene3d_preview_yaw = config["yaw"]
+        self.scene3d_preview_pitch = config["pitch"]
+        self.scene3d_preview_zoom = config["zoom"]
+        self.scene3d_preview_interaction_enabled = bool(config["interactionEnabled"])
+
+    def get_scene3d_preview_report(self, asset_id: str | None = None) -> dict:
+        asset = self.get_scene3d_asset(asset_id)
+        if not asset:
+            return {
+                "isScene3d": False,
+                "status": "none",
+                "statusLabel": "未使用 3D 场景",
+                "dependencyHealth": {"status": "unknown", "label": "依赖：待检测"},
+            }
+        asset_path = get_asset_runtime_path(self.bundle_dir, asset)
+        dependency_health = self.summarize_model_dependency_health("model3d", asset_path)
+        if asset.get("isMissing") or not asset_path:
+            status = "missing_file"
+        elif dependency_health.get("status") == "invalid":
+            status = "invalid"
+        elif dependency_health.get("status") == "partial":
+            status = "partial"
+        else:
+            status = "ready"
+        return {
+            "isScene3d": True,
+            "assetId": str(asset.get("id") or ""),
+            "name": str(asset.get("name") or asset.get("id") or "未命名 3D 场景"),
+            "exportUrl": str(asset.get("exportUrl") or ""),
+            "status": status,
+            "statusLabel": {
+                "missing_file": "场景文件缺失",
+                "invalid": "入口异常",
+                "partial": "需要补强",
+                "ready": "资源完整",
+            }.get(status, "待检查"),
+            "dependencyHealth": dependency_health,
+            "preview": {
+                "yaw": round(float(self.scene3d_preview_yaw), 1),
+                "pitch": round(float(self.scene3d_preview_pitch), 1),
+                "zoom": round(float(self.scene3d_preview_zoom), 2),
+                "interactionEnabled": bool(self.scene3d_preview_interaction_enabled),
+            },
+        }
+
+    def get_scene3d_preview_lines(self, asset_id: str | None = None) -> list[str]:
+        report = self.get_scene3d_preview_report(asset_id)
+        if not report.get("isScene3d"):
+            return []
+        preview = report.get("preview") or {}
+        return [
+            f"3D 场景预览桥：{report.get('statusLabel') or '待检查'}",
+            f"入口：{report.get('name') or '未绑定'}",
+            str((report.get("dependencyHealth") or {}).get("label") or "依赖：待检测"),
+            f"视角：yaw {preview.get('yaw')}° / pitch {preview.get('pitch')}° / zoom {preview.get('zoom')}x",
+            "交互：←→旋转 · ↑↓俯仰 · +/-缩放 · 0复位" if report.get("preview", {}).get("interactionEnabled") else "交互：本卡片已锁定视角",
+        ]
+
+    def adjust_scene3d_preview(self, *, yaw_delta: float = 0.0, pitch_delta: float = 0.0, zoom_delta: float = 0.0, reset: bool = False) -> None:
+        if reset:
+            self.scene3d_preview_yaw = 32.0
+            self.scene3d_preview_pitch = 34.0
+            self.scene3d_preview_zoom = 1.0
+        else:
+            self.scene3d_preview_yaw = (float(self.scene3d_preview_yaw) + yaw_delta) % 360
+            self.scene3d_preview_pitch = clamp(float(self.scene3d_preview_pitch) + pitch_delta, 12.0, 72.0)
+            self.scene3d_preview_zoom = clamp(float(self.scene3d_preview_zoom) + zoom_delta, 0.55, 1.9)
+        report = self.get_scene3d_preview_report()
+        preview = report.get("preview") or {}
+        self.status_message = (
+            f"3D 场景预览：yaw {preview.get('yaw')}° / pitch {preview.get('pitch')}° / zoom {preview.get('zoom')}x"
+        )
+
+    def handle_scene3d_preview_key(self, event) -> bool:
+        if not self.get_scene3d_asset() or not self.scene3d_preview_interaction_enabled:
+            return False
+        key = event.key
+        if key == self.pygame.K_LEFT:
+            self.adjust_scene3d_preview(yaw_delta=-8)
+            return True
+        if key == self.pygame.K_RIGHT:
+            self.adjust_scene3d_preview(yaw_delta=8)
+            return True
+        if key == self.pygame.K_UP:
+            self.adjust_scene3d_preview(pitch_delta=4)
+            return True
+        if key == self.pygame.K_DOWN:
+            self.adjust_scene3d_preview(pitch_delta=-4)
+            return True
+        plus_keys = {self.pygame.K_EQUALS, getattr(self.pygame, "K_PLUS", self.pygame.K_EQUALS), self.pygame.K_KP_PLUS}
+        minus_keys = {self.pygame.K_MINUS, self.pygame.K_KP_MINUS}
+        zero_keys = {self.pygame.K_0, self.pygame.K_KP0}
+        if key in plus_keys:
+            self.adjust_scene3d_preview(zoom_delta=0.08)
+            return True
+        if key in minus_keys:
+            self.adjust_scene3d_preview(zoom_delta=-0.08)
+            return True
+        if key in zero_keys:
+            self.adjust_scene3d_preview(reset=True)
+            return True
+        return False
 
     def get_stage_zoom_scale(self) -> float:
         if not self.camera_zoom_effect:
@@ -6916,6 +8065,57 @@ class NativeRuntimePlayer:
                 shade.fill((0, 0, 0, alpha))
             self.screen.blit(shade, (0, 0))
 
+    def project_scene3d_grid_point(self, x: float, z: float, center_x: int, center_y: int, scale: float) -> tuple[int, int]:
+        yaw = math.radians(float(self.scene3d_preview_yaw))
+        pitch_ratio = math.sin(math.radians(float(self.scene3d_preview_pitch)))
+        rotated_x = x * math.cos(yaw) - z * math.sin(yaw)
+        rotated_z = x * math.sin(yaw) + z * math.cos(yaw)
+        screen_x = center_x + rotated_x * scale
+        screen_y = center_y + rotated_z * scale * (0.20 + 0.48 * pitch_ratio)
+        return int(round(screen_x)), int(round(screen_y))
+
+    def render_scene3d_background_preview(self, target, asset: dict) -> None:
+        palette = self.get_active_palette()
+        target.fill(mix_rgb(palette["bgTop"], (0, 0, 0), 0.16))
+        glow = self.pygame.Surface((self.width, self.height), self.pygame.SRCALPHA)
+        for index, radius in enumerate([520, 360, 220]):
+            alpha = max(18, 58 - index * 16)
+            self.pygame.draw.circle(
+                glow,
+                (*palette["accent"], alpha),
+                (self.width // 2, int(self.height * 0.38)),
+                radius,
+            )
+        target.blit(glow, (0, 0))
+
+        center_x = self.width // 2
+        center_y = int(self.height * 0.58)
+        scale = 42 * float(self.scene3d_preview_zoom)
+        grid_range = range(-9, 10)
+        line_color = with_alpha(palette["accent"], 34)
+        axis_color = with_alpha(palette["accentAlt"], 70)
+        for value in grid_range:
+            start = self.project_scene3d_grid_point(value, -9, center_x, center_y, scale)
+            end = self.project_scene3d_grid_point(value, 9, center_x, center_y, scale)
+            self.pygame.draw.line(target, axis_color if value == 0 else line_color, start, end, 2 if value == 0 else 1)
+            start = self.project_scene3d_grid_point(-9, value, center_x, center_y, scale)
+            end = self.project_scene3d_grid_point(9, value, center_x, center_y, scale)
+            self.pygame.draw.line(target, axis_color if value == 0 else line_color, start, end, 2 if value == 0 else 1)
+
+        report = self.get_scene3d_preview_report(str(asset.get("id") or ""))
+        panel_rect = self.pygame.Rect(0, 0, min(520, self.width - 96), 178)
+        panel_rect.center = (self.width // 2, int(self.height * 0.28))
+        self.pygame.draw.rect(target, (*palette["panel"], 224), panel_rect, border_radius=24)
+        self.pygame.draw.rect(target, with_alpha(palette["accent"], 62), panel_rect, 2, border_radius=24)
+        target.blit(self.font_title.render("3D 场景交互预览桥", True, palette["text"]), (panel_rect.left + 24, panel_rect.top + 18))
+        status_surface = self.font_ui.render(str(report.get("statusLabel") or "待检查"), True, palette["accent"] if report.get("status") == "ready" else palette["warning"])
+        target.blit(status_surface, (panel_rect.right - status_surface.get_width() - 24, panel_rect.top + 26))
+        y = panel_rect.top + 66
+        for line in self.get_scene3d_preview_lines(str(asset.get("id") or ""))[1:]:
+            clipped = ellipsize_text(self.font_ui, line, panel_rect.width - 48)
+            target.blit(self.font_ui.render(clipped, True, palette["muted"]), (panel_rect.left + 24, y))
+            y += 24
+
     def render_screen_effect_overlays(self) -> None:
         if self.screen_fade_effect:
             color = FADE_COLORS.get(str(self.screen_fade_effect.get("color") or "black"), FADE_COLORS["black"])
@@ -6960,6 +8160,10 @@ class NativeRuntimePlayer:
     def render_background(self, target=None) -> None:
         target = target or self.screen
         palette = self.get_active_palette()
+        background_asset = self.assets_by_id.get(str(self.stage_background_asset_id or "")) or {}
+        if background_asset.get("type") == "scene3d":
+            self.render_scene3d_background_preview(target, background_asset)
+            return
         background = self._load_image(self.stage_background_asset_id)
         if background:
             bg_width, bg_height = background.get_size()
@@ -6979,6 +8183,51 @@ class NativeRuntimePlayer:
             target.blit(bottom, (0, self.height // 2))
             label = "背景未加载" if self.stage_background_asset_id else "当前场景没有背景"
             self.blit_text_center(self.font_title, label, self.width // 2, self.height // 2 - 20, palette["muted"], target=target)
+
+    def render_character_model_preview_card(self, target, anchor_rect, character: dict, expression_id: str | None) -> None:
+        report = self.get_character_model_preview_report(character, expression_id)
+        if not report.get("isAdvanced"):
+            return
+
+        palette = self.get_active_palette()
+        status = str(report.get("status") or "")
+        accent = palette["accent"] if status == "ready" else palette["warning"]
+        if status in {"missing_asset", "missing_file", "invalid", "unbound"}:
+            accent = mix_rgb(palette["warning"], (255, 64, 64), 0.34)
+
+        card_width = min(300, max(238, int(self.width * 0.22)))
+        card_height = 128
+        card_x = int(anchor_rect.centerx - card_width / 2)
+        card_x = max(18, min(self.width - card_width - 18, card_x))
+        if anchor_rect.top > 156:
+            card_y = anchor_rect.top - card_height - 14
+        else:
+            card_y = anchor_rect.bottom - card_height - 18
+        card_y = max(92, min(self.height - card_height - 150, card_y))
+        card_rect = self.pygame.Rect(card_x, card_y, card_width, card_height)
+
+        self.pygame.draw.rect(target, (*palette["panel"], 226), card_rect, border_radius=18)
+        self.pygame.draw.rect(target, with_alpha(accent, 68), card_rect, 2, border_radius=18)
+        self.pygame.draw.line(
+            target,
+            (*accent, 190),
+            (card_rect.left + 18, card_rect.top + 34),
+            (card_rect.right - 18, card_rect.top + 34),
+            2,
+        )
+
+        title = f"{report['modeLabel']} 预览桥"
+        status_label = str(report.get("statusLabel") or "待检查")
+        target.blit(self.font_ui.render(title, True, palette["text"]), (card_rect.left + 16, card_rect.top + 10))
+        status_surface = self.font_ui.render(status_label, True, accent)
+        target.blit(status_surface, (card_rect.right - status_surface.get_width() - 16, card_rect.top + 10))
+
+        lines = self.get_character_model_preview_lines(character, expression_id)[1:5]
+        y = card_rect.top + 44
+        for line in lines:
+            clipped = ellipsize_text(self.font_ui, line, card_rect.width - 30)
+            target.blit(self.font_ui.render(clipped, True, palette["muted"]), (card_rect.left + 16, y))
+            y += 20
 
     def render_characters(self, target=None) -> None:
         target = target or self.screen
@@ -7002,14 +8251,23 @@ class NativeRuntimePlayer:
                 )
                 rect = scaled.get_rect(midbottom=(x, int(self.height * 0.88)))
                 target.blit(scaled, rect)
+                character = self.characters_by_id.get(character_id) or {}
+                self.render_character_model_preview_card(target, rect, character, state.get("expressionId"))
             else:
                 placeholder_rect = self.pygame.Rect(0, 0, 220, 420)
                 placeholder_rect.midbottom = (x, int(self.height * 0.88))
                 self.pygame.draw.rect(target, palette["placeholder"], placeholder_rect, border_radius=28)
                 self.pygame.draw.rect(target, palette["panelBorder"], placeholder_rect, 2, border_radius=28)
-                character_name = (self.characters_by_id.get(character_id) or {}).get("displayName") or character_id
+                character = self.characters_by_id.get(character_id) or {}
+                character_name = character.get("displayName") or character_id
+                presentation_label = self.get_character_presentation_mode_label(character)
+                model_asset_label = self.get_character_model_asset_label(character)
+                binding_label = self.get_character_expression_binding_label(character, state.get("expressionId"))
                 self.blit_text_center(self.font_body, character_name, placeholder_rect.centerx, placeholder_rect.centery - 16, palette["text"], target=target)
-                self.blit_text_center(self.font_ui, "立绘未加载", placeholder_rect.centerx, placeholder_rect.centery + 24, palette["muted"], target=target)
+                self.blit_text_center(self.font_ui, presentation_label, placeholder_rect.centerx, placeholder_rect.centery + 22, palette["accent"], target=target)
+                self.blit_text_center(self.font_ui, model_asset_label, placeholder_rect.centerx, placeholder_rect.centery + 52, palette["muted"], target=target)
+                self.blit_text_center(self.font_ui, binding_label[:32], placeholder_rect.centerx, placeholder_rect.centery + 80, palette["muted"], target=target)
+                self.render_character_model_preview_card(target, placeholder_rect, character, state.get("expressionId"))
 
     def render_status_bar(self) -> None:
         palette = self.get_active_palette()
@@ -7713,10 +8971,40 @@ class NativeRuntimePlayer:
         hint = "Enter 读取续玩 · C 清除记录 · Esc 关闭" if snapshot else "Esc 关闭"
         self.screen.blit(self.font_ui.render(hint, True, palette["muted"]), (panel.left + 30, panel.bottom - 50))
 
+    def get_system_menu_item_description(self, item_key: str) -> str:
+        if item_key == "continue":
+            return "关闭菜单，返回当前剧情画面。"
+        if item_key == "help":
+            return "打开原生操作中心，查看当前状态、快捷键和常用入口。"
+        if item_key == "history":
+            return f"查看最近文本和语音回听；当前记录 {len(self.text_history)} 条。"
+        if item_key == "archives":
+            return "进入章节、CG、音乐、角色、结局和成就等资料馆。"
+        if item_key == "profile":
+            return "查看本地玩家档案、游玩时长和续玩统计。"
+        if item_key == "auto-resume":
+            state = "已有续玩记录" if self.auto_resume_snapshot else "暂无续玩记录"
+            return f"管理自动续玩快照；当前：{state}。"
+        if item_key == "save":
+            return f"打开正式存档面板；{self.build_save_summary_line()}。"
+        if item_key == "load":
+            return f"读取正式存档槽位；{self.build_save_summary_line()}。"
+        if item_key == "settings":
+            return "调整主题、全屏、文字速度、文本框透明度和各类音量。"
+        if item_key == "quick-save":
+            return "立即覆盖快速存档，适合临时保留当前进度。"
+        if item_key == "quick-load":
+            return "立即读入快速存档；若没有快存会给出提示。"
+        if item_key == "restart":
+            return "回到入口场景重新开始，并记录一次返回开头。"
+        if item_key == "exit":
+            return "关闭原生 Runtime 预览窗口。"
+        return "执行当前系统操作。"
+
     def render_system_menu_overlay(self) -> None:
         palette = self.get_active_palette()
-        panel_height = min(self.height - 72, max(508, 154 + len(SYSTEM_MENU_ITEMS) * 44))
-        panel = self.pygame.Rect(0, 0, 420, panel_height)
+        panel_height = min(self.height - 72, max(548, 150 + len(SYSTEM_MENU_ITEMS) * 38))
+        panel = self.pygame.Rect(0, 0, min(self.width - 96, 760), panel_height)
         panel.center = (self.width // 2, self.height // 2)
         self.pygame.draw.rect(self.screen, (*palette["panel"], 244), panel, border_radius=28)
         self.pygame.draw.rect(
@@ -7735,8 +9023,9 @@ class NativeRuntimePlayer:
         )
 
         button_top = panel.top + 96
+        list_width = min(310, max(260, panel.width // 2 - 52))
         for index, (item_key, item_label) in enumerate(SYSTEM_MENU_ITEMS):
-            row_rect = self.pygame.Rect(panel.left + 26, button_top + index * 44, panel.width - 52, 36)
+            row_rect = self.pygame.Rect(panel.left + 26, button_top + index * 38, list_width, 32)
             is_active = index == self.system_menu_index
             self.pygame.draw.rect(
                 self.screen,
@@ -7759,10 +9048,41 @@ class NativeRuntimePlayer:
             )
             self.draw_game_ui_button_frame(row_rect, self.get_game_ui_button_state(row_rect, active=is_active))
             self.screen.blit(
-                self.font_body.render(item_label, True, palette["text"]),
-                (row_rect.left + 16, row_rect.top + 4),
+                self.font_ui.render(item_label, True, palette["text"]),
+                (row_rect.left + 14, row_rect.top + 6),
             )
             self.overlay_hotspots.append({"kind": "system-item", "value": item_key, "rect": row_rect})
+
+        selected_key, selected_label = SYSTEM_MENU_ITEMS[self.system_menu_index]
+        detail_rect = self.pygame.Rect(
+            panel.left + 26 + list_width + 18,
+            button_top,
+            panel.right - (panel.left + 26 + list_width + 18) - 26,
+            panel.bottom - button_top - 78,
+        )
+        self.pygame.draw.rect(self.screen, with_alpha(palette["accent"], 16), detail_rect, border_radius=22)
+        self.pygame.draw.rect(self.screen, with_alpha(palette["panelBorder"], 32), detail_rect, 1, border_radius=22)
+        self.screen.blit(self.font_body.render(selected_label, True, palette["accent"]), (detail_rect.left + 18, detail_rect.top + 18))
+        description_rect = self.pygame.Rect(detail_rect.left + 18, detail_rect.top + 62, detail_rect.width - 36, 96)
+        self.blit_wrapped_text(
+            self.font_ui,
+            self.get_system_menu_item_description(selected_key),
+            description_rect,
+            palette["text"],
+            line_gap=6,
+            max_lines=4,
+        )
+        status_lines = [
+            f"主题：{self.get_setting_value_label('themeMode')}",
+            f"显示：{self.get_setting_value_label('displayMode')}",
+            f"文本：{self.get_setting_value_label('textSpeed')} / {self.get_setting_value_label('textScalePercent')}",
+        ]
+        status_top = detail_rect.bottom - 94
+        for offset, line in enumerate(status_lines):
+            self.screen.blit(
+                self.font_ui.render(line, True, palette["muted"]),
+                (detail_rect.left + 18, status_top + offset * (self.font_ui.get_height() + 6)),
+            )
 
         hint = "↑↓ 切换 · Enter 执行 · Esc 关闭"
         self.screen.blit(
@@ -7770,61 +9090,117 @@ class NativeRuntimePlayer:
             (panel.left + 26, panel.bottom - 44),
         )
 
+    def get_help_overlay_sections(self) -> list[dict]:
+        scene = self.scenes_by_id.get(str(self.current_scene_id or "")) or {}
+        scene_label = "标题页" if self.title_screen_active else str(scene.get("name") or self.current_scene_id or "未命名场景")
+        if self.current_choices:
+            reading_state = f"选项中：{self.current_choice_index + 1}/{len(self.current_choices)}"
+        elif self.current_line:
+            line_type = str(self.current_line.get("type") or "dialogue")
+            reading_state = {
+                "dialogue": "台词播放",
+                "narration": "旁白播放",
+                "video_play": "视频段落",
+            }.get(line_type, line_type)
+        elif self.finished:
+            reading_state = "路线结束"
+        else:
+            reading_state = "待推进"
+
+        flow_labels = [
+            f"自动播放：{'开' if self.auto_play_enabled else '关'}",
+            f"已读快进：{'开' if self.skip_read_enabled else '关'}",
+            f"UI：{'隐藏' if self.ui_hidden else '显示'}",
+        ]
+        video_state = "播放中" if self.embedded_video_playback and self.embedded_video_playback.status in {"playing", "paused"} else "待机"
+        return [
+            {
+                "title": "当前状态",
+                "lines": [
+                    f"场景：{scene_label}",
+                    f"阅读：{reading_state} · 历史 {len(self.text_history)} 条",
+                    " · ".join(flow_labels),
+                    f"视频：{video_state} · 字体：{self.font_source_status}",
+                ],
+            },
+            {
+                "title": "体验设置",
+                "lines": [
+                    f"主题：{self.get_setting_value_label('themeMode')} · 显示：{self.get_setting_value_label('displayMode')}",
+                    f"文字：{self.get_setting_value_label('textSpeed')} · 大小：{self.get_setting_value_label('textScalePercent')}",
+                    f"文本框：{self.get_setting_value_label('dialogBoxOpacityPercent')} · 自动：{self.get_setting_value_label('autoPlayDelayMs')}",
+                    f"音量：总 {self.get_setting_value_label('masterVolume')} / BGM {self.get_setting_value_label('bgmVolume')} / 语音 {self.get_setting_value_label('voiceVolume')}",
+                ],
+            },
+            {
+                "title": "阅读推进",
+                "lines": [
+                    "Enter / Space / 左键 / 滚轮下：推进文本",
+                    "A：自动播放 · S：已读快进",
+                    "H / 滚轮上：文本历史 · R / V：语音回听",
+                    "U / 鼠标中键：隐藏或恢复 UI",
+                ],
+            },
+            {
+                "title": "系统与存档",
+                "lines": [
+                    "F1 / Tab / 右键：系统菜单 · F2 / ?：操作帮助",
+                    "F5：快存 · F8/F9：快读",
+                    "F6：正式存档 · F7：读取存档",
+                    "F11：窗口 / 全屏 · F12 / P：截图",
+                ],
+            },
+        ]
+
+    def get_help_quick_actions(self) -> list[dict]:
+        return [
+            {"key": "settings", "label": "体验设置", "shortcut": "S"},
+            {"key": "save", "label": "正式存档", "shortcut": "F6"},
+            {"key": "load", "label": "读取存档", "shortcut": "F7"},
+            {"key": "history", "label": "文本历史", "shortcut": "H"},
+            {"key": "archives", "label": "资料馆", "shortcut": "A"},
+            {"key": "profile", "label": "玩家档案", "shortcut": "P"},
+        ]
+
+    def activate_help_action(self, action_key: str) -> bool:
+        if action_key == "settings":
+            self.open_settings_overlay()
+        elif action_key == "save":
+            self.open_save_dialog("save")
+        elif action_key == "load":
+            self.open_save_dialog("load")
+        elif action_key == "history":
+            self.open_text_history_overlay()
+        elif action_key == "archives":
+            self.open_archive_overlay()
+        elif action_key == "profile":
+            self.open_profile_overlay()
+        elif action_key == "system":
+            self.open_system_menu()
+        else:
+            self.close_overlay()
+        return True
+
     def render_help_overlay(self) -> None:
         palette = self.get_active_palette()
-        panel = self.pygame.Rect(0, 0, min(self.width - 72, 940), min(self.height - 64, 640))
+        panel = self.pygame.Rect(0, 0, min(self.width - 72, 1020), min(self.height - 64, 660))
         panel.center = (self.width // 2, self.height // 2)
         self.pygame.draw.rect(self.screen, (*palette["panel"], 246), panel, border_radius=28)
         self.pygame.draw.rect(self.screen, with_alpha(palette["panelBorder"], 72), panel, 2, border_radius=28)
         self.draw_game_ui_panel_frame(panel, "system")
-        self.screen.blit(self.font_title.render("操作帮助", True, palette["text"]), (panel.left + 26, panel.top + 20))
+        self.screen.blit(self.font_title.render("原生操作中心", True, palette["text"]), (panel.left + 26, panel.top + 18))
         self.screen.blit(
-            self.font_ui.render("F2 / ? 随时打开 · 键盘 / 鼠标 / 阅读辅助 / 存档截图", True, palette["muted"]),
-            (panel.left + 26, panel.top + 56),
+            self.font_ui.render("F2 / ? 随时打开 · 查看当前状态 · 直接跳转常用面板", True, palette["muted"]),
+            (panel.left + 26, panel.top + 54),
         )
 
-        sections = [
-            (
-                "阅读推进",
-                [
-                    "Enter / Space / 左键 / 滚轮下：推进文本",
-                    "A：自动播放 · S：已读快进",
-                    "H / 滚轮上：文本历史 · R / V：语音回听",
-                ],
-            ),
-            (
-                "菜单界面",
-                [
-                    "F1 / Tab / 右键：系统菜单",
-                    "U / 鼠标中键：隐藏或恢复 UI",
-                    "Esc / 右键：关闭弹窗或返回",
-                ],
-            ),
-            (
-                "存档截图",
-                [
-                    "F5：快存 · F8/F9：快读",
-                    "F6：正式存档 · F7：读取存档",
-                    "Ctrl+1/2/3 写入 · Ctrl+Shift+1/2/3 读取",
-                ],
-            ),
-            (
-                "显示资料",
-                [
-                    "F11：窗口 / 全屏 · F12 / P：截图",
-                    "V：视频播放 / 历史语音回听",
-                    "← / →：切换资料馆页 · ↑↓：菜单导航",
-                ],
-            ),
-        ]
-
         grid_left = panel.left + 26
-        grid_top = panel.top + 92
+        grid_top = panel.top + 88
         grid_gap = 14
-        close_area_height = 54
+        action_area_height = 110
         card_width = max(190, (panel.width - 52 - grid_gap) // 2)
-        card_height = max(74, (panel.bottom - close_area_height - grid_top - grid_gap) // 2)
-        for index, (section_title, lines) in enumerate(sections):
+        card_height = max(90, (panel.bottom - action_area_height - grid_top - grid_gap) // 2)
+        for index, section in enumerate(self.get_help_overlay_sections()):
             column = index % 2
             row = index // 2
             card_rect = self.pygame.Rect(
@@ -7835,14 +9211,29 @@ class NativeRuntimePlayer:
             )
             self.pygame.draw.rect(self.screen, with_alpha(palette["accent"], 16), card_rect, border_radius=20)
             self.pygame.draw.rect(self.screen, with_alpha(palette["panelBorder"], 28), card_rect, 1, border_radius=20)
-            self.screen.blit(self.font_body.render(section_title, True, palette["accent"]), (card_rect.left + 14, card_rect.top + 10))
+            self.screen.blit(self.font_body.render(str(section["title"]), True, palette["accent"]), (card_rect.left + 14, card_rect.top + 10))
             line_y = card_rect.top + 38
-            for line in lines:
-                self.screen.blit(
-                    self.font_ui.render(line[:42], True, palette["text"]),
-                    (card_rect.left + 14, line_y),
-                )
-                line_y += max(18, self.font_ui.get_height() + 2)
+            for line in section["lines"]:
+                line_rect = self.pygame.Rect(card_rect.left + 14, line_y, card_rect.width - 28, self.font_ui.get_height() + 4)
+                line_y = self.blit_wrapped_text(self.font_ui, str(line), line_rect, palette["text"], line_gap=2, max_lines=1) + 2
+
+        action_items = self.get_help_quick_actions()
+        action_top = panel.bottom - 102
+        action_gap = 10
+        action_width = max(96, (panel.width - 52 - action_gap * (len(action_items) - 1)) // len(action_items))
+        for index, action in enumerate(action_items):
+            action_rect = self.pygame.Rect(
+                panel.left + 26 + index * (action_width + action_gap),
+                action_top,
+                action_width,
+                38,
+            )
+            self.pygame.draw.rect(self.screen, with_alpha(palette["accentAlt"], 26), action_rect, border_radius=16)
+            self.pygame.draw.rect(self.screen, with_alpha(palette["panelBorder"], 42), action_rect, 1, border_radius=16)
+            self.draw_game_ui_button_frame(action_rect, self.get_game_ui_button_state(action_rect))
+            label = f"{action['label']} · {action['shortcut']}"
+            self.blit_text_center(self.font_ui, label, action_rect.centerx, action_rect.top + 9, palette["text"])
+            self.overlay_hotspots.append({"kind": "help-action", "value": action["key"], "rect": action_rect})
 
         close_rect = self.pygame.Rect(panel.right - 134, panel.bottom - 48, 104, 32)
         self.pygame.draw.rect(self.screen, with_alpha(palette["panel"], 58), close_rect, border_radius=14)
@@ -7850,7 +9241,7 @@ class NativeRuntimePlayer:
         self.draw_game_ui_button_frame(close_rect, self.get_game_ui_button_state(close_rect))
         self.blit_text_center(self.font_ui, "关闭", close_rect.centerx, close_rect.top + 7, palette["text"])
         self.overlay_hotspots.append({"kind": "close", "rect": close_rect})
-        self.screen.blit(self.font_ui.render("Enter / Esc / 右键关闭", True, palette["muted"]), (panel.left + 26, panel.bottom - 38))
+        self.screen.blit(self.font_ui.render("点击上方入口或按 S/H/A/P 快速跳转 · Enter / Esc / 右键关闭", True, palette["muted"]), (panel.left + 26, panel.bottom - 38))
 
     def render_text_history_overlay(self) -> None:
         palette = self.get_active_palette()
@@ -8166,7 +9557,12 @@ class NativeRuntimePlayer:
         if archive_key == "locations":
             return notes or preview_text or "这个地点来自剧情中的背景切换。"
         if archive_key == "characters":
-            return notes or preview_text or f"{title} 已经收录进角色图鉴。"
+            character = self.characters_by_id.get(str(entry.get("id") or "")) or {}
+            base_body = notes or preview_text or f"{title} 已经收录进角色图鉴。"
+            preview_lines = self.get_character_model_preview_lines(character)
+            if preview_lines:
+                return f"{base_body}\n\n" + "；".join(preview_lines)
+            return base_body
         if archive_key == "narrations":
             return preview_text or notes or "这段旁白已经收录，可以在这里单独回看。"
         if archive_key == "relations":
@@ -8228,8 +9624,12 @@ class NativeRuntimePlayer:
         if archive_key == "characters":
             character = self.characters_by_id.get(str(entry.get("id") or "")) or {}
             expressions = character.get("expressions") or []
+            preview_report = self.get_character_model_preview_report(character)
+            meta_rows.append(f"表现类型：{self.get_character_presentation_mode_label(character)}")
+            meta_rows.append(f"预览状态：{preview_report.get('statusLabel') or '待检查'}")
             meta_rows.append(f"表情数量：{len(expressions)}")
             meta_rows.append(f"默认站位：{character.get('defaultPosition') or 'center'}")
+            meta_rows.append(f"模型素材：{self.get_character_model_asset_label(character)}")
         elif archive_key == "gallery":
             meta_rows.append(f"CG ID：{entry.get('id') or 'unknown'}")
         elif archive_key == "achievements":
@@ -8237,8 +9637,8 @@ class NativeRuntimePlayer:
         elif archive_key in {"narrations", "relations", "locations"}:
             meta_rows.append(f"来源：{subtitle or '剧情推进'}")
 
-        meta_y = content_rect.bottom - 70
-        for row in meta_rows[:2]:
+        meta_y = content_rect.bottom - 96
+        for row in meta_rows[:4]:
             self.screen.blit(self.font_ui.render(row, True, palette["muted"]), (content_rect.left, meta_y))
             meta_y += 22
 
@@ -8271,10 +9671,25 @@ class NativeRuntimePlayer:
         return y
 
     def render_contained_image(self, asset_id: str | None, rect, empty_label: str, palette: dict) -> None:
+        asset = self.assets_by_id.get(str(asset_id or "")) or {}
         image = self._load_image(asset_id)
         self.pygame.draw.rect(self.screen, with_alpha(palette["panel"], 36), rect, border_radius=22)
         self.pygame.draw.rect(self.screen, with_alpha(palette["panelBorder"], 28), rect, 1, border_radius=22)
         self.draw_game_ui_panel_frame(rect)
+        if asset.get("type") == "scene3d":
+            center_x = rect.centerx
+            center_y = rect.centery + 34
+            scale = max(22, min(rect.width, rect.height) * 0.10)
+            for value in range(-4, 5):
+                start = self.project_scene3d_grid_point(value, -5, center_x, center_y, scale)
+                end = self.project_scene3d_grid_point(value, 5, center_x, center_y, scale)
+                self.pygame.draw.line(self.screen, with_alpha(palette["accent"], 34), start, end, 1)
+                start = self.project_scene3d_grid_point(-5, value, center_x, center_y, scale)
+                end = self.project_scene3d_grid_point(5, value, center_x, center_y, scale)
+                self.pygame.draw.line(self.screen, with_alpha(palette["accentAlt"], 34), start, end, 1)
+            self.blit_text_center(self.font_body, "3D 场景预览桥", rect.centerx, rect.top + 44, palette["text"])
+            self.blit_text_center(self.font_ui, str(asset.get("name") or asset_id or "未命名场景"), rect.centerx, rect.top + 84, palette["muted"])
+            return
         if not image:
             self.blit_text_center(self.font_body, empty_label, rect.centerx, rect.centery - 18, palette["muted"])
             return
@@ -8377,6 +9792,8 @@ class NativeRuntimePlayer:
                 return True
             if self.overlay_mode:
                 return self.handle_overlay_event(event)
+            if not self.current_choices and self.handle_scene3d_preview_key(event):
+                return True
             if event.key == self.pygame.K_u:
                 self.toggle_ui_hidden()
                 return True
@@ -8590,11 +10007,26 @@ class NativeRuntimePlayer:
 
     def handle_help_overlay_event(self, event) -> bool:
         pygame = self.pygame
-        if event.type == pygame.KEYDOWN and event.key in (pygame.K_RETURN, pygame.K_SPACE):
-            self.close_overlay()
-            return True
+        if event.type == pygame.KEYDOWN:
+            shortcut_map = {
+                pygame.K_s: "settings",
+                pygame.K_h: "history",
+                pygame.K_a: "archives",
+                pygame.K_p: "profile",
+                pygame.K_m: "system",
+                pygame.K_l: "load",
+                pygame.K_F6: "save",
+                pygame.K_F7: "load",
+            }
+            if event.key in shortcut_map:
+                return self.activate_help_action(shortcut_map[event.key])
+            if event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                self.close_overlay()
+                return True
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             for target in self.overlay_hotspots:
+                if target.get("kind") == "help-action" and target["rect"].collidepoint(event.pos):
+                    return self.activate_help_action(str(target.get("value") or ""))
                 if target.get("kind") == "close" and target["rect"].collidepoint(event.pos):
                     self.close_overlay()
                     return True
@@ -8881,6 +10313,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--describe-video-bridge", dest="describe_video_bridge", help="输出原生 Runtime 视频桥接摘要，不启动窗口")
     parser.add_argument("--describe-video-backends", dest="describe_video_backends", help="输出原生 Runtime 可选视频后端摘要，不启动窗口")
     parser.add_argument("--probe-video-preview", dest="probe_video_preview", help="输出原生 Runtime 可选视频帧 / 内嵌画面探针，不启动窗口")
+    parser.add_argument("--describe-model-preview", dest="describe_model_preview", help="输出 Live2D / 3D 角色预览桥摘要，不启动窗口")
+    parser.add_argument("--describe-scene3d-preview", dest="describe_scene3d_preview", help="输出 3D 场景交互预览桥摘要，不启动窗口")
     parser.add_argument("--describe-save-dialog", dest="describe_save_dialog", help="输出正式存档面板摘要，不启动窗口")
     parser.add_argument("--page", dest="save_dialog_page", type=int, default=0, help="配合 --describe-save-dialog 使用，指定页码")
     args = parser.parse_args(argv)
@@ -8992,6 +10426,22 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         except NativeRuntimeError as error:
             print(f"Native runtime video preview probe failed: {error}")
+            return 1
+
+    if args.describe_model_preview:
+        try:
+            print_native_character_model_preview_report(Path(args.describe_model_preview).resolve())
+            return 0
+        except NativeRuntimeError as error:
+            print(f"Native runtime model preview description failed: {error}")
+            return 1
+
+    if args.describe_scene3d_preview:
+        try:
+            print_native_scene3d_preview_report(Path(args.describe_scene3d_preview).resolve())
+            return 0
+        except NativeRuntimeError as error:
+            print(f"Native runtime 3D scene preview description failed: {error}")
             return 1
 
     if args.describe_save_dialog:

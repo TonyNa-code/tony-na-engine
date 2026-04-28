@@ -138,6 +138,9 @@ ASSET_DIRECTORIES = {
     "video": Path("assets/video"),
     "ui": Path("assets/ui"),
     "font": Path("assets/fonts"),
+    "live2d": Path("assets/live2d"),
+    "model3d": Path("assets/models"),
+    "scene3d": Path("assets/scenes3d"),
 }
 ASSET_ID_PREFIXES = {
     "background": "bg",
@@ -149,6 +152,9 @@ ASSET_ID_PREFIXES = {
     "video": "video",
     "ui": "ui",
     "font": "font",
+    "live2d": "live2d",
+    "model3d": "model3d",
+    "scene3d": "scene3d",
 }
 BLOCK_LABELS = {
     "background": "切换背景",
@@ -179,6 +185,17 @@ IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".avif"}
 AUDIO_EXTENSIONS = {".mp3", ".ogg", ".wav", ".m4a", ".aac", ".flac"}
 VIDEO_EXTENSIONS = {".mp4", ".webm", ".mov", ".m4v"}
 FONT_EXTENSIONS = {".ttf", ".otf", ".ttc"}
+MODEL3D_EXTENSIONS = {".glb", ".gltf", ".vrm", ".fbx", ".obj"}
+LIVE2D_EXTENSION_SUFFIXES = (
+    ".model3.json",
+    ".moc3",
+    ".motion3.json",
+    ".physics3.json",
+    ".cdi3.json",
+    ".pose3.json",
+    ".exp3.json",
+    ".userdata3.json",
+)
 EXPORT_TARGET_WEB = "web"
 EXPORT_TARGET_NATIVE_RUNTIME = "native_runtime"
 EXPORT_TARGET_WINDOWS_NWJS = "windows_nwjs"
@@ -963,6 +980,10 @@ def normalize_characters_document(payload: object) -> dict:
         character["defaultPosition"] = default_position if default_position in {"left", "center", "right"} else "center"
         character["bio"] = str(character.get("bio") or "").strip()
         character["defaultSpriteId"] = str(character.get("defaultSpriteId") or "").strip()
+        character["presentation"] = normalize_character_presentation(
+            character.get("presentation"),
+            character["defaultSpriteId"],
+        )
 
         expressions = character.get("expressions")
         normalized_expressions: list[dict] = []
@@ -980,6 +1001,11 @@ def normalize_characters_document(payload: object) -> dict:
                 expression["id"] = expression_id
                 expression["name"] = str(expression.get("name") or expression_id).strip() or expression_id
                 expression["spriteAssetId"] = str(expression.get("spriteAssetId") or "").strip()
+                expression["layerAssetIds"] = normalize_text_list(expression.get("layerAssetIds"))
+                expression["live2dExpression"] = str(expression.get("live2dExpression") or "").strip()
+                expression["live2dMotion"] = str(expression.get("live2dMotion") or "").strip()
+                expression["model3dExpression"] = str(expression.get("model3dExpression") or "").strip()
+                expression["model3dAnimation"] = str(expression.get("model3dAnimation") or "").strip()
                 normalized_expressions.append(expression)
         character["expressions"] = normalized_expressions
         normalized_characters.append(character)
@@ -987,6 +1013,61 @@ def normalize_characters_document(payload: object) -> dict:
         "formatVersion": PROJECT_FORMAT_VERSION,
         "characters": normalized_characters,
     }
+
+
+def normalize_character_presentation(payload: object, fallback_sprite_asset_id: str = "") -> dict:
+    source = payload if isinstance(payload, dict) else {}
+    mode = str(source.get("mode") or "sprite").strip()
+    if mode not in {"sprite", "layered_sprite", "live2d", "model3d"}:
+        mode = "sprite"
+
+    fallback_sprite = str(source.get("fallbackSpriteAssetId") or fallback_sprite_asset_id or "").strip()
+    live2d_source = source.get("live2d") if isinstance(source.get("live2d"), dict) else {}
+    model3d_source = source.get("model3d") if isinstance(source.get("model3d"), dict) else {}
+
+    return {
+        "mode": mode,
+        "fallbackSpriteAssetId": fallback_sprite,
+        "live2d": {
+            "modelAssetId": str(live2d_source.get("modelAssetId") or "").strip(),
+            "idleMotion": str(live2d_source.get("idleMotion") or "").strip(),
+            "blink": bool(live2d_source.get("blink", True)),
+            "breath": bool(live2d_source.get("breath", True)),
+            "lipSync": bool(live2d_source.get("lipSync", True)),
+            "cursorTracking": bool(live2d_source.get("cursorTracking", False)),
+        },
+        "model3d": {
+            "modelAssetId": str(model3d_source.get("modelAssetId") or "").strip(),
+            "idleAnimation": str(model3d_source.get("idleAnimation") or "").strip(),
+            "cameraPreset": str(model3d_source.get("cameraPreset") or "portrait").strip() or "portrait",
+            "lightingPreset": str(model3d_source.get("lightingPreset") or "studio").strip() or "studio",
+        },
+    }
+
+
+def collect_character_presentation_asset_ids(character: dict) -> list[tuple[str, str]]:
+    presentation = normalize_character_presentation(
+        character.get("presentation"),
+        str(character.get("defaultSpriteId") or ""),
+    )
+    items: list[tuple[str, str]] = []
+    fallback_sprite_id = str(presentation.get("fallbackSpriteAssetId") or "").strip()
+    if fallback_sprite_id:
+        items.append((fallback_sprite_id, "高级表现兜底立绘"))
+
+    live2d_asset_id = str((presentation.get("live2d") or {}).get("modelAssetId") or "").strip()
+    if live2d_asset_id:
+        items.append((live2d_asset_id, "Live2D 模型入口"))
+
+    model3d_asset_id = str((presentation.get("model3d") or {}).get("modelAssetId") or "").strip()
+    if model3d_asset_id:
+        items.append((model3d_asset_id, "3D 模型入口"))
+
+    for expression in character.get("expressions", []) or []:
+        for layer_asset_id in normalize_text_list(expression.get("layerAssetIds")):
+            items.append((layer_asset_id, f"差分图层：{expression.get('name') or expression.get('id') or '表情'}"))
+
+    return items
 
 
 def normalize_variables_document(payload: object) -> dict:
@@ -2911,6 +2992,10 @@ def create_starter_kit(
             "defaultPosition": "left",
             "bio": "这里先写这个角色的简介和性格关键词。",
             "defaultSpriteId": sprite_record["id"],
+            "presentation": normalize_character_presentation(
+                {"mode": "sprite", "fallbackSpriteAssetId": sprite_record["id"]},
+                sprite_record["id"],
+            ),
             "expressions": [
                 {
                     "id": "expr_default",
@@ -3102,10 +3187,34 @@ def decode_uploaded_file(file_item: dict) -> tuple[str, bytes]:
 
 def choose_smart_asset_type(file_name: str, fallback_asset_type: str | None = None) -> str:
     ext = Path(file_name).suffix.lower()
+    lower_file_name = file_name.lower()
     slug = make_slug(Path(file_name).stem)
 
     def has_any(*keywords: str) -> bool:
         return any(keyword in slug for keyword in keywords)
+
+    if any(lower_file_name.endswith(suffix) for suffix in LIVE2D_EXTENSION_SUFFIXES):
+        return "live2d"
+
+    if ext in MODEL3D_EXTENSIONS:
+        if fallback_asset_type == "scene3d" or has_any(
+            "scene",
+            "environment",
+            "env",
+            "level",
+            "map",
+            "world",
+            "room",
+            "stage",
+            "street",
+            "hallway",
+            "classroom",
+            "rooftop",
+            "interior",
+            "exterior",
+        ):
+            return "scene3d"
+        return "model3d"
 
     if ext in VIDEO_EXTENSIONS:
         return "video"
@@ -3194,6 +3303,12 @@ def collect_asset_usages(asset_id: str) -> list[str]:
 
     for character in characters:
         add_usage(character.get("defaultSpriteId"), f"角色默认立绘：{character.get('displayName')}")
+        for presentation_asset_id, label in collect_character_presentation_asset_ids(character):
+            if label.startswith("差分图层："):
+                expression_name = label.split("：", 1)[1]
+                add_usage(presentation_asset_id, f"角色差分图层：{character.get('displayName')} / {expression_name}")
+            else:
+                add_usage(presentation_asset_id, f"角色{label}：{character.get('displayName')}")
         for expression in character.get("expressions", []):
             add_usage(
                 expression.get("spriteAssetId"),
@@ -3359,6 +3474,45 @@ def update_asset_metadata(
     return {
         "asset": enrich_asset_record(asset),
     }
+
+
+def update_character_presentation(
+    character_id: str,
+    presentation_payload: object,
+    expression_bindings_payload: object | None = None,
+) -> dict:
+    if not character_id:
+        raise ValueError("保存角色表现配置时缺少 characterId。")
+
+    characters_path = DATA_DIR / "characters.json"
+    characters_doc = normalize_characters_document(read_json(characters_path))
+    characters = characters_doc.setdefault("characters", [])
+    character = next((item for item in characters if item.get("id") == character_id), None)
+    if not character:
+        raise ValueError("没有找到要保存的角色。")
+
+    character["presentation"] = normalize_character_presentation(
+        presentation_payload,
+        str(character.get("defaultSpriteId") or ""),
+    )
+    if isinstance(expression_bindings_payload, list):
+        bindings_by_id = {
+            str(binding.get("expressionId") or "").strip(): binding
+            for binding in expression_bindings_payload
+            if isinstance(binding, dict) and str(binding.get("expressionId") or "").strip()
+        }
+        for expression in character.get("expressions", []) or []:
+            binding = bindings_by_id.get(str(expression.get("id") or ""))
+            if not binding:
+                continue
+            expression["layerAssetIds"] = normalize_text_list(binding.get("layerAssetIds"))
+            expression["live2dExpression"] = str(binding.get("live2dExpression") or "").strip()
+            expression["live2dMotion"] = str(binding.get("live2dMotion") or "").strip()
+            expression["model3dExpression"] = str(binding.get("model3dExpression") or "").strip()
+            expression["model3dAnimation"] = str(binding.get("model3dAnimation") or "").strip()
+    write_json(characters_path, characters_doc)
+    touch_project()
+    return {"character": character}
 
 
 def create_voice_placeholder(scene_id: str, block_id: str, preferred_name: str | None = None) -> dict:
@@ -3971,6 +4125,217 @@ def sanitize_export_filename(name: str) -> str:
     return cleaned or "asset"
 
 
+def get_asset_export_suffix(asset: dict, source_path: Path | None) -> str:
+    file_name = (source_path.name if source_path else str(asset.get("path") or "")).lower()
+    if str(asset.get("type") or "") == "live2d":
+        for suffix in LIVE2D_EXTENSION_SUFFIXES:
+            if file_name.endswith(suffix):
+                return suffix
+    return source_path.suffix if source_path and source_path.suffix else Path(asset.get("path", "")).suffix
+
+
+def looks_like_live2d_file_reference(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    clean_value = value.strip().replace("\\", "/")
+    if not clean_value or "://" in clean_value or clean_value.startswith(("data:", "#")):
+        return False
+    lower_value = clean_value.split("?", 1)[0].split("#", 1)[0].lower()
+    if any(lower_value.endswith(suffix) for suffix in LIVE2D_EXTENSION_SUFFIXES[1:]):
+        return True
+    if any(lower_value.endswith(suffix) for suffix in IMAGE_EXTENSIONS):
+        return True
+    return "/" in clean_value and "." in clean_value.rsplit("/", 1)[-1]
+
+
+def collect_live2d_model3_references(model3_payload: object) -> list[str]:
+    if not isinstance(model3_payload, dict):
+        return []
+    file_references = model3_payload.get("FileReferences")
+    if not isinstance(file_references, (dict, list)):
+        return []
+
+    references: list[str] = []
+
+    def visit(value: object) -> None:
+        if isinstance(value, str):
+            clean_value = value.strip().replace("\\", "/")
+            if looks_like_live2d_file_reference(clean_value):
+                references.append(clean_value)
+            return
+        if isinstance(value, list):
+            for item in value:
+                visit(item)
+            return
+        if isinstance(value, dict):
+            for item in value.values():
+                visit(item)
+
+    visit(file_references)
+    unique_references: list[str] = []
+    seen_references: set[str] = set()
+    for reference in references:
+        if reference in seen_references:
+            continue
+        unique_references.append(reference)
+        seen_references.add(reference)
+    return unique_references
+
+
+def resolve_live2d_source_dependency_path(model3_path: Path, reference: str) -> Path | None:
+    clean_reference = reference.strip().replace("\\", "/")
+    if not clean_reference or "://" in clean_reference:
+        return None
+    relative_reference = Path(clean_reference)
+    if relative_reference.is_absolute() or clean_reference.startswith("/"):
+        return None
+    model_root = model3_path.parent.resolve()
+    candidate_path = (model3_path.parent / relative_reference).resolve()
+    try:
+        candidate_path.relative_to(model_root)
+    except ValueError:
+        return None
+    return candidate_path
+
+
+def collect_gltf_references(gltf_payload: object) -> list[str]:
+    references: list[str] = []
+
+    def visit(value: object, key: str = "") -> None:
+        if isinstance(value, str):
+            clean_value = value.strip().replace("\\", "/")
+            if key == "uri" and clean_value and not clean_value.startswith(("data:", "#")) and "://" not in clean_value:
+                references.append(clean_value)
+            return
+        if isinstance(value, list):
+            for item in value:
+                visit(item, key)
+            return
+        if isinstance(value, dict):
+            for item_key, item_value in value.items():
+                visit(item_value, str(item_key))
+
+    visit(gltf_payload)
+    unique_references: list[str] = []
+    seen_references: set[str] = set()
+    for reference in references:
+        if reference in seen_references:
+            continue
+        unique_references.append(reference)
+        seen_references.add(reference)
+    return unique_references
+
+
+def resolve_model3d_source_dependency_path(model_path: Path, reference: str) -> Path | None:
+    clean_reference = reference.strip().replace("\\", "/")
+    if not clean_reference or "://" in clean_reference or clean_reference.startswith(("data:", "#")):
+        return None
+    relative_reference = Path(clean_reference)
+    if relative_reference.is_absolute() or clean_reference.startswith("/"):
+        return None
+    model_root = model_path.parent.resolve()
+    candidate_path = (model_path.parent / relative_reference).resolve()
+    try:
+        candidate_path.relative_to(model_root)
+    except ValueError:
+        return None
+    return candidate_path
+
+
+def copy_live2d_model3_package(asset: dict, source_path: Path, build_dir: Path) -> tuple[str, list[dict]]:
+    package_name = sanitize_export_filename(asset.get("id", "live2d_model"))
+    package_rel_dir = Path("assets") / "live2d" / package_name
+    target_rel_path = package_rel_dir / source_path.name
+    target_path = build_dir / target_rel_path
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source_path, target_path)
+
+    missing_dependencies: list[dict] = []
+    try:
+        model3_payload = json.loads(source_path.read_text(encoding="utf-8"))
+    except Exception:
+        return target_rel_path.as_posix(), missing_dependencies
+
+    model_root = source_path.parent.resolve()
+    copied_targets: set[Path] = {target_path.resolve()}
+    for reference in collect_live2d_model3_references(model3_payload):
+        dependency_path = resolve_live2d_source_dependency_path(source_path, reference)
+        dependency_rel_path: Path | None = None
+        if dependency_path is not None:
+            try:
+                dependency_rel_path = dependency_path.relative_to(model_root)
+            except ValueError:
+                dependency_rel_path = None
+
+        if dependency_path is None or dependency_rel_path is None or not dependency_path.is_file():
+            missing_dependencies.append(
+                {
+                    "id": asset.get("id"),
+                    "name": f"{asset.get('name') or asset.get('id') or 'Live2D'} / {reference}",
+                    "type": "live2d",
+                    "path": reference,
+                }
+            )
+            continue
+
+        dependency_target_path = (build_dir / package_rel_dir / dependency_rel_path).resolve()
+        if dependency_target_path in copied_targets:
+            continue
+        dependency_target_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(dependency_path, dependency_target_path)
+        copied_targets.add(dependency_target_path)
+
+    return target_rel_path.as_posix(), missing_dependencies
+
+
+def copy_model3d_gltf_package(asset: dict, source_path: Path, build_dir: Path) -> tuple[str, list[dict]]:
+    asset_type = str(asset.get("type") or "model3d")
+    package_name = sanitize_export_filename(asset.get("id", asset_type))
+    package_base_dir = "scenes3d" if asset_type == "scene3d" else "models"
+    package_rel_dir = Path("assets") / package_base_dir / package_name
+    target_rel_path = package_rel_dir / source_path.name
+    target_path = build_dir / target_rel_path
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source_path, target_path)
+
+    missing_dependencies: list[dict] = []
+    try:
+        gltf_payload = json.loads(source_path.read_text(encoding="utf-8"))
+    except Exception:
+        return target_rel_path.as_posix(), missing_dependencies
+
+    model_root = source_path.parent.resolve()
+    copied_targets: set[Path] = {target_path.resolve()}
+    for reference in collect_gltf_references(gltf_payload):
+        dependency_path = resolve_model3d_source_dependency_path(source_path, reference)
+        dependency_rel_path: Path | None = None
+        if dependency_path is not None:
+            try:
+                dependency_rel_path = dependency_path.relative_to(model_root)
+            except ValueError:
+                dependency_rel_path = None
+
+        if dependency_path is None or dependency_rel_path is None or not dependency_path.is_file():
+            missing_dependencies.append(
+                {
+                    "id": asset.get("id"),
+                    "name": f"{asset.get('name') or asset.get('id') or '3D 资源'} / {reference}",
+                    "type": asset_type,
+                    "path": reference,
+                }
+            )
+            continue
+
+        dependency_target_path = (build_dir / package_rel_dir / dependency_rel_path).resolve()
+        if dependency_target_path in copied_targets:
+            continue
+        dependency_target_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(dependency_path, dependency_target_path)
+        copied_targets.add(dependency_target_path)
+
+    return target_rel_path.as_posix(), missing_dependencies
+
+
 def resolve_asset_source_path(asset_path: str | None) -> Path | None:
     if not asset_path:
         return None
@@ -3986,7 +4351,7 @@ def copy_assets_for_export(assets_doc: dict, build_dir: Path) -> tuple[dict, int
 
     for asset in export_assets_doc.get("assets", []):
         source_path = resolve_asset_source_path(asset.get("path"))
-        suffix = source_path.suffix if source_path and source_path.suffix else Path(asset.get("path", "")).suffix
+        suffix = get_asset_export_suffix(asset, source_path)
         target_name = f"{sanitize_export_filename(asset.get('id', 'asset'))}{suffix or '.dat'}"
         target_rel_path = Path("assets") / (asset.get("type") or "misc") / target_name
         target_path = build_dir / target_rel_path
@@ -3995,6 +4360,21 @@ def copy_assets_for_export(assets_doc: dict, build_dir: Path) -> tuple[dict, int
         asset["isMissing"] = True
 
         if source_path and source_path.exists() and source_path.is_file():
+            if (
+                str(asset.get("type") or "") == "live2d"
+                and source_path.name.lower().endswith(".model3.json")
+            ):
+                asset["exportUrl"], missing_dependencies = copy_live2d_model3_package(asset, source_path, build_dir)
+                asset["isMissing"] = False
+                missing_assets.extend(missing_dependencies)
+                copied_count += 1
+                continue
+            if str(asset.get("type") or "") in {"model3d", "scene3d"} and source_path.suffix.lower() == ".gltf":
+                asset["exportUrl"], missing_dependencies = copy_model3d_gltf_package(asset, source_path, build_dir)
+                asset["isMissing"] = False
+                missing_assets.extend(missing_dependencies)
+                copied_count += 1
+                continue
             target_path.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source_path, target_path)
             asset["exportUrl"] = target_rel_path.as_posix()
@@ -8687,6 +9067,10 @@ class EditorRequestHandler(SimpleHTTPRequestHandler):
             self.handle_update_asset_meta()
             return
 
+        if parsed.path == "/api/update-character-presentation":
+            self.handle_update_character_presentation()
+            return
+
         if parsed.path == "/api/bulk-update-asset-tags":
             self.handle_bulk_update_asset_tags()
             return
@@ -9350,6 +9734,34 @@ class EditorRequestHandler(SimpleHTTPRequestHandler):
         except Exception as error:  # pragma: no cover - defensive fallback
             self.send_json(
                 {"ok": False, "error": f"保存素材信息时出了意外问题：{error}"},
+                status=HTTPStatus.INTERNAL_SERVER_ERROR,
+            )
+
+    def handle_update_character_presentation(self) -> None:
+        try:
+            payload = self.read_json_body()
+            result = attach_history_to_result(
+                update_character_presentation(
+                    payload.get("characterId"),
+                    payload.get("presentation"),
+                    payload.get("expressionBindings"),
+                ),
+                f"修改角色表现：{payload.get('characterId') or '未命名角色'}",
+            )
+            self.send_json(
+                {
+                    "ok": True,
+                    "savedAt": now_iso(),
+                    **result,
+                }
+            )
+        except json.JSONDecodeError:
+            self.send_json({"ok": False, "error": "请求体不是有效 JSON。"}, status=HTTPStatus.BAD_REQUEST)
+        except ValueError as error:
+            self.send_json({"ok": False, "error": str(error)}, status=HTTPStatus.BAD_REQUEST)
+        except Exception as error:  # pragma: no cover - defensive fallback
+            self.send_json(
+                {"ok": False, "error": f"保存角色表现配置时出了意外问题：{error}"},
                 status=HTTPStatus.INTERNAL_SERVER_ERROR,
             )
 
