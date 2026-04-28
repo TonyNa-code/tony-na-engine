@@ -590,8 +590,16 @@ class RunEditorSmokeTests(unittest.TestCase):
                     json.dumps(
                         {
                             "asset": {"version": "2.0"},
+                            "scene": 0,
+                            "scenes": [{"name": "Classroom", "nodes": [0, 1]}],
+                            "nodes": [{"name": "Room", "mesh": 0}, {"name": "CameraRig", "camera": 0}],
+                            "meshes": [{"primitives": [{"attributes": {"POSITION": 0}, "material": 0}]}],
+                            "materials": [{"name": "Wall Paint", "pbrMetallicRoughness": {"baseColorTexture": {"index": 0}}}],
+                            "textures": [{"source": 0}],
                             "buffers": [{"uri": "classroom.bin"}],
                             "images": [{"uri": "textures/walls.png"}],
+                            "cameras": [{"type": "perspective"}],
+                            "animations": [{"name": "Idle Camera", "channels": [], "samplers": []}],
                         }
                     ).encode("utf-8"),
                 )
@@ -636,6 +644,17 @@ class RunEditorSmokeTests(unittest.TestCase):
         )
         issue_codes = {issue.get("code") for issue in release_check_payload["issues"]}
         self.assertNotIn("scene3d_gltf_dependency_missing", issue_codes)
+        self.assertNotIn("scene3d_gltf_empty_structure", issue_codes)
+
+        asset3d_payload = json.loads(
+            (Path(export_result["buildPath"]) / run_editor.NATIVE_RUNTIME_3D_ASSET_REPORT_NAME).read_text(encoding="utf-8")
+        )
+        self.assertEqual(asset3d_payload["status"], "ready")
+        self.assertEqual(asset3d_payload["summary"]["assetCount"], 1)
+        self.assertEqual(asset3d_payload["summary"]["scene3dCount"], 1)
+        self.assertEqual(asset3d_payload["summary"]["totalNodes"], 2)
+        self.assertEqual(asset3d_payload["entries"][0]["usageCount"], 1)
+        self.assertEqual(export_result["asset3dReportStatus"], "ready")
 
         scene3d_description = subprocess.run(
             [
@@ -654,10 +673,31 @@ class RunEditorSmokeTests(unittest.TestCase):
         self.assertEqual(scene3d_payload["summary"]["scene3dAssetCount"], 1)
         self.assertEqual(scene3d_payload["entries"][0]["usageCount"], 1)
         self.assertEqual(scene3d_payload["entries"][0]["dependencyHealth"]["status"], "ready")
+        self.assertEqual(scene3d_payload["entries"][0]["structureSummary"]["status"], "ready")
+        self.assertEqual(scene3d_payload["entries"][0]["structureSummary"]["nodes"], 2)
+        self.assertEqual(scene3d_payload["entries"][0]["structureSummary"]["meshes"], 1)
+        self.assertEqual(scene3d_payload["entries"][0]["structureSummary"]["materials"], 1)
+        self.assertEqual(scene3d_payload["entries"][0]["structureSummary"]["textures"], 1)
+        self.assertEqual(scene3d_payload["entries"][0]["structureSummary"]["animations"], 1)
         self.assertEqual(scene3d_payload["entries"][0]["usages"][0]["previewConfig"]["yaw"], 118)
         self.assertEqual(scene3d_payload["entries"][0]["usages"][0]["previewConfig"]["pitch"], 46)
         self.assertEqual(scene3d_payload["entries"][0]["usages"][0]["previewConfig"]["zoom"], 1.35)
         self.assertFalse(scene3d_payload["entries"][0]["usages"][0]["previewConfig"]["interactionEnabled"])
+
+        asset3d_description = subprocess.run(
+            [
+                sys.executable,
+                str(Path(export_result["buildPath"]) / run_editor.NATIVE_RUNTIME_PLAYER_NAME),
+                "--describe-3d-assets",
+                str(export_result["buildPath"]),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(asset3d_description.returncode, 0, asset3d_description.stdout + asset3d_description.stderr)
+        asset3d_description_payload = json.loads(asset3d_description.stdout)
+        self.assertEqual(asset3d_description_payload["entries"][0]["structureSummary"]["defaultSceneName"], "Classroom")
 
     def test_variable_rename_migrates_story_references(self) -> None:
         _, chapter_result = self.create_blank_project_with_chapter()
@@ -1451,6 +1491,7 @@ class RunEditorSmokeTests(unittest.TestCase):
         self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_BRAND_LOGO_NAME).is_file())
         self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_RELEASE_CHECK_NAME).is_file())
         self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_RC_REPORT_NAME).is_file())
+        self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_3D_ASSET_REPORT_NAME).is_file())
         self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_MAC_COMMAND_NAME).is_file())
         self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_LINUX_COMMAND_NAME).is_file())
         self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_WINDOWS_COMMAND_NAME).is_file())
@@ -1468,7 +1509,9 @@ class RunEditorSmokeTests(unittest.TestCase):
         self.assertEqual(manifest["runtime"]["mode"], "pygame_native")
         self.assertTrue(manifest["runtime"]["canBuildStandaloneApp"])
         self.assertEqual(manifest["runtime"]["releaseCandidateReport"], run_editor.NATIVE_RUNTIME_RC_REPORT_NAME)
+        self.assertEqual(manifest["runtime"]["asset3dReport"], run_editor.NATIVE_RUNTIME_3D_ASSET_REPORT_NAME)
         self.assertEqual(manifest["files"]["releaseCandidateReport"], run_editor.NATIVE_RUNTIME_RC_REPORT_NAME)
+        self.assertEqual(manifest["files"]["asset3dReport"], run_editor.NATIVE_RUNTIME_3D_ASSET_REPORT_NAME)
 
         release_check_payload = json.loads((build_dir / run_editor.NATIVE_RUNTIME_RELEASE_CHECK_NAME).read_text(encoding="utf-8"))
         self.assertEqual(release_check_payload["status"], "pass")
@@ -1503,6 +1546,7 @@ class RunEditorSmokeTests(unittest.TestCase):
                 "release_check",
                 "save_load",
                 "settings",
+                "asset3d_report",
                 "model_preview_bridge",
                 "scene3d_preview_bridge",
                 "video_preview_probe",
@@ -1525,6 +1569,7 @@ class RunEditorSmokeTests(unittest.TestCase):
         rc_payload = json.loads(rc_description.stdout)
         self.assertIn(rc_payload["status"], {"preview_ready", "preview_ready_with_warnings"})
         self.assertEqual(rc_payload["summary"]["blockers"], 0)
+        self.assertEqual(rc_payload["summary"]["asset3dStatus"], "no_3d_assets")
         self.assertGreaterEqual(rc_payload["readinessEstimate"]["desktopPreviewPercent"], 75)
         self.assertTrue({"macos", "windows", "linux"} <= {entry["id"] for entry in rc_payload["platformMatrix"]})
         self.assertTrue(

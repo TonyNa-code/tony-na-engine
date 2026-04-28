@@ -53,6 +53,7 @@ Tony Na Engine 当前更适合这样理解：
 - 项目级成品 UI 皮肤、UI Kit 部件绑定、九宫格贴图、按钮多状态贴图、布局位置微调与视觉小说文本框设计
 - EXTRA 回想馆、图鉴馆、成就馆、章节回放、结局回放、语音回听
 - 高级粒子系统、项目级粒子预设库
+- Live2D / 3D 角色模型与 3D 场景资产导入，原生 Runtime 可输出 glTF 结构、依赖、引用位置和转换建议清单
 - 网页试玩包、Windows 桌面包、编辑器桌面包、三系统编辑器套装
 - 自动化测试体系（后端 smoke + Playwright 浏览器烟测）
 
@@ -67,8 +68,9 @@ Tony Na Engine 当前更适合这样理解：
 | 成品 UI 自定义 | 可用 | 支持项目级 UI 皮肤、按钮多状态、九宫格贴图、布局位置与视觉小说文本框设计。 |
 | EXTRA / 回想系统 | 可用 | 支持图鉴馆、回想馆、成就馆、章节回放、结局回放与语音回听。 |
 | 粒子与演出 | 可用 | 支持高级粒子预设、项目级自定义粒子、镜头、滤镜、闪屏、震动等演出配置。 |
+| Live2D / 3D 资产 | Preview | 支持 Live2D、3D 角色模型和 3D 场景素材导入；原生 Runtime 会生成 3D 资产结构 / 依赖清单，辅助发布前排查。 |
 | 网页 / 桌面导出 | Preview | 网页试玩包与三平台桌面包可用；签名、公证和安装器状态以 Release notes 为准。 |
-| 原生 Runtime | Preview | 已覆盖核心播放链、存档、设置、历史文本、自动播放、视频兜底与第一批资料馆。 |
+| 原生 Runtime | Preview | 已覆盖核心播放链、存档、设置、历史文本、自动播放、视频兜底、3D 资产清单与第一批资料馆。 |
 | 手机端 Runtime | 实验规划 | 当前处于触控、音频策略和界面适配验证阶段。 |
 
 ## 界面预览
@@ -173,8 +175,36 @@ python run_editor.py
 
 - `网页试玩包`：适合快速预览、网页分发和轻量测试。
 - `Windows / macOS / Linux 桌面包`：当前主要基于 NW.js 桌面 Runtime。
-- `原生 Runtime 包`：Preview 路线，已覆盖标题页主菜单、基础剧情主链、正式存档/读档、系统菜单设置项、文本历史、自动播放、已读快进、项目字体、玩家档案/自动续玩、基础粒子与镜头演出、可选 PyAV/FFmpeg 音画同步内嵌视频播放、OpenCV 画面兜底、系统播放器桥接兜底、第一批资料馆，以及随包生成的发布候选总报告。
+- `原生 Runtime 包`：Preview 路线，已覆盖标题页主菜单、基础剧情主链、正式存档/读档、系统菜单设置项、文本历史、自动播放、已读快进、项目字体、玩家档案/自动续玩、基础粒子与镜头演出、3D 资产结构 / 依赖清单、可选 PyAV/FFmpeg 音画同步内嵌视频播放、OpenCV 画面兜底、系统播放器桥接兜底、第一批资料馆，以及随包生成的发布候选总报告。
 - `手机端 Runtime`：实验规划阶段，当前重点是触控、音频策略和界面适配验证。
+
+### 原生 Runtime 发布体检
+
+导出的原生 Runtime 包会随包生成：
+
+- `native-runtime-release-check.json`：发布前自检，覆盖入口、缺失素材、格式风险、存档位、UI 引用等。
+- `native-runtime-3d-asset-report.json`：3D 模型 / 3D 场景清单，统计 glTF 节点、网格、材质、贴图、动画、外部依赖和引用位置。
+- `native-runtime-release-candidate-report.json`：发布候选总报告，汇总 doctor、打包脚手架、视频后端、3D 资产和下一步建议。
+
+这些命令在 macOS / Linux / Windows 上逻辑相同，只是 Python 启动器可能不同。
+
+macOS / Linux：
+
+```bash
+cd exported-native-runtime-folder
+python3 runtime_player.py --describe-3d-assets .
+python3 runtime_player.py --doctor .
+python3 runtime_player.py --release-candidate-report .
+```
+
+Windows：
+
+```bat
+cd exported-native-runtime-folder
+py -3 runtime_player.py --describe-3d-assets .
+py -3 runtime_player.py --doctor .
+py -3 runtime_player.py --release-candidate-report .
+```
 
 ## 测试
 

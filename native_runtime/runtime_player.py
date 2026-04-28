@@ -541,6 +541,135 @@ def collect_gltf_references(gltf_payload: object) -> list[str]:
     return unique_references
 
 
+def summarize_gltf_payload_structure(gltf_payload: object, source_type: str = "gltf") -> dict:
+    empty_counts = {
+        "nodes": 0,
+        "meshes": 0,
+        "meshPrimitives": 0,
+        "materials": 0,
+        "images": 0,
+        "textures": 0,
+        "animations": 0,
+        "cameras": 0,
+        "skins": 0,
+        "lights": 0,
+        "scenes": 0,
+        "nodeWithMeshCount": 0,
+    }
+    if not isinstance(gltf_payload, dict):
+        return {
+            **empty_counts,
+            "status": "invalid",
+            "sourceType": source_type,
+            "defaultSceneIndex": None,
+            "defaultSceneName": "",
+            "label": "结构：gltf 入口不是对象",
+        }
+
+    def count_list(key: str) -> int:
+        value = gltf_payload.get(key)
+        return len(value) if isinstance(value, list) else 0
+
+    nodes = gltf_payload.get("nodes") if isinstance(gltf_payload.get("nodes"), list) else []
+    meshes = gltf_payload.get("meshes") if isinstance(gltf_payload.get("meshes"), list) else []
+    scenes = gltf_payload.get("scenes") if isinstance(gltf_payload.get("scenes"), list) else []
+    extensions = gltf_payload.get("extensions") if isinstance(gltf_payload.get("extensions"), dict) else {}
+    light_extension = extensions.get("KHR_lights_punctual") if isinstance(extensions.get("KHR_lights_punctual"), dict) else {}
+    lights = light_extension.get("lights") if isinstance(light_extension.get("lights"), list) else []
+    mesh_primitive_count = sum(
+        len(mesh.get("primitives")) if isinstance(mesh, dict) and isinstance(mesh.get("primitives"), list) else 0
+        for mesh in meshes
+    )
+    node_with_mesh_count = sum(1 for node in nodes if isinstance(node, dict) and "mesh" in node)
+    raw_default_scene_index = gltf_payload.get("scene")
+    default_scene_index = raw_default_scene_index if isinstance(raw_default_scene_index, int) else None
+    default_scene_name = ""
+    if default_scene_index is not None and 0 <= default_scene_index < len(scenes):
+        default_scene = scenes[default_scene_index]
+        if isinstance(default_scene, dict):
+            default_scene_name = str(default_scene.get("name") or "")
+    texture_count = max(count_list("textures"), count_list("images"))
+    structure = {
+        "nodes": len(nodes),
+        "meshes": len(meshes),
+        "meshPrimitives": mesh_primitive_count,
+        "materials": count_list("materials"),
+        "images": count_list("images"),
+        "textures": texture_count,
+        "animations": count_list("animations"),
+        "cameras": count_list("cameras"),
+        "skins": count_list("skins"),
+        "lights": len(lights),
+        "scenes": len(scenes),
+        "nodeWithMeshCount": node_with_mesh_count,
+        "defaultSceneIndex": default_scene_index,
+        "defaultSceneName": default_scene_name,
+        "sourceType": source_type,
+    }
+    if len(nodes) == 0 and len(meshes) == 0:
+        return {**structure, "status": "empty", "label": "结构：未发现节点/网格"}
+
+    label_parts = [f"{len(nodes)} 节点", f"{len(meshes)} 网格"]
+    if mesh_primitive_count:
+        label_parts.append(f"{mesh_primitive_count} primitive")
+    if count_list("materials"):
+        label_parts.append(f"{count_list('materials')} 材质")
+    if texture_count:
+        label_parts.append(f"{texture_count} 贴图")
+    if count_list("animations"):
+        label_parts.append(f"{count_list('animations')} 动画")
+    if len(lights):
+        label_parts.append(f"{len(lights)} 灯光")
+    if default_scene_name:
+        label_parts.append(f"默认场景 {default_scene_name}")
+    return {**structure, "status": "ready", "label": "结构：" + " · ".join(label_parts)}
+
+
+def summarize_gltf_structure(model_path: Path | None) -> dict:
+    empty_counts = {
+        "nodes": 0,
+        "meshes": 0,
+        "meshPrimitives": 0,
+        "materials": 0,
+        "images": 0,
+        "textures": 0,
+        "animations": 0,
+        "cameras": 0,
+        "skins": 0,
+        "lights": 0,
+        "scenes": 0,
+        "nodeWithMeshCount": 0,
+        "defaultSceneIndex": None,
+        "defaultSceneName": "",
+    }
+    if not model_path:
+        return {**empty_counts, "status": "unknown", "sourceType": "", "label": "结构：待检测"}
+
+    extension = model_path.suffix.lower()
+    if extension == ".gltf":
+        try:
+            payload = json.loads(model_path.read_text(encoding="utf-8"))
+        except Exception:
+            return {**empty_counts, "status": "invalid", "sourceType": "gltf", "label": "结构：gltf JSON 异常"}
+        return summarize_gltf_payload_structure(payload, "gltf")
+    if extension in {".glb", ".vrm"}:
+        source_type = extension[1:]
+        return {
+            **empty_counts,
+            "status": "binary",
+            "sourceType": source_type,
+            "label": f"结构：{source_type.upper()} 单文件，需渲染后端读取节点",
+        }
+    if extension in {".fbx", ".obj"}:
+        return {
+            **empty_counts,
+            "status": "unsupported",
+            "sourceType": extension[1:],
+            "label": "结构：需转换为 gltf/glb 后分析",
+        }
+    return {**empty_counts, "status": "unknown", "sourceType": extension[1:], "label": "结构：待检测"}
+
+
 def resolve_model3d_dependency_path(model_path: Path, reference: str, bundle_dir: Path) -> Path | None:
     clean_reference = reference.strip().replace("\\", "/")
     if not clean_reference or "://" in clean_reference or clean_reference.startswith(("data:", "#")):
@@ -2262,6 +2391,16 @@ def build_release_check_report(bundle_dir: Path) -> dict:
                     export_url,
                 )
             else:
+                structure_summary = summarize_gltf_payload_structure(gltf_payload, "gltf")
+                if asset_type == "scene3d" and structure_summary.get("status") == "empty":
+                    add_release_check_issue(
+                        issues,
+                        "warning",
+                        "scene3d_gltf_empty_structure",
+                        f"3D 场景入口缺少可分析结构：{asset_name}",
+                        "建议确认 .gltf 内含 scenes、nodes、meshes；如果只是占位文件，导出前请替换为正式场景。",
+                        export_url,
+                    )
                 gltf_references = collect_gltf_references(gltf_payload)
                 unsafe_references: list[str] = []
                 missing_references: list[str] = []
@@ -2621,11 +2760,12 @@ def build_native_scene3d_preview_report(bundle_dir: Path) -> dict:
         export_url = str(asset.get("exportUrl") or "").strip()
         asset_path = get_asset_runtime_path(bundle_dir, asset)
         dependency_health = summarize_native_model_dependency_health(bundle_dir, "model3d", asset_path)
+        structure_summary = summarize_gltf_structure(asset_path)
         if asset.get("isMissing") or not asset_path:
             status = "missing_file"
-        elif dependency_health.get("status") == "invalid":
+        elif dependency_health.get("status") == "invalid" or structure_summary.get("status") == "invalid":
             status = "invalid"
-        elif dependency_health.get("status") == "partial":
+        elif dependency_health.get("status") == "partial" or structure_summary.get("status") == "empty":
             status = "partial"
         else:
             status = "ready"
@@ -2644,6 +2784,7 @@ def build_native_scene3d_preview_report(bundle_dir: Path) -> dict:
                     "ready": "资源完整",
                 }.get(status, "待检查"),
                 "dependencyHealth": dependency_health,
+                "structureSummary": structure_summary,
                 "usageCount": len(scene_usage_by_asset.get(asset_id, [])),
                 "usages": scene_usage_by_asset.get(asset_id, []),
                 "nativePreviewMode": "interactive_spatial_bridge",
@@ -2671,6 +2812,177 @@ def build_native_scene3d_preview_report(bundle_dir: Path) -> dict:
 
 def print_native_scene3d_preview_report(bundle_dir: Path) -> None:
     report = build_native_scene3d_preview_report(bundle_dir)
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+
+
+def build_native_3d_asset_report(bundle_dir: Path) -> dict:
+    payload = load_game_data(bundle_dir / DEFAULT_GAME_DATA_NAME)
+    assets_doc = payload.get("assets") if isinstance(payload.get("assets"), dict) else {}
+    assets = assets_doc.get("assets") if isinstance(assets_doc.get("assets"), list) else []
+    characters_doc = payload.get("characters") if isinstance(payload.get("characters"), dict) else {}
+    characters = characters_doc.get("characters") if isinstance(characters_doc.get("characters"), list) else []
+    chapters = payload.get("chapters") if isinstance(payload.get("chapters"), list) else []
+
+    usages_by_asset: dict[str, list[dict]] = {}
+    for character in characters:
+        if not isinstance(character, dict):
+            continue
+        presentation = get_report_character_presentation(character)
+        if str(presentation.get("mode") or "") != "model3d":
+            continue
+        asset_id = str((presentation.get("model3d") or {}).get("modelAssetId") or "").strip()
+        if not asset_id:
+            continue
+        expression_count, mapped_count = count_character_model_expression_bindings(character, "model3d")
+        usages_by_asset.setdefault(asset_id, []).append(
+            {
+                "kind": "character_model",
+                "kindLabel": "角色 3D 模型",
+                "characterId": str(character.get("id") or ""),
+                "characterName": str(character.get("displayName") or character.get("id") or "未命名角色"),
+                "idleAnimation": str((presentation.get("model3d") or {}).get("idleAnimation") or ""),
+                "expressionCount": expression_count,
+                "mappedExpressionCount": mapped_count,
+            }
+        )
+
+    for chapter in chapters:
+        chapter_name = str(chapter.get("name") or chapter.get("chapterId") or "未命名章节")
+        for scene in chapter.get("scenes") or []:
+            scene_name = str(scene.get("name") or scene.get("id") or "未命名场景")
+            for block_index, block in enumerate(scene.get("blocks") or []):
+                if not isinstance(block, dict) or str(block.get("type") or "").strip() != "background":
+                    continue
+                asset_id = str(block.get("assetId") or "").strip()
+                if not asset_id:
+                    continue
+                usages_by_asset.setdefault(asset_id, []).append(
+                    {
+                        "kind": "scene_background",
+                        "kindLabel": "3D 场景背景",
+                        "chapterName": chapter_name,
+                        "sceneId": str(scene.get("id") or ""),
+                        "sceneName": scene_name,
+                        "blockIndex": block_index,
+                        "previewConfig": normalize_scene3d_preview_config(
+                            block.get("scene3dPreview") if isinstance(block.get("scene3dPreview"), dict) else None
+                        ),
+                    }
+                )
+
+    entries = []
+    for asset in assets:
+        if not isinstance(asset, dict) or asset.get("type") not in {"model3d", "scene3d"}:
+            continue
+        asset_type = str(asset.get("type") or "")
+        asset_id = str(asset.get("id") or "")
+        export_url = str(asset.get("exportUrl") or "").strip()
+        asset_path = get_asset_runtime_path(bundle_dir, asset)
+        extension = asset_path.suffix.lower() if asset_path else Path(export_url).suffix.lower()
+        dependency_health = summarize_native_model_dependency_health(bundle_dir, "model3d", asset_path)
+        structure_summary = summarize_gltf_structure(asset_path)
+        usage_entries = usages_by_asset.get(asset_id, [])
+
+        if asset.get("isMissing") or not asset_path:
+            status = "missing_file"
+        elif extension not in SUPPORTED_MODEL3D_EXTENSIONS:
+            status = "unsupported_extension"
+        elif dependency_health.get("status") == "invalid" or structure_summary.get("status") == "invalid":
+            status = "invalid"
+        elif structure_summary.get("status") == "unsupported" or extension in {".fbx", ".obj"}:
+            status = "needs_conversion"
+        elif dependency_health.get("status") == "partial" or structure_summary.get("status") == "empty":
+            status = "partial"
+        else:
+            status = "ready"
+
+        action_by_status = {
+            "missing_file": "重新导入或替换缺失的 3D 素材文件。",
+            "unsupported_extension": "转换为 glb/gltf/vrm 后再导出，减少目标机兼容风险。",
+            "invalid": "修复入口 JSON 或换用自包含 glb 文件。",
+            "needs_conversion": "建议用 Blender 或资产管线转换为 glb/gltf，并复核材质贴图。",
+            "partial": "补齐 glTF 外部 bin/贴图依赖，或确认场景内包含 nodes/meshes。",
+            "ready": "可进入原生 Runtime Preview 点测。",
+        }
+        entries.append(
+            {
+                "assetId": asset_id,
+                "type": asset_type,
+                "typeLabel": "3D 场景" if asset_type == "scene3d" else "3D 模型",
+                "name": str(asset.get("name") or asset_id or "未命名 3D 资产"),
+                "exportUrl": export_url,
+                "fileExists": bool(asset_path),
+                "extension": extension,
+                "status": status,
+                "statusLabel": {
+                    "missing_file": "文件缺失",
+                    "unsupported_extension": "格式不支持",
+                    "invalid": "入口异常",
+                    "needs_conversion": "建议转换",
+                    "partial": "需要补强",
+                    "ready": "资源完整",
+                }.get(status, "待检查"),
+                "dependencyHealth": dependency_health,
+                "structureSummary": structure_summary,
+                "usageCount": len(usage_entries),
+                "usages": usage_entries,
+                "recommendedAction": action_by_status.get(status, "复核 3D 资产导入状态。"),
+            }
+        )
+
+    issue_entries = [entry for entry in entries if entry.get("status") != "ready"]
+    missing_dependency_count = sum(
+        len((entry.get("dependencyHealth") or {}).get("missing") or [])
+        + len((entry.get("dependencyHealth") or {}).get("unsafe") or [])
+        for entry in entries
+    )
+    conversion_hint_count = sum(
+        1
+        for entry in entries
+        if entry.get("status") == "needs_conversion" or entry.get("extension") in {".fbx", ".obj"}
+    )
+    empty_structure_count = sum(1 for entry in entries if (entry.get("structureSummary") or {}).get("status") == "empty")
+    unused_count = sum(1 for entry in entries if entry.get("usageCount") == 0)
+    recommendations: list[str] = []
+    if missing_dependency_count:
+        recommendations.append("补齐 glTF 外部 bin/贴图依赖，或改用自包含 .glb。")
+    if conversion_hint_count:
+        recommendations.append("将 FBX/OBJ 等格式转换为 glb/gltf，并在目标系统实机点测材质。")
+    if empty_structure_count:
+        recommendations.append("替换缺少 nodes/meshes 的空壳 glTF 场景。")
+    if unused_count:
+        recommendations.append("清理未使用 3D 资产，或在剧情/角色设置中绑定它们。")
+    if entries and not recommendations:
+        recommendations.append("3D 资产结构和依赖已通过 Preview 清单检查，下一步做目标系统实机渲染点测。")
+
+    status = "no_3d_assets" if not entries else ("ready" if not issue_entries else "needs_attention")
+    return {
+        "status": status,
+        "checkedAt": now_iso(),
+        "bundleDir": str(bundle_dir),
+        "summary": {
+            "assetCount": len(entries),
+            "model3dCount": sum(1 for entry in entries if entry.get("type") == "model3d"),
+            "scene3dCount": sum(1 for entry in entries if entry.get("type") == "scene3d"),
+            "readyCount": sum(1 for entry in entries if entry.get("status") == "ready"),
+            "issueCount": len(issue_entries),
+            "unusedCount": unused_count,
+            "conversionHintCount": conversion_hint_count,
+            "missingDependencyCount": missing_dependency_count,
+            "emptyStructureCount": empty_structure_count,
+            "totalNodes": sum(int((entry.get("structureSummary") or {}).get("nodes") or 0) for entry in entries),
+            "totalMeshes": sum(int((entry.get("structureSummary") or {}).get("meshes") or 0) for entry in entries),
+            "totalMaterials": sum(int((entry.get("structureSummary") or {}).get("materials") or 0) for entry in entries),
+            "totalTextures": sum(int((entry.get("structureSummary") or {}).get("textures") or 0) for entry in entries),
+            "totalAnimations": sum(int((entry.get("structureSummary") or {}).get("animations") or 0) for entry in entries),
+        },
+        "recommendations": recommendations,
+        "entries": entries,
+    }
+
+
+def print_native_3d_asset_report(bundle_dir: Path) -> None:
+    report = build_native_3d_asset_report(bundle_dir)
     print(json.dumps(report, ensure_ascii=False, indent=2))
 
 
@@ -3156,6 +3468,35 @@ def build_scene3d_preview_doctor_check(bundle_dir: Path) -> dict:
     )
 
 
+def build_3d_asset_doctor_check(bundle_dir: Path) -> dict:
+    report = build_native_3d_asset_report(bundle_dir)
+    report_status = str(report.get("status") or "")
+    summary = report.get("summary") or {}
+    if report_status == "no_3d_assets":
+        return build_doctor_check(
+            "asset3d_report",
+            "3D 资产清单",
+            "pass",
+            "当前项目没有 3D 模型或 3D 场景资产，跳过 3D 资产风险。",
+            details=report,
+        )
+    if report_status == "ready":
+        return build_doctor_check(
+            "asset3d_report",
+            "3D 资产清单",
+            "pass",
+            f"{summary.get('readyCount', 0)} 个 3D 资产结构和依赖完整。",
+            details=report,
+        )
+    return build_doctor_check(
+        "asset3d_report",
+        "3D 资产清单",
+        "warn",
+        f"{summary.get('issueCount', 0)} 个 3D 资产需要处理，缺失/不安全依赖 {summary.get('missingDependencyCount', 0)} 项。",
+        details=report,
+    )
+
+
 def build_native_runtime_doctor_report(bundle_dir: Path) -> dict:
     checks: list[dict] = []
     checks.append(run_doctor_callable_check("bundle_structure", "导出包结构", validate_bundle, bundle_dir))
@@ -3182,6 +3523,7 @@ def build_native_runtime_doctor_report(bundle_dir: Path) -> dict:
     checks.extend(run_doctor_with_temporary_home(run_stateful_checks))
     checks.append(run_doctor_callable_check("particles", "粒子配置", exercise_particle_effect, bundle_dir))
     checks.append(run_doctor_callable_check("visual_effects", "高级演出配置", exercise_visual_effects, bundle_dir))
+    checks.append(build_3d_asset_doctor_check(bundle_dir))
     checks.append(build_model_preview_doctor_check(bundle_dir))
     checks.append(build_scene3d_preview_doctor_check(bundle_dir))
     checks.append(build_video_bridge_doctor_check(bundle_dir))
@@ -3377,6 +3719,14 @@ def build_native_runtime_release_candidate_report(bundle_dir: Path) -> dict:
         ),
         {},
     )
+    asset3d_report = next(
+        (
+            check.get("details")
+            for check in doctor_report.get("checks", []) or []
+            if check.get("id") == "asset3d_report" and isinstance(check.get("details"), dict)
+        ),
+        {},
+    )
     packaging_matrix = get_release_candidate_packaging_matrix(bundle_dir)
     gates = build_release_candidate_gates(doctor_report, packaging_matrix)
     status = get_release_candidate_status(gates)
@@ -3399,6 +3749,8 @@ def build_native_runtime_release_candidate_report(bundle_dir: Path) -> dict:
             "doctorSummary": doctor_report.get("summary"),
             "releaseCheckStatus": release_check.get("status"),
             "releaseCheckSummary": release_check.get("summary"),
+            "asset3dStatus": asset3d_report.get("status"),
+            "asset3dSummary": asset3d_report.get("summary"),
             "videoBackendStatus": video_backend_report.get("status"),
             "videoPreviewProbeStatus": video_probe_report.get("status"),
         },
@@ -3414,6 +3766,11 @@ def build_native_runtime_release_candidate_report(bundle_dir: Path) -> dict:
             "backendStatus": video_backend_report.get("status"),
             "previewProbeStatus": video_probe_report.get("status"),
             "recommendation": video_backend_report.get("recommendation") or video_probe_report.get("recommendation") or "",
+        },
+        "asset3dStrategy": {
+            "status": asset3d_report.get("status"),
+            "summary": asset3d_report.get("summary") or {},
+            "recommendations": asset3d_report.get("recommendations") or [],
         },
         "commercialReleaseGaps": [
             "macOS Developer ID 签名、notarization 和 Gatekeeper 实机验证",
@@ -7912,14 +8269,16 @@ class NativeRuntimePlayer:
                 "status": "none",
                 "statusLabel": "未使用 3D 场景",
                 "dependencyHealth": {"status": "unknown", "label": "依赖：待检测"},
+                "structureSummary": {"status": "unknown", "label": "结构：待检测"},
             }
         asset_path = get_asset_runtime_path(self.bundle_dir, asset)
         dependency_health = self.summarize_model_dependency_health("model3d", asset_path)
+        structure_summary = summarize_gltf_structure(asset_path)
         if asset.get("isMissing") or not asset_path:
             status = "missing_file"
-        elif dependency_health.get("status") == "invalid":
+        elif dependency_health.get("status") == "invalid" or structure_summary.get("status") == "invalid":
             status = "invalid"
-        elif dependency_health.get("status") == "partial":
+        elif dependency_health.get("status") == "partial" or structure_summary.get("status") == "empty":
             status = "partial"
         else:
             status = "ready"
@@ -7936,6 +8295,7 @@ class NativeRuntimePlayer:
                 "ready": "资源完整",
             }.get(status, "待检查"),
             "dependencyHealth": dependency_health,
+            "structureSummary": structure_summary,
             "preview": {
                 "yaw": round(float(self.scene3d_preview_yaw), 1),
                 "pitch": round(float(self.scene3d_preview_pitch), 1),
@@ -7953,6 +8313,7 @@ class NativeRuntimePlayer:
             f"3D 场景预览桥：{report.get('statusLabel') or '待检查'}",
             f"入口：{report.get('name') or '未绑定'}",
             str((report.get("dependencyHealth") or {}).get("label") or "依赖：待检测"),
+            str((report.get("structureSummary") or {}).get("label") or "结构：待检测"),
             f"视角：yaw {preview.get('yaw')}° / pitch {preview.get('pitch')}° / zoom {preview.get('zoom')}x",
             "交互：←→旋转 · ↑↓俯仰 · +/-缩放 · 0复位" if report.get("preview", {}).get("interactionEnabled") else "交互：本卡片已锁定视角",
         ]
@@ -10313,6 +10674,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--describe-video-bridge", dest="describe_video_bridge", help="输出原生 Runtime 视频桥接摘要，不启动窗口")
     parser.add_argument("--describe-video-backends", dest="describe_video_backends", help="输出原生 Runtime 可选视频后端摘要，不启动窗口")
     parser.add_argument("--probe-video-preview", dest="probe_video_preview", help="输出原生 Runtime 可选视频帧 / 内嵌画面探针，不启动窗口")
+    parser.add_argument("--describe-3d-assets", dest="describe_3d_assets", help="输出 3D 模型 / 3D 场景资产结构与依赖清单，不启动窗口")
     parser.add_argument("--describe-model-preview", dest="describe_model_preview", help="输出 Live2D / 3D 角色预览桥摘要，不启动窗口")
     parser.add_argument("--describe-scene3d-preview", dest="describe_scene3d_preview", help="输出 3D 场景交互预览桥摘要，不启动窗口")
     parser.add_argument("--describe-save-dialog", dest="describe_save_dialog", help="输出正式存档面板摘要，不启动窗口")
@@ -10426,6 +10788,14 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         except NativeRuntimeError as error:
             print(f"Native runtime video preview probe failed: {error}")
+            return 1
+
+    if args.describe_3d_assets:
+        try:
+            print_native_3d_asset_report(Path(args.describe_3d_assets).resolve())
+            return 0
+        except NativeRuntimeError as error:
+            print(f"Native runtime 3D asset report failed: {error}")
             return 1
 
     if args.describe_model_preview:
