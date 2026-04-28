@@ -904,7 +904,9 @@ class BrowserPlaywrightSmokeTests(unittest.TestCase):
             timeout=20000
         )
         self.page.locator(".detail-meta").filter(has_text="RC 状态").first.wait_for(timeout=20000)
+        self.page.locator(".detail-meta").filter(has_text="3D 资产清单").first.wait_for(timeout=20000)
         self.page.get_by_role("link", name="打开原生 RC 总报告").wait_for(timeout=20000)
+        self.page.get_by_role("link", name="打开 3D 资产清单").wait_for(timeout=20000)
         download_link = self.page.get_by_role("link", name="下载原生 Runtime 包压缩档")
         download_link.wait_for(timeout=40000)
 

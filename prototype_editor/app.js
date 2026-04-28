@@ -23973,6 +23973,9 @@ function buildReleaseChecklistItems() {
   const nativeRcSummary = exportResult?.releaseCandidateReportSummary ?? {};
   const nativeRcReadiness = exportResult?.releaseCandidateReadinessEstimate ?? {};
   const nativeRcHasReport = exportResult?.target === "native_runtime" && Boolean(nativeRcStatus);
+  const native3dStatus = exportResult?.target === "native_runtime" ? exportResult.asset3dReportStatus : "";
+  const native3dSummary = exportResult?.asset3dReportSummary ?? {};
+  const native3dHasReport = exportResult?.target === "native_runtime" && Boolean(native3dStatus);
 
   const items = [
     {
@@ -24073,6 +24076,33 @@ function buildReleaseChecklistItems() {
           }
         : {
             label: "生成原生 RC 检查包",
+            action: "export-build",
+            dataset: { "export-target": "native_runtime" },
+        },
+    },
+    {
+      severity: native3dHasReport
+        ? native3dStatus === "ready" || native3dStatus === "no_3d_assets"
+          ? "good"
+          : native3dStatus === "unavailable"
+            ? "blocker"
+            : "warn"
+        : "warn",
+      title: "3D 资产清单",
+      toneClass: native3dHasReport ? getNativeRuntime3dAssetToneClass(native3dStatus) : "warn-text",
+      status: native3dHasReport ? getNativeRuntime3dAssetStatusLabel(native3dStatus) : "还没生成",
+      description: native3dHasReport
+        ? `3D 模型 ${native3dSummary.model3dCount ?? 0} / 3D 场景 ${native3dSummary.scene3dCount ?? 0} / 问题 ${
+            native3dSummary.issueCount ?? 0
+          } / 未使用 ${native3dSummary.unusedCount ?? 0}。`
+        : "导出原生 Runtime 包后，会自动生成 3D 模型与 3D 场景的结构、依赖和引用位置清单。",
+      action: native3dHasReport
+        ? {
+            label: "打开 3D 清单",
+            href: exportResult.asset3dReportPublicUrl,
+          }
+        : {
+            label: "生成 3D 清单",
             action: "export-build",
             dataset: { "export-target": "native_runtime" },
           },
@@ -24192,6 +24222,28 @@ function getNativeRuntimeRcToneClass(status) {
   if (status === "preview_ready") return "good-text";
   if (status === "blocked" || status === "unavailable") return "danger-text";
   if (status === "preview_ready_with_warnings" || status === "preview_ready_with_optional_failures") return "warn-text";
+  return "";
+}
+
+function getNativeRuntime3dAssetStatusLabel(status) {
+  switch (status) {
+    case "ready":
+      return "3D 资产清单通过";
+    case "no_3d_assets":
+      return "当前没有 3D 资产";
+    case "needs_attention":
+      return "3D 资产需要处理";
+    case "unavailable":
+      return "3D 清单暂不可用";
+    default:
+      return status ? String(status) : "尚未生成";
+  }
+}
+
+function getNativeRuntime3dAssetToneClass(status) {
+  if (status === "ready" || status === "no_3d_assets") return "good-text";
+  if (status === "unavailable") return "danger-text";
+  if (status === "needs_attention") return "warn-text";
   return "";
 }
 
@@ -25157,6 +25209,20 @@ function renderProjectValidationSummary() {
             : ""
         }
         ${
+          exportResult?.target === "native_runtime" && exportResult?.asset3dReportPublicUrl
+            ? `
+              <a
+                class="toolbar-button"
+                href="${escapeHtml(exportResult.asset3dReportPublicUrl)}"
+                target="_blank"
+                rel="noreferrer"
+              >
+                打开 3D 资产清单
+              </a>
+            `
+            : ""
+        }
+        ${
           exportResult?.signingGuidePublicUrl
             ? `
               <a
@@ -25233,6 +25299,14 @@ function renderProjectValidationSummary() {
                   exportResult.releaseCheckPath ?? "未生成"
                 )}<br />发布候选总报告：${escapeHtml(
                   exportResult.releaseCandidateReportPath ?? "未生成"
+                )}<br />3D 资产清单：${escapeHtml(
+                  exportResult.asset3dReportPath ?? "未生成"
+                )}<br />3D 清单状态：${escapeHtml(
+                  getNativeRuntime3dAssetStatusLabel(exportResult.asset3dReportStatus)
+                )}<br />3D 模型 / 场景 / 问题：${escapeHtml(
+                  `${exportResult.asset3dReportSummary?.model3dCount ?? 0} / ${
+                    exportResult.asset3dReportSummary?.scene3dCount ?? 0
+                  } / ${exportResult.asset3dReportSummary?.issueCount ?? 0}`
                 )}<br />RC 状态：${escapeHtml(
                   getNativeRuntimeRcStatusLabel(exportResult.releaseCandidateReportStatus)
                 )}<br />桌面 Preview 估算：${escapeHtml(
