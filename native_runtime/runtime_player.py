@@ -670,6 +670,250 @@ def summarize_gltf_structure(model_path: Path | None) -> dict:
     return {**empty_counts, "status": "unknown", "sourceType": extension[1:], "label": "结构：待检测"}
 
 
+GLTF_MATERIAL_TEXTURE_SLOTS = [
+    ("baseColorTexture", "基础色贴图", ("pbrMetallicRoughness", "baseColorTexture")),
+    ("metallicRoughnessTexture", "金属/粗糙度贴图", ("pbrMetallicRoughness", "metallicRoughnessTexture")),
+    ("normalTexture", "法线贴图", ("normalTexture",)),
+    ("occlusionTexture", "遮蔽贴图", ("occlusionTexture",)),
+    ("emissiveTexture", "自发光贴图", ("emissiveTexture",)),
+]
+
+
+def get_gltf_list(gltf_payload: dict, key: str) -> list:
+    value = gltf_payload.get(key)
+    return value if isinstance(value, list) else []
+
+
+def get_nested_dict(source: dict, path: tuple[str, ...]) -> dict:
+    current: object = source
+    for key in path:
+        if not isinstance(current, dict):
+            return {}
+        current = current.get(key)
+    return current if isinstance(current, dict) else {}
+
+
+def resolve_gltf_texture_uri(
+    model_path: Path,
+    bundle_dir: Path,
+    textures: list,
+    images: list,
+    texture_index: int | None,
+) -> dict:
+    if texture_index is None or not (0 <= texture_index < len(textures)):
+        return {"status": "missing_texture", "textureIndex": texture_index, "imageIndex": None, "uri": ""}
+    texture = textures[texture_index] if isinstance(textures[texture_index], dict) else {}
+    image_index = texture.get("source")
+    if not isinstance(image_index, int) or not (0 <= image_index < len(images)):
+        return {"status": "missing_image", "textureIndex": texture_index, "imageIndex": image_index, "uri": ""}
+    image = images[image_index] if isinstance(images[image_index], dict) else {}
+    uri = str(image.get("uri") or "").strip()
+    if not uri and image.get("bufferView") is not None:
+        return {"status": "embedded", "textureIndex": texture_index, "imageIndex": image_index, "uri": ""}
+    if not uri:
+        return {"status": "missing_uri", "textureIndex": texture_index, "imageIndex": image_index, "uri": ""}
+    dependency_path = resolve_model3d_dependency_path(model_path, uri, bundle_dir)
+    if dependency_path is None:
+        status = "unsafe_uri"
+    elif dependency_path.is_file():
+        status = "ready"
+    else:
+        status = "missing_file"
+    return {
+        "status": status,
+        "textureIndex": texture_index,
+        "imageIndex": image_index,
+        "uri": uri,
+    }
+
+
+def summarize_gltf_preview_probe(model_path: Path | None, bundle_dir: Path) -> dict:
+    empty_summary = {
+        "materialCount": 0,
+        "texturedMaterialCount": 0,
+        "textureSlotCount": 0,
+        "textureSlotReadyCount": 0,
+        "textureSlotIssueCount": 0,
+        "animationCount": 0,
+        "animationChannelCount": 0,
+        "cameraCount": 0,
+        "lightCount": 0,
+    }
+    if not model_path:
+        return {**empty_summary, "status": "unknown", "label": "预览探针：待检测", "materials": [], "animations": [], "cameras": [], "lights": []}
+
+    extension = model_path.suffix.lower()
+    if extension == ".gltf":
+        try:
+            gltf_payload = json.loads(model_path.read_text(encoding="utf-8"))
+        except Exception:
+            return {**empty_summary, "status": "invalid", "label": "预览探针：gltf JSON 异常", "materials": [], "animations": [], "cameras": [], "lights": []}
+        if not isinstance(gltf_payload, dict):
+            return {**empty_summary, "status": "invalid", "label": "预览探针：gltf 入口不是对象", "materials": [], "animations": [], "cameras": [], "lights": []}
+
+        textures = get_gltf_list(gltf_payload, "textures")
+        images = get_gltf_list(gltf_payload, "images")
+        materials = get_gltf_list(gltf_payload, "materials")
+        animations = get_gltf_list(gltf_payload, "animations")
+        nodes = get_gltf_list(gltf_payload, "nodes")
+        cameras = get_gltf_list(gltf_payload, "cameras")
+        extensions = gltf_payload.get("extensions") if isinstance(gltf_payload.get("extensions"), dict) else {}
+        light_extension = extensions.get("KHR_lights_punctual") if isinstance(extensions.get("KHR_lights_punctual"), dict) else {}
+        lights = light_extension.get("lights") if isinstance(light_extension.get("lights"), list) else []
+
+        material_entries = []
+        texture_slot_count = 0
+        texture_slot_ready_count = 0
+        texture_slot_issue_count = 0
+        for material_index, material in enumerate(materials):
+            material = material if isinstance(material, dict) else {}
+            slot_entries = []
+            for slot_key, slot_label, slot_path in GLTF_MATERIAL_TEXTURE_SLOTS:
+                slot_config = get_nested_dict(material, slot_path)
+                if not slot_config:
+                    continue
+                texture_index = slot_config.get("index")
+                texture_index = texture_index if isinstance(texture_index, int) else None
+                texture_info = resolve_gltf_texture_uri(model_path, bundle_dir, textures, images, texture_index)
+                slot_status = str(texture_info.get("status") or "unknown")
+                texture_slot_count += 1
+                if slot_status in {"ready", "embedded"}:
+                    texture_slot_ready_count += 1
+                else:
+                    texture_slot_issue_count += 1
+                slot_entries.append(
+                    {
+                        "slot": slot_key,
+                        "label": slot_label,
+                        "textureIndex": texture_info.get("textureIndex"),
+                        "imageIndex": texture_info.get("imageIndex"),
+                        "uri": texture_info.get("uri") or "",
+                        "status": slot_status,
+                    }
+                )
+            material_extensions = material.get("extensions") if isinstance(material.get("extensions"), dict) else {}
+            material_entries.append(
+                {
+                    "index": material_index,
+                    "name": str(material.get("name") or f"Material {material_index + 1}"),
+                    "alphaMode": str(material.get("alphaMode") or "OPAQUE"),
+                    "doubleSided": bool(material.get("doubleSided")),
+                    "unlit": "KHR_materials_unlit" in material_extensions,
+                    "textureSlots": slot_entries,
+                    "textureSlotCount": len(slot_entries),
+                }
+            )
+
+        animation_entries = []
+        animation_channel_count = 0
+        for animation_index, animation in enumerate(animations):
+            animation = animation if isinstance(animation, dict) else {}
+            channels = animation.get("channels") if isinstance(animation.get("channels"), list) else []
+            samplers = animation.get("samplers") if isinstance(animation.get("samplers"), list) else []
+            target_paths: list[str] = []
+            target_nodes: list[str] = []
+            for channel in channels:
+                channel = channel if isinstance(channel, dict) else {}
+                target = channel.get("target") if isinstance(channel.get("target"), dict) else {}
+                target_path = str(target.get("path") or "").strip()
+                if target_path and target_path not in target_paths:
+                    target_paths.append(target_path)
+                node_index = target.get("node")
+                if isinstance(node_index, int) and 0 <= node_index < len(nodes):
+                    node = nodes[node_index] if isinstance(nodes[node_index], dict) else {}
+                    node_name = str(node.get("name") or f"Node {node_index}")
+                    if node_name not in target_nodes:
+                        target_nodes.append(node_name)
+            animation_channel_count += len(channels)
+            animation_entries.append(
+                {
+                    "index": animation_index,
+                    "name": str(animation.get("name") or f"Animation {animation_index + 1}"),
+                    "channelCount": len(channels),
+                    "samplerCount": len(samplers),
+                    "targetPaths": target_paths,
+                    "targetNodes": target_nodes[:8],
+                }
+            )
+
+        camera_entries = [
+            {
+                "index": camera_index,
+                "name": str((camera if isinstance(camera, dict) else {}).get("name") or f"Camera {camera_index + 1}"),
+                "type": str((camera if isinstance(camera, dict) else {}).get("type") or "unknown"),
+            }
+            for camera_index, camera in enumerate(cameras)
+        ]
+        light_entries = [
+            {
+                "index": light_index,
+                "name": str((light if isinstance(light, dict) else {}).get("name") or f"Light {light_index + 1}"),
+                "type": str((light if isinstance(light, dict) else {}).get("type") or "unknown"),
+                "intensity": (light if isinstance(light, dict) else {}).get("intensity"),
+            }
+            for light_index, light in enumerate(lights)
+        ]
+        if texture_slot_issue_count:
+            status = "needs_attention"
+        elif materials or animations or cameras or lights:
+            status = "ready"
+        else:
+            status = "minimal"
+
+        label_parts = []
+        if materials:
+            label_parts.append(f"{len(materials)} 材质")
+        if texture_slot_count:
+            label_parts.append(f"{texture_slot_ready_count}/{texture_slot_count} 贴图槽可读")
+        if animations:
+            label_parts.append(f"{len(animations)} 动画")
+        if cameras:
+            label_parts.append(f"{len(cameras)} 相机")
+        if lights:
+            label_parts.append(f"{len(lights)} 灯光")
+        label = "预览探针：" + (" · ".join(label_parts) if label_parts else "未发现材质/动画/相机元数据")
+        return {
+            "status": status,
+            "label": label,
+            "materialCount": len(materials),
+            "texturedMaterialCount": sum(1 for entry in material_entries if entry["textureSlotCount"] > 0),
+            "textureSlotCount": texture_slot_count,
+            "textureSlotReadyCount": texture_slot_ready_count,
+            "textureSlotIssueCount": texture_slot_issue_count,
+            "animationCount": len(animations),
+            "animationChannelCount": animation_channel_count,
+            "cameraCount": len(cameras),
+            "lightCount": len(lights),
+            "materials": material_entries[:12],
+            "animations": animation_entries[:12],
+            "cameras": camera_entries[:8],
+            "lights": light_entries[:8],
+        }
+
+    if extension in {".glb", ".vrm"}:
+        source_type = extension[1:].upper()
+        return {
+            **empty_summary,
+            "status": "binary",
+            "label": f"预览探针：{source_type} 单文件需渲染后端读取材质/动画",
+            "materials": [],
+            "animations": [],
+            "cameras": [],
+            "lights": [],
+        }
+    if extension in {".fbx", ".obj"}:
+        return {
+            **empty_summary,
+            "status": "needs_conversion",
+            "label": "预览探针：建议先转换为 gltf/glb 后读取材质/动画",
+            "materials": [],
+            "animations": [],
+            "cameras": [],
+            "lights": [],
+        }
+    return {**empty_summary, "status": "unknown", "label": "预览探针：待检测", "materials": [], "animations": [], "cameras": [], "lights": []}
+
+
 def resolve_model3d_dependency_path(model_path: Path, reference: str, bundle_dir: Path) -> Path | None:
     clean_reference = reference.strip().replace("\\", "/")
     if not clean_reference or "://" in clean_reference or clean_reference.startswith(("data:", "#")):
@@ -2881,6 +3125,7 @@ def build_native_3d_asset_report(bundle_dir: Path) -> dict:
         extension = asset_path.suffix.lower() if asset_path else Path(export_url).suffix.lower()
         dependency_health = summarize_native_model_dependency_health(bundle_dir, "model3d", asset_path)
         structure_summary = summarize_gltf_structure(asset_path)
+        preview_probe = summarize_gltf_preview_probe(asset_path, bundle_dir)
         usage_entries = usages_by_asset.get(asset_id, [])
 
         if asset.get("isMissing") or not asset_path:
@@ -2891,7 +3136,11 @@ def build_native_3d_asset_report(bundle_dir: Path) -> dict:
             status = "invalid"
         elif structure_summary.get("status") == "unsupported" or extension in {".fbx", ".obj"}:
             status = "needs_conversion"
-        elif dependency_health.get("status") == "partial" or structure_summary.get("status") == "empty":
+        elif (
+            dependency_health.get("status") == "partial"
+            or structure_summary.get("status") == "empty"
+            or preview_probe.get("status") == "needs_attention"
+        ):
             status = "partial"
         else:
             status = "ready"
@@ -2924,6 +3173,7 @@ def build_native_3d_asset_report(bundle_dir: Path) -> dict:
                 }.get(status, "待检查"),
                 "dependencyHealth": dependency_health,
                 "structureSummary": structure_summary,
+                "previewProbe": preview_probe,
                 "usageCount": len(usage_entries),
                 "usages": usage_entries,
                 "recommendedAction": action_by_status.get(status, "复核 3D 资产导入状态。"),
@@ -2942,10 +3192,13 @@ def build_native_3d_asset_report(bundle_dir: Path) -> dict:
         if entry.get("status") == "needs_conversion" or entry.get("extension") in {".fbx", ".obj"}
     )
     empty_structure_count = sum(1 for entry in entries if (entry.get("structureSummary") or {}).get("status") == "empty")
+    texture_slot_issue_count = sum(int((entry.get("previewProbe") or {}).get("textureSlotIssueCount") or 0) for entry in entries)
     unused_count = sum(1 for entry in entries if entry.get("usageCount") == 0)
     recommendations: list[str] = []
     if missing_dependency_count:
         recommendations.append("补齐 glTF 外部 bin/贴图依赖，或改用自包含 .glb。")
+    if texture_slot_issue_count:
+        recommendations.append("检查材质贴图槽：有贴图索引、图片 URI 或贴图文件未能被预览探针确认。")
     if conversion_hint_count:
         recommendations.append("将 FBX/OBJ 等格式转换为 glb/gltf，并在目标系统实机点测材质。")
     if empty_structure_count:
@@ -2970,6 +3223,9 @@ def build_native_3d_asset_report(bundle_dir: Path) -> dict:
             "conversionHintCount": conversion_hint_count,
             "missingDependencyCount": missing_dependency_count,
             "emptyStructureCount": empty_structure_count,
+            "textureSlotIssueCount": texture_slot_issue_count,
+            "textureSlotReadyCount": sum(int((entry.get("previewProbe") or {}).get("textureSlotReadyCount") or 0) for entry in entries),
+            "totalTextureSlots": sum(int((entry.get("previewProbe") or {}).get("textureSlotCount") or 0) for entry in entries),
             "totalNodes": sum(int((entry.get("structureSummary") or {}).get("nodes") or 0) for entry in entries),
             "totalMeshes": sum(int((entry.get("structureSummary") or {}).get("meshes") or 0) for entry in entries),
             "totalMaterials": sum(int((entry.get("structureSummary") or {}).get("materials") or 0) for entry in entries),

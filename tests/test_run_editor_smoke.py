@@ -594,12 +594,26 @@ class RunEditorSmokeTests(unittest.TestCase):
                             "scenes": [{"name": "Classroom", "nodes": [0, 1]}],
                             "nodes": [{"name": "Room", "mesh": 0}, {"name": "CameraRig", "camera": 0}],
                             "meshes": [{"primitives": [{"attributes": {"POSITION": 0}, "material": 0}]}],
-                            "materials": [{"name": "Wall Paint", "pbrMetallicRoughness": {"baseColorTexture": {"index": 0}}}],
+                            "materials": [
+                                {
+                                    "name": "Wall Paint",
+                                    "alphaMode": "BLEND",
+                                    "doubleSided": True,
+                                    "pbrMetallicRoughness": {"baseColorTexture": {"index": 0}},
+                                }
+                            ],
                             "textures": [{"source": 0}],
                             "buffers": [{"uri": "classroom.bin"}],
                             "images": [{"uri": "textures/walls.png"}],
                             "cameras": [{"type": "perspective"}],
-                            "animations": [{"name": "Idle Camera", "channels": [], "samplers": []}],
+                            "animations": [
+                                {
+                                    "name": "Idle Camera",
+                                    "channels": [{"sampler": 0, "target": {"node": 1, "path": "rotation"}}],
+                                    "samplers": [{"input": 0, "output": 1, "interpolation": "LINEAR"}],
+                                }
+                            ],
+                            "extensions": {"KHR_lights_punctual": {"lights": [{"name": "Window Light", "type": "directional"}]}},
                         }
                     ).encode("utf-8"),
                 )
@@ -653,6 +667,14 @@ class RunEditorSmokeTests(unittest.TestCase):
         self.assertEqual(asset3d_payload["summary"]["assetCount"], 1)
         self.assertEqual(asset3d_payload["summary"]["scene3dCount"], 1)
         self.assertEqual(asset3d_payload["summary"]["totalNodes"], 2)
+        self.assertEqual(asset3d_payload["summary"]["totalTextureSlots"], 1)
+        self.assertEqual(asset3d_payload["summary"]["textureSlotReadyCount"], 1)
+        self.assertEqual(asset3d_payload["summary"]["textureSlotIssueCount"], 0)
+        self.assertEqual(asset3d_payload["entries"][0]["previewProbe"]["status"], "ready")
+        self.assertEqual(asset3d_payload["entries"][0]["previewProbe"]["materials"][0]["name"], "Wall Paint")
+        self.assertEqual(asset3d_payload["entries"][0]["previewProbe"]["materials"][0]["textureSlots"][0]["uri"], "textures/walls.png")
+        self.assertEqual(asset3d_payload["entries"][0]["previewProbe"]["animations"][0]["targetPaths"], ["rotation"])
+        self.assertEqual(asset3d_payload["entries"][0]["previewProbe"]["lightCount"], 1)
         self.assertEqual(asset3d_payload["entries"][0]["usageCount"], 1)
         self.assertEqual(export_result["asset3dReportStatus"], "ready")
 
