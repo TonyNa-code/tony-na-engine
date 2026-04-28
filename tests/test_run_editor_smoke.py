@@ -1677,6 +1677,11 @@ class RunEditorSmokeTests(unittest.TestCase):
         self.assertEqual(app_builder_payload["releaseCheck"]["status"], "pass")
         self.assertIn(app_builder_payload["releaseCandidateReport"]["status"], {"preview_ready", "preview_ready_with_warnings"})
         self.assertEqual(app_builder_payload["releaseCandidateReport"]["summary"]["blockers"], 0)
+        self.assertEqual(app_builder_payload["asset3d"]["reportName"], run_editor.NATIVE_RUNTIME_3D_ASSET_REPORT_NAME)
+        self.assertEqual(app_builder_payload["asset3d"]["summaryName"], run_editor.NATIVE_RUNTIME_3D_ASSET_SUMMARY_NAME)
+        self.assertEqual(app_builder_payload["asset3d"]["report"]["status"], "no_3d_assets")
+        self.assertTrue(app_builder_payload["asset3d"]["summary"]["exists"])
+        self.assertIn("# 3D 资产清单摘要", app_builder_payload["asset3d"]["summary"]["preview"])
         self.assertEqual(app_builder_payload["video"]["backendReport"]["status"], "no_video")
         self.assertEqual(app_builder_payload["video"]["previewProbe"]["status"], "no_video")
         self.assertTrue(

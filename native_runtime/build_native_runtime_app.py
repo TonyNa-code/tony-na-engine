@@ -18,6 +18,8 @@ RUNTIME_PLAYER_NAME = "runtime_player.py"
 PACKAGE_MANIFEST_NAME = "native_app_package_manifest.json"
 ENGINE_BRAND_LOGO_RELATIVE_PATH = "assets/brand-logo.png"
 VIDEO_REQUIREMENTS_CANDIDATES = ("requirements-native-runtime-video.txt", "requirements-video.txt")
+ASSET3D_REPORT_NAME = "native-runtime-3d-asset-report.json"
+ASSET3D_SUMMARY_NAME = "native-runtime-3d-asset-summary.md"
 
 
 class NativeAppBuildError(RuntimeError):
@@ -296,6 +298,7 @@ def write_package_manifest(
         "releaseCheck": description.get("releaseCheck") or {},
         "releaseCandidateReport": description.get("releaseCandidateReport") or {},
         "video": description.get("video") or {},
+        "asset3d": description.get("asset3d") or {},
         "signing": {
             "signed": False,
             "notarized": False,
@@ -370,6 +373,19 @@ def run_bundle_runtime_json_report(bundle_dir: Path, flag: str, report_label: st
     return report
 
 
+def read_text_report_preview(path: Path, max_lines: int = 32) -> dict:
+    if not path.is_file():
+        return {"exists": False, "path": str(path), "lineCount": 0, "preview": ""}
+    text = path.read_text(encoding="utf-8")
+    lines = text.splitlines()
+    return {
+        "exists": True,
+        "path": str(path),
+        "lineCount": len(lines),
+        "preview": "\n".join(lines[:max_lines]).strip(),
+    }
+
+
 def describe_build(
     bundle_dir: Path,
     app_name: str | None,
@@ -405,6 +421,9 @@ def describe_build(
         "--release-candidate-report",
         "发布候选总报告",
     )
+    asset3d_report = run_bundle_runtime_json_report(bundle_dir, "--describe-3d-assets", "3D 资产清单")
+    asset3d_summary_path = bundle_dir / ASSET3D_SUMMARY_NAME
+    asset3d_summary = read_text_report_preview(asset3d_summary_path)
     return {
         "appName": resolved_app_name,
         "bundleIdentifier": resolved_bundle_identifier,
@@ -423,6 +442,12 @@ def describe_build(
         "video": {
             "backendReport": video_backend_report,
             "previewProbe": video_preview_probe,
+        },
+        "asset3d": {
+            "reportName": ASSET3D_REPORT_NAME,
+            "summaryName": ASSET3D_SUMMARY_NAME,
+            "report": asset3d_report,
+            "summary": asset3d_summary,
         },
         "dataEntries": [
             {"source": entry["relativeSource"], "dest": entry["dest"]}
