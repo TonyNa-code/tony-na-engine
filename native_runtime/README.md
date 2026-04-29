@@ -134,8 +134,11 @@ python3 runtime_player.py --describe-3d-assets .
 
 - 资产类型、导出路径、是否被角色或剧情场景引用
 - glTF 节点、网格、primitive、材质、贴图槽、动画通道、相机、灯光数量
+- `.glb / .vrm` 二进制容器的文件头、声明长度、JSON chunk 和 BIN chunk 状态
+- 顶点、三角面、draw call、材质、贴图和动画通道的静态性能预算估算
 - 材质里的基础色、法线、遮蔽、自发光、金属/粗糙度贴图槽是否能解析到图片
 - 动画名称、通道数量、采样器数量、目标节点和 transform 路径
+- scene、node、mesh、material、texture、skin、animation 等 glTF 内部索引是否断链
 - `.gltf` 外部 `bin / 图片 / 贴图` 依赖是否缺失或越界
 - `fbx / obj` 等建议转换格式的提示
 - 每个问题对应的修复建议

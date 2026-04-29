@@ -646,20 +646,23 @@ def summarize_gltf_structure(model_path: Path | None) -> dict:
         return {**empty_counts, "status": "unknown", "sourceType": "", "label": "结构：待检测"}
 
     extension = model_path.suffix.lower()
-    if extension == ".gltf":
-        try:
-            payload = json.loads(model_path.read_text(encoding="utf-8"))
-        except Exception:
-            return {**empty_counts, "status": "invalid", "sourceType": "gltf", "label": "结构：gltf JSON 异常"}
-        return summarize_gltf_payload_structure(payload, "gltf")
-    if extension in {".glb", ".vrm"}:
-        source_type = extension[1:]
-        return {
-            **empty_counts,
-            "status": "binary",
-            "sourceType": source_type,
-            "label": f"结构：{source_type.upper()} 单文件，需渲染后端读取节点",
-        }
+    if extension in {".gltf", ".glb", ".vrm"}:
+        payload, source_type, container_probe, error = load_gltf_static_payload(model_path)
+        if payload is None:
+            return {
+                **empty_counts,
+                "status": "invalid",
+                "sourceType": source_type,
+                "label": f"结构：{error or '入口异常'}",
+                "containerProbe": container_probe or {},
+            }
+        structure = summarize_gltf_payload_structure(payload, source_type)
+        if container_probe:
+            structure["containerProbe"] = container_probe
+            if container_probe.get("status") == "needs_attention" and structure.get("status") == "ready":
+                structure["status"] = "partial"
+            structure["label"] = f"{structure.get('label') or '结构：已解析'} · {container_probe.get('label')}"
+        return structure
     if extension in {".fbx", ".obj"}:
         return {
             **empty_counts,
@@ -677,6 +680,31 @@ GLTF_MATERIAL_TEXTURE_SLOTS = [
     ("occlusionTexture", "遮蔽贴图", ("occlusionTexture",)),
     ("emissiveTexture", "自发光贴图", ("emissiveTexture",)),
 ]
+GLTF_ANIMATION_TARGET_PATHS = {"translation", "rotation", "scale", "weights"}
+GLB_MAGIC = b"glTF"
+GLB_VERSION = 2
+GLB_JSON_CHUNK_TYPE = 0x4E4F534A
+GLB_BIN_CHUNK_TYPE = 0x004E4942
+GLTF_PERFORMANCE_BUDGETS = {
+    "model3d": {
+        "estimatedVertexCount": 120_000,
+        "estimatedTriangleCount": 70_000,
+        "drawCallCount": 64,
+        "materialCount": 32,
+        "textureCount": 48,
+        "animationChannelCount": 180,
+        "skinCount": 4,
+    },
+    "scene3d": {
+        "estimatedVertexCount": 350_000,
+        "estimatedTriangleCount": 200_000,
+        "drawCallCount": 160,
+        "materialCount": 80,
+        "textureCount": 96,
+        "animationChannelCount": 300,
+        "skinCount": 8,
+    },
+}
 
 
 def get_gltf_list(gltf_payload: dict, key: str) -> list:
@@ -691,6 +719,537 @@ def get_nested_dict(source: dict, path: tuple[str, ...]) -> dict:
             return {}
         current = current.get(key)
     return current if isinstance(current, dict) else {}
+
+
+def get_glb_chunk_type_label(chunk_type: int) -> str:
+    if chunk_type == GLB_JSON_CHUNK_TYPE:
+        return "JSON"
+    if chunk_type == GLB_BIN_CHUNK_TYPE:
+        return "BIN"
+    raw = chunk_type.to_bytes(4, "little", signed=False)
+    if all(32 <= byte <= 126 for byte in raw):
+        return raw.decode("ascii", errors="replace")
+    return f"0x{chunk_type:08X}"
+
+
+def build_glb_container_issue(code: str, path: str, message: str, suggestion: str) -> dict:
+    return {"code": code, "path": path, "message": message, "suggestion": suggestion}
+
+
+def parse_glb_json_payload(model_path: Path) -> tuple[dict | None, dict]:
+    source_type = model_path.suffix.lower().lstrip(".") or "glb"
+    try:
+        raw = model_path.read_bytes()
+    except Exception as error:
+        return None, {
+            "status": "invalid",
+            "sourceType": source_type,
+            "label": f"GLB 容器：无法读取文件（{error}）",
+            "fileSize": 0,
+            "declaredLength": 0,
+            "version": None,
+            "chunkCount": 0,
+            "jsonByteLength": 0,
+            "binByteLength": 0,
+            "issueCount": 1,
+            "issues": [
+                build_glb_container_issue(
+                    "glb_file_read_failed",
+                    str(model_path),
+                    f"无法读取 {source_type.upper()} 文件。",
+                    "确认文件没有被移动、锁定或损坏后重新导出。",
+                )
+            ],
+            "chunks": [],
+        }
+
+    file_size = len(raw)
+    issues: list[dict] = []
+    if file_size < 12:
+        return None, {
+            "status": "invalid",
+            "sourceType": source_type,
+            "label": "GLB 容器：文件头不足 12 字节",
+            "fileSize": file_size,
+            "declaredLength": 0,
+            "version": None,
+            "chunkCount": 0,
+            "jsonByteLength": 0,
+            "binByteLength": 0,
+            "issueCount": 1,
+            "issues": [
+                build_glb_container_issue(
+                    "glb_header_too_short",
+                    "header",
+                    "GLB/VRM 文件头不足，无法读取 magic、version 和 length。",
+                    "重新从建模工具导出完整的 GLB/VRM 文件。",
+                )
+            ],
+            "chunks": [],
+        }
+
+    magic = raw[:4]
+    version = int.from_bytes(raw[4:8], "little")
+    declared_length = int.from_bytes(raw[8:12], "little")
+    if magic != GLB_MAGIC:
+        issues.append(
+            build_glb_container_issue(
+                "glb_magic_invalid",
+                "header.magic",
+                "文件头 magic 不是 glTF。",
+                "确认文件确实是 GLB/VRM，而不是改后缀的其他格式。",
+            )
+        )
+    if version != GLB_VERSION:
+        issues.append(
+            build_glb_container_issue(
+                "glb_version_unsupported",
+                "header.version",
+                f"GLB version 为 {version}，当前静态检查按 2.0 解析。",
+                "建议重新导出为 glTF/GLB 2.0。",
+            )
+        )
+    if declared_length != file_size:
+        issues.append(
+            build_glb_container_issue(
+                "glb_declared_length_mismatch",
+                "header.length",
+                f"GLB 声明长度 {declared_length} 与实际文件大小 {file_size} 不一致。",
+                "重新导出文件，避免二进制包被截断或拼接了额外数据。",
+            )
+        )
+
+    if magic != GLB_MAGIC or version != GLB_VERSION or declared_length < 12:
+        return None, {
+            "status": "invalid",
+            "sourceType": source_type,
+            "label": "GLB 容器：文件头异常",
+            "fileSize": file_size,
+            "declaredLength": declared_length,
+            "version": version,
+            "chunkCount": 0,
+            "jsonByteLength": 0,
+            "binByteLength": 0,
+            "issueCount": len(issues),
+            "issues": issues[:16],
+            "chunks": [],
+        }
+
+    data_limit = min(file_size, declared_length)
+    chunks: list[dict] = []
+    offset = 12
+    json_payload: dict | None = None
+    json_byte_length = 0
+    bin_byte_length = 0
+    while offset + 8 <= data_limit:
+        chunk_length = int.from_bytes(raw[offset : offset + 4], "little")
+        chunk_type = int.from_bytes(raw[offset + 4 : offset + 8], "little")
+        chunk_start = offset + 8
+        chunk_end = chunk_start + chunk_length
+        type_label = get_glb_chunk_type_label(chunk_type)
+        chunks.append({"type": type_label, "byteLength": chunk_length, "offset": offset})
+        if chunk_end > data_limit:
+            issues.append(
+                build_glb_container_issue(
+                    "glb_chunk_overflow",
+                    f"chunks[{len(chunks) - 1}]",
+                    f"{type_label} chunk 超出 GLB 声明长度。",
+                    "重新导出文件，或检查打包/上传过程是否截断了二进制数据。",
+                )
+            )
+            break
+        chunk_data = raw[chunk_start:chunk_end]
+        if chunk_type == GLB_JSON_CHUNK_TYPE and json_payload is None:
+            json_byte_length = chunk_length
+            try:
+                decoded = chunk_data.rstrip(b" \t\r\n\x00").decode("utf-8")
+                parsed = json.loads(decoded)
+            except Exception as error:
+                issues.append(
+                    build_glb_container_issue(
+                        "glb_json_chunk_invalid",
+                        f"chunks[{len(chunks) - 1}]",
+                        f"JSON chunk 无法解析：{error}",
+                        "重新导出有效的 GLB/VRM，或先转成 .gltf 方便定位 JSON 问题。",
+                    )
+                )
+            else:
+                if isinstance(parsed, dict):
+                    json_payload = parsed
+                else:
+                    issues.append(
+                        build_glb_container_issue(
+                            "glb_json_root_invalid",
+                            f"chunks[{len(chunks) - 1}]",
+                            "JSON chunk 根节点不是对象。",
+                            "重新导出有效的 glTF 2.0 JSON 内容。",
+                        )
+                    )
+        elif chunk_type == GLB_BIN_CHUNK_TYPE:
+            bin_byte_length += chunk_length
+        offset = chunk_end
+
+    if offset < data_limit:
+        issues.append(
+            build_glb_container_issue(
+                "glb_trailing_bytes",
+                "chunks",
+                "GLB chunk 表末尾存在无法解析的尾部字节。",
+                "重新导出文件，确认所有 chunk 都按 4 字节对齐。",
+            )
+        )
+    if json_payload is None and not any(issue.get("code") == "glb_json_chunk_invalid" for issue in issues):
+        issues.append(
+            build_glb_container_issue(
+                "glb_json_chunk_missing",
+                "chunks",
+                "GLB/VRM 缺少 JSON chunk，无法读取结构和材质元数据。",
+                "重新导出标准 GLB/VRM 文件；标准文件必须包含一个 JSON chunk。",
+            )
+        )
+
+    issue_count = len(issues)
+    if json_payload is None:
+        status = "invalid"
+    elif issue_count:
+        status = "needs_attention"
+    else:
+        status = "ready"
+    label = (
+        f"{source_type.upper()} 容器：JSON {json_byte_length} bytes / BIN {bin_byte_length} bytes"
+        if json_payload is not None
+        else f"{source_type.upper()} 容器：无法读取 JSON chunk"
+    )
+    if issue_count:
+        label += f" · {issue_count} 个容器问题"
+    return json_payload, {
+        "status": status,
+        "sourceType": source_type,
+        "label": label,
+        "fileSize": file_size,
+        "declaredLength": declared_length,
+        "version": version,
+        "chunkCount": len(chunks),
+        "jsonByteLength": json_byte_length,
+        "binByteLength": bin_byte_length,
+        "issueCount": issue_count,
+        "issues": issues[:16],
+        "chunks": chunks[:8],
+    }
+
+
+def load_gltf_static_payload(model_path: Path) -> tuple[dict | None, str, dict | None, str]:
+    extension = model_path.suffix.lower()
+    source_type = extension.lstrip(".") or "unknown"
+    if extension == ".gltf":
+        try:
+            payload = json.loads(model_path.read_text(encoding="utf-8"))
+        except Exception as error:
+            return None, "gltf", None, f"gltf JSON 异常：{error}"
+        if not isinstance(payload, dict):
+            return None, "gltf", None, "gltf 入口不是对象"
+        return payload, "gltf", None, ""
+    if extension in {".glb", ".vrm"}:
+        payload, container_probe = parse_glb_json_payload(model_path)
+        error = "" if payload is not None else str(container_probe.get("label") or "GLB 容器异常")
+        return payload, source_type, container_probe, error
+    return None, source_type, None, "不是可静态解析的 glTF/GLB/VRM 文件"
+
+
+def build_gltf_integrity_probe(gltf_payload: object) -> dict:
+    if not isinstance(gltf_payload, dict):
+        return {
+            "status": "invalid",
+            "label": "完整性：gltf 入口不是对象",
+            "issueCount": 1,
+            "issues": [
+                {
+                    "code": "gltf_root_invalid",
+                    "path": "$",
+                    "message": "glTF 根节点不是对象。",
+                    "suggestion": "请重新导出有效的 .gltf，或改用自包含 .glb。",
+                }
+            ],
+        }
+
+    issues: list[dict] = []
+    scenes = get_gltf_list(gltf_payload, "scenes")
+    nodes = get_gltf_list(gltf_payload, "nodes")
+    meshes = get_gltf_list(gltf_payload, "meshes")
+    materials = get_gltf_list(gltf_payload, "materials")
+    textures = get_gltf_list(gltf_payload, "textures")
+    images = get_gltf_list(gltf_payload, "images")
+    cameras = get_gltf_list(gltf_payload, "cameras")
+    skins = get_gltf_list(gltf_payload, "skins")
+    accessors = get_gltf_list(gltf_payload, "accessors")
+    samplers = get_gltf_list(gltf_payload, "samplers")
+    extensions = gltf_payload.get("extensions") if isinstance(gltf_payload.get("extensions"), dict) else {}
+    light_extension = extensions.get("KHR_lights_punctual") if isinstance(extensions.get("KHR_lights_punctual"), dict) else {}
+    lights = light_extension.get("lights") if isinstance(light_extension.get("lights"), list) else []
+
+    def add_issue(code: str, path: str, message: str, suggestion: str) -> None:
+        issues.append({"code": code, "path": path, "message": message, "suggestion": suggestion})
+
+    def check_index(value: object, collection: list, code: str, path: str, label: str) -> None:
+        if value is None:
+            return
+        if not isinstance(value, int) or not (0 <= value < len(collection)):
+            add_issue(code, path, f"{label} 指向不存在的索引：{value}", "回到 DCC/建模工具重新导出，或修正 glTF 内部索引引用。")
+
+    if "scene" in gltf_payload:
+        check_index(gltf_payload.get("scene"), scenes, "gltf_default_scene_missing", "scene", "默认场景")
+
+    for scene_index, scene in enumerate(scenes):
+        scene = scene if isinstance(scene, dict) else {}
+        scene_nodes = scene.get("nodes") if isinstance(scene.get("nodes"), list) else []
+        for node_position, node_index in enumerate(scene_nodes):
+            check_index(
+                node_index,
+                nodes,
+                "gltf_scene_node_missing",
+                f"scenes[{scene_index}].nodes[{node_position}]",
+                "场景节点",
+            )
+
+    for node_index, node in enumerate(nodes):
+        node = node if isinstance(node, dict) else {}
+        check_index(node.get("mesh"), meshes, "gltf_node_mesh_missing", f"nodes[{node_index}].mesh", "节点网格")
+        check_index(node.get("camera"), cameras, "gltf_node_camera_missing", f"nodes[{node_index}].camera", "节点相机")
+        check_index(node.get("skin"), skins, "gltf_node_skin_missing", f"nodes[{node_index}].skin", "节点骨骼")
+        children = node.get("children") if isinstance(node.get("children"), list) else []
+        for child_position, child_index in enumerate(children):
+            check_index(
+                child_index,
+                nodes,
+                "gltf_node_child_missing",
+                f"nodes[{node_index}].children[{child_position}]",
+                "子节点",
+            )
+        node_extensions = node.get("extensions") if isinstance(node.get("extensions"), dict) else {}
+        light_ref = node_extensions.get("KHR_lights_punctual") if isinstance(node_extensions.get("KHR_lights_punctual"), dict) else {}
+        check_index(light_ref.get("light"), lights, "gltf_node_light_missing", f"nodes[{node_index}].extensions.KHR_lights_punctual.light", "节点灯光")
+
+    for mesh_index, mesh in enumerate(meshes):
+        mesh = mesh if isinstance(mesh, dict) else {}
+        primitives = mesh.get("primitives") if isinstance(mesh.get("primitives"), list) else []
+        if not primitives:
+            add_issue(
+                "gltf_mesh_without_primitives",
+                f"meshes[{mesh_index}].primitives",
+                "网格没有 primitive，渲染时可能不可见。",
+                "确认模型导出时包含实际几何体，或删除空网格。",
+            )
+        for primitive_index, primitive in enumerate(primitives):
+            primitive = primitive if isinstance(primitive, dict) else {}
+            primitive_path = f"meshes[{mesh_index}].primitives[{primitive_index}]"
+            check_index(primitive.get("material"), materials, "gltf_primitive_material_missing", f"{primitive_path}.material", "primitive 材质")
+            check_index(primitive.get("indices"), accessors, "gltf_primitive_indices_accessor_missing", f"{primitive_path}.indices", "primitive 索引 accessor")
+            attributes = primitive.get("attributes") if isinstance(primitive.get("attributes"), dict) else {}
+            if not attributes:
+                add_issue(
+                    "gltf_primitive_without_attributes",
+                    f"{primitive_path}.attributes",
+                    "primitive 没有 attributes，渲染后端可能无法构建顶点。",
+                    "至少确认 POSITION accessor 存在；如果是占位模型，发布前请替换为正式资源。",
+                )
+            for attribute_name, accessor_index in attributes.items():
+                check_index(
+                    accessor_index,
+                    accessors,
+                    "gltf_attribute_accessor_missing",
+                    f"{primitive_path}.attributes.{attribute_name}",
+                    f"{attribute_name} accessor",
+                )
+
+    for texture_index, texture in enumerate(textures):
+        texture = texture if isinstance(texture, dict) else {}
+        check_index(texture.get("source"), images, "gltf_texture_image_missing", f"textures[{texture_index}].source", "纹理图片")
+        check_index(texture.get("sampler"), samplers, "gltf_texture_sampler_missing", f"textures[{texture_index}].sampler", "纹理采样器")
+
+    for skin_index, skin in enumerate(skins):
+        skin = skin if isinstance(skin, dict) else {}
+        joints = skin.get("joints") if isinstance(skin.get("joints"), list) else []
+        for joint_position, joint_index in enumerate(joints):
+            check_index(joint_index, nodes, "gltf_skin_joint_missing", f"skins[{skin_index}].joints[{joint_position}]", "骨骼 joint")
+        check_index(skin.get("inverseBindMatrices"), accessors, "gltf_skin_inverse_bind_accessor_missing", f"skins[{skin_index}].inverseBindMatrices", "inverseBindMatrices accessor")
+
+    animations = get_gltf_list(gltf_payload, "animations")
+    for animation_index, animation in enumerate(animations):
+        animation = animation if isinstance(animation, dict) else {}
+        animation_samplers = animation.get("samplers") if isinstance(animation.get("samplers"), list) else []
+        channels = animation.get("channels") if isinstance(animation.get("channels"), list) else []
+        if not channels:
+            add_issue(
+                "gltf_animation_without_channels",
+                f"animations[{animation_index}].channels",
+                "动画没有 channel，运行时不会产生可见变化。",
+                "确认动画导出设置包含目标节点和 transform 通道。",
+            )
+        for sampler_index, sampler in enumerate(animation_samplers):
+            sampler = sampler if isinstance(sampler, dict) else {}
+            check_index(sampler.get("input"), accessors, "gltf_animation_input_accessor_missing", f"animations[{animation_index}].samplers[{sampler_index}].input", "动画 input accessor")
+            check_index(sampler.get("output"), accessors, "gltf_animation_output_accessor_missing", f"animations[{animation_index}].samplers[{sampler_index}].output", "动画 output accessor")
+        for channel_index, channel in enumerate(channels):
+            channel = channel if isinstance(channel, dict) else {}
+            channel_path = f"animations[{animation_index}].channels[{channel_index}]"
+            check_index(channel.get("sampler"), animation_samplers, "gltf_animation_sampler_missing", f"{channel_path}.sampler", "动画 channel sampler")
+            target = channel.get("target") if isinstance(channel.get("target"), dict) else {}
+            check_index(target.get("node"), nodes, "gltf_animation_target_node_missing", f"{channel_path}.target.node", "动画目标节点")
+            target_path = str(target.get("path") or "").strip()
+            if target_path and target_path not in GLTF_ANIMATION_TARGET_PATHS:
+                add_issue(
+                    "gltf_animation_target_path_unknown",
+                    f"{channel_path}.target.path",
+                    f"动画目标路径暂不常见：{target_path}",
+                    "建议使用 translation、rotation、scale 或 weights；自定义扩展动画需要后续渲染后端专门适配。",
+                )
+
+    issue_count = len(issues)
+    label = "完整性：内部索引可解析" if issue_count == 0 else f"完整性：发现 {issue_count} 个内部引用问题"
+    return {
+        "status": "ready" if issue_count == 0 else "needs_attention",
+        "label": label,
+        "issueCount": issue_count,
+        "issues": issues[:24],
+    }
+
+
+def get_gltf_accessor_count(accessors: list, index: object) -> int:
+    if not isinstance(index, int) or not (0 <= index < len(accessors)):
+        return 0
+    accessor = accessors[index] if isinstance(accessors[index], dict) else {}
+    count = accessor.get("count")
+    return int(count) if isinstance(count, int) and count > 0 else 0
+
+
+def estimate_gltf_triangle_count(mode: int, element_count: int) -> int:
+    if element_count <= 0:
+        return 0
+    if mode == 4:
+        return element_count // 3
+    if mode in {5, 6}:
+        return max(0, element_count - 2)
+    return 0
+
+
+def build_gltf_performance_budget_probe(gltf_payload: object, asset_type: str) -> dict:
+    if not isinstance(gltf_payload, dict):
+        return {
+            "status": "invalid",
+            "label": "预算：无法读取 glTF 元数据",
+            "issueCount": 1,
+            "issues": [
+                {
+                    "metric": "root",
+                    "message": "glTF 根节点不是对象，无法估算性能预算。",
+                    "suggestion": "重新导出有效的 glTF/GLB/VRM 后再检查预算。",
+                }
+            ],
+            "metrics": {},
+            "limits": GLTF_PERFORMANCE_BUDGETS.get(asset_type, GLTF_PERFORMANCE_BUDGETS["scene3d"]),
+            "primitives": [],
+        }
+
+    meshes = get_gltf_list(gltf_payload, "meshes")
+    materials = get_gltf_list(gltf_payload, "materials")
+    textures = get_gltf_list(gltf_payload, "textures")
+    images = get_gltf_list(gltf_payload, "images")
+    animations = get_gltf_list(gltf_payload, "animations")
+    skins = get_gltf_list(gltf_payload, "skins")
+    accessors = get_gltf_list(gltf_payload, "accessors")
+    limits = GLTF_PERFORMANCE_BUDGETS.get(asset_type, GLTF_PERFORMANCE_BUDGETS["scene3d"])
+    primitive_entries: list[dict] = []
+    estimated_vertex_count = 0
+    estimated_triangle_count = 0
+    draw_call_count = 0
+    unknown_geometry_count = 0
+
+    for mesh_index, mesh in enumerate(meshes):
+        mesh = mesh if isinstance(mesh, dict) else {}
+        primitives = mesh.get("primitives") if isinstance(mesh.get("primitives"), list) else []
+        for primitive_index, primitive in enumerate(primitives):
+            primitive = primitive if isinstance(primitive, dict) else {}
+            draw_call_count += 1
+            mode = primitive.get("mode", 4)
+            mode = int(mode) if isinstance(mode, int) else 4
+            attributes = primitive.get("attributes") if isinstance(primitive.get("attributes"), dict) else {}
+            position_accessor = attributes.get("POSITION")
+            vertex_count = get_gltf_accessor_count(accessors, position_accessor)
+            index_count = get_gltf_accessor_count(accessors, primitive.get("indices"))
+            element_count = index_count or vertex_count
+            triangle_count = estimate_gltf_triangle_count(mode, element_count)
+            estimated_vertex_count += vertex_count
+            estimated_triangle_count += triangle_count
+            if vertex_count == 0:
+                unknown_geometry_count += 1
+            primitive_entries.append(
+                {
+                    "meshIndex": mesh_index,
+                    "primitiveIndex": primitive_index,
+                    "mode": mode,
+                    "vertexCount": vertex_count,
+                    "indexCount": index_count,
+                    "estimatedTriangleCount": triangle_count,
+                    "materialIndex": primitive.get("material") if isinstance(primitive.get("material"), int) else None,
+                }
+            )
+
+    animation_channel_count = sum(
+        len(animation.get("channels")) if isinstance(animation, dict) and isinstance(animation.get("channels"), list) else 0
+        for animation in animations
+    )
+    metrics = {
+        "estimatedVertexCount": estimated_vertex_count,
+        "estimatedTriangleCount": estimated_triangle_count,
+        "drawCallCount": draw_call_count,
+        "materialCount": len(materials),
+        "textureCount": max(len(textures), len(images)),
+        "animationChannelCount": animation_channel_count,
+        "skinCount": len(skins),
+        "unknownGeometryPrimitiveCount": unknown_geometry_count,
+    }
+    issue_labels = {
+        "estimatedVertexCount": "顶点数",
+        "estimatedTriangleCount": "三角面",
+        "drawCallCount": "draw call",
+        "materialCount": "材质数量",
+        "textureCount": "贴图数量",
+        "animationChannelCount": "动画通道",
+        "skinCount": "骨骼/skin 数量",
+    }
+    issues = []
+    for metric, limit in limits.items():
+        value = int(metrics.get(metric) or 0)
+        if value > int(limit):
+            label = issue_labels.get(metric, metric)
+            issues.append(
+                {
+                    "metric": metric,
+                    "label": label,
+                    "value": value,
+                    "limit": int(limit),
+                    "message": f"{label} {value} 超过建议预算 {limit}。",
+                    "suggestion": "建议合批网格、降低面数、压缩材质数量或拆分场景后再发布。",
+                }
+            )
+
+    issue_count = len(issues)
+    label = (
+        f"预算：{draw_call_count} draw call / {estimated_triangle_count} 三角面 / {estimated_vertex_count} 顶点"
+    )
+    if issue_count:
+        label += f" · {issue_count} 项超预算"
+    elif unknown_geometry_count:
+        label += f" · {unknown_geometry_count} 个 primitive 缺少可估算顶点数"
+    return {
+        "status": "needs_attention" if issue_count else "ready",
+        "label": label,
+        "issueCount": issue_count,
+        "issues": issues,
+        "metrics": metrics,
+        "limits": limits,
+        "primitives": primitive_entries[:24],
+    }
 
 
 def resolve_gltf_texture_uri(
@@ -710,6 +1269,8 @@ def resolve_gltf_texture_uri(
     uri = str(image.get("uri") or "").strip()
     if not uri and image.get("bufferView") is not None:
         return {"status": "embedded", "textureIndex": texture_index, "imageIndex": image_index, "uri": ""}
+    if uri.startswith("data:"):
+        return {"status": "embedded", "textureIndex": texture_index, "imageIndex": image_index, "uri": "data:"}
     if not uri:
         return {"status": "missing_uri", "textureIndex": texture_index, "imageIndex": image_index, "uri": ""}
     dependency_path = resolve_model3d_dependency_path(model_path, uri, bundle_dir)
@@ -743,13 +1304,19 @@ def summarize_gltf_preview_probe(model_path: Path | None, bundle_dir: Path) -> d
         return {**empty_summary, "status": "unknown", "label": "预览探针：待检测", "materials": [], "animations": [], "cameras": [], "lights": []}
 
     extension = model_path.suffix.lower()
-    if extension == ".gltf":
-        try:
-            gltf_payload = json.loads(model_path.read_text(encoding="utf-8"))
-        except Exception:
-            return {**empty_summary, "status": "invalid", "label": "预览探针：gltf JSON 异常", "materials": [], "animations": [], "cameras": [], "lights": []}
-        if not isinstance(gltf_payload, dict):
-            return {**empty_summary, "status": "invalid", "label": "预览探针：gltf 入口不是对象", "materials": [], "animations": [], "cameras": [], "lights": []}
+    if extension in {".gltf", ".glb", ".vrm"}:
+        gltf_payload, _source_type, container_probe, error = load_gltf_static_payload(model_path)
+        if gltf_payload is None:
+            return {
+                **empty_summary,
+                "status": "invalid",
+                "label": f"预览探针：{error or '入口异常'}",
+                "materials": [],
+                "animations": [],
+                "cameras": [],
+                "lights": [],
+                "containerProbe": container_probe or {},
+            }
 
         textures = get_gltf_list(gltf_payload, "textures")
         images = get_gltf_list(gltf_payload, "images")
@@ -853,7 +1420,7 @@ def summarize_gltf_preview_probe(model_path: Path | None, bundle_dir: Path) -> d
             }
             for light_index, light in enumerate(lights)
         ]
-        if texture_slot_issue_count:
+        if texture_slot_issue_count or (container_probe and container_probe.get("status") == "needs_attention"):
             status = "needs_attention"
         elif materials or animations or cameras or lights:
             status = "ready"
@@ -888,19 +1455,9 @@ def summarize_gltf_preview_probe(model_path: Path | None, bundle_dir: Path) -> d
             "animations": animation_entries[:12],
             "cameras": camera_entries[:8],
             "lights": light_entries[:8],
+            "containerProbe": container_probe or {},
         }
 
-    if extension in {".glb", ".vrm"}:
-        source_type = extension[1:].upper()
-        return {
-            **empty_summary,
-            "status": "binary",
-            "label": f"预览探针：{source_type} 单文件需渲染后端读取材质/动画",
-            "materials": [],
-            "animations": [],
-            "cameras": [],
-            "lights": [],
-        }
     if extension in {".fbx", ".obj"}:
         return {
             **empty_summary,
@@ -2620,29 +3177,107 @@ def build_release_check_report(bundle_dir: Path) -> dict:
                 "建议优先使用 glb、gltf 或 vrm；fbx/obj 后续需要转换层或专门渲染后端。",
                 export_url,
             )
-        if asset_type in {"model3d", "scene3d"} and extension == ".gltf":
+        if asset_type in {"model3d", "scene3d"} and extension in {".gltf", ".glb", ".vrm"}:
             asset_label = "3D 场景" if asset_type == "scene3d" else "3D 模型"
             issue_prefix = "scene3d" if asset_type == "scene3d" else "model3d"
-            try:
-                gltf_payload = json.loads(asset_path.read_text(encoding="utf-8"))
-            except Exception as error:
+            gltf_payload, source_type, container_probe, error = load_gltf_static_payload(asset_path)
+            if gltf_payload is None:
                 add_release_check_issue(
                     issues,
                     "error",
-                    f"{issue_prefix}_gltf_json_invalid",
+                    f"{issue_prefix}_{source_type}_json_invalid",
                     f"{asset_label}入口无法解析：{asset_name}",
-                    f"确认 .gltf 是有效 JSON；如果想单文件分发，建议改用 .glb。错误：{error}",
+                    f"确认 {extension} 是有效的 glTF/GLB/VRM 文件；如果文件损坏，请从建模工具重新导出。错误：{error}",
                     export_url,
                 )
             else:
-                structure_summary = summarize_gltf_payload_structure(gltf_payload, "gltf")
+                if container_probe and int(container_probe.get("issueCount") or 0) > 0:
+                    container_issues = [
+                        str(issue.get("path") or issue.get("code") or "未知位置")
+                        for issue in container_probe.get("issues") or []
+                        if isinstance(issue, dict)
+                    ]
+                    issue_preview = ", ".join(container_issues[:5]) if container_issues else "容器头或 chunk 异常"
+                    if len(container_issues) > 5:
+                        issue_preview += f" 等 {len(container_issues)} 项"
+                    add_release_check_issue(
+                        issues,
+                        "warning",
+                        f"{issue_prefix}_{source_type}_container_issue",
+                        f"{asset_label}二进制容器需要复核：{asset_name}",
+                        f"{source_type.upper()} 容器存在长度、chunk 或 JSON 包装问题；建议重新导出。位置：{issue_preview}",
+                        export_url,
+                    )
+                structure_summary = summarize_gltf_payload_structure(gltf_payload, source_type)
                 if asset_type == "scene3d" and structure_summary.get("status") == "empty":
                     add_release_check_issue(
                         issues,
                         "warning",
-                        "scene3d_gltf_empty_structure",
+                        f"scene3d_{source_type}_empty_structure",
                         f"3D 场景入口缺少可分析结构：{asset_name}",
-                        "建议确认 .gltf 内含 scenes、nodes、meshes；如果只是占位文件，导出前请替换为正式场景。",
+                        f"建议确认 {extension} 内含 scenes、nodes、meshes；如果只是占位文件，导出前请替换为正式场景。",
+                        export_url,
+                    )
+                preview_probe = summarize_gltf_preview_probe(asset_path, bundle_dir)
+                if int(preview_probe.get("textureSlotIssueCount") or 0) > 0:
+                    slot_issues: list[str] = []
+                    for material in preview_probe.get("materials") or []:
+                        if not isinstance(material, dict):
+                            continue
+                        material_name = str(material.get("name") or "未命名材质")
+                        for slot in material.get("textureSlots") or []:
+                            if not isinstance(slot, dict):
+                                continue
+                            if str(slot.get("status") or "") in {"ready", "embedded"}:
+                                continue
+                            slot_issues.append(
+                                f"{material_name}/{slot.get('label') or slot.get('slot')}: {slot.get('status')}"
+                            )
+                    slot_preview = ", ".join(slot_issues[:4]) if slot_issues else "材质贴图槽索引异常"
+                    if len(slot_issues) > 4:
+                        slot_preview += f" 等 {len(slot_issues)} 项"
+                    add_release_check_issue(
+                        issues,
+                        "warning",
+                        f"{issue_prefix}_{source_type}_material_texture_slot_issue",
+                        f"{asset_label}材质贴图槽需要复核：{asset_name}",
+                        f"请检查 glTF 材质里的 texture index、image source 和图片文件是否对应；问题：{slot_preview}",
+                        export_url,
+                    )
+                integrity_probe = build_gltf_integrity_probe(gltf_payload)
+                if int(integrity_probe.get("issueCount") or 0) > 0:
+                    integrity_issues = [
+                        str(issue.get("path") or issue.get("code") or "未知位置")
+                        for issue in integrity_probe.get("issues") or []
+                        if isinstance(issue, dict)
+                    ]
+                    issue_preview = ", ".join(integrity_issues[:5]) if integrity_issues else "内部索引断链"
+                    if len(integrity_issues) > 5:
+                        issue_preview += f" 等 {len(integrity_issues)} 项"
+                    add_release_check_issue(
+                        issues,
+                        "warning",
+                        f"{issue_prefix}_{source_type}_integrity_issue",
+                        f"{asset_label}内部引用需要复核：{asset_name}",
+                        f"glTF 内部 scene/node/mesh/material/animation 等索引存在断链；请重新导出或修复这些位置：{issue_preview}",
+                        export_url,
+                    )
+                performance_probe = build_gltf_performance_budget_probe(gltf_payload, asset_type)
+                if int(performance_probe.get("issueCount") or 0) > 0:
+                    budget_issues = [
+                        f"{issue.get('label') or issue.get('metric')} {issue.get('value')}/{issue.get('limit')}"
+                        for issue in performance_probe.get("issues") or []
+                        if isinstance(issue, dict)
+                    ]
+                    issue_preview = "，".join(budget_issues[:5]) if budget_issues else "性能预算超限"
+                    if len(budget_issues) > 5:
+                        issue_preview += f" 等 {len(budget_issues)} 项"
+                    add_release_check_issue(
+                        issues,
+                        "warning",
+                        f"{issue_prefix}_{source_type}_performance_budget_risk",
+                        f"{asset_label}性能预算偏高：{asset_name}",
+                        f"静态估算显示该 3D 资产可能影响低配设备或移动端路线；建议优化后再发布。超预算项：{issue_preview}",
                         export_url,
                     )
                 gltf_references = collect_gltf_references(gltf_payload)
@@ -2661,7 +3296,7 @@ def build_release_check_report(bundle_dir: Path) -> dict:
                     add_release_check_issue(
                         issues,
                         "warning",
-                        f"{issue_prefix}_gltf_dependency_path_unsafe",
+                        f"{issue_prefix}_{source_type}_dependency_path_unsafe",
                         f"{asset_label}入口引用了导出包外的路径：{asset_name}",
                         f"请把这些引用改成模型目录内的相对路径，或导出为自包含 .glb：{reference_preview}",
                         export_url,
@@ -2673,9 +3308,9 @@ def build_release_check_report(bundle_dir: Path) -> dict:
                     add_release_check_issue(
                         issues,
                         "warning",
-                        f"{issue_prefix}_gltf_dependency_missing",
+                        f"{issue_prefix}_{source_type}_dependency_missing",
                         f"{asset_label}入口缺少依赖文件：{asset_name}",
-                        f"请随 .gltf 一起导入并导出这些文件，或改用 .glb：{reference_preview}",
+                        f"请随 {extension} 入口一起导入并导出这些文件，或改用自包含 .glb：{reference_preview}",
                         export_url,
                     )
         if asset_type == "video":
@@ -2815,19 +3450,27 @@ def summarize_native_model_dependency_health(bundle_dir: Path, mode: str, model_
                 unsafe.append(reference)
             elif not dependency_path.is_file():
                 missing.append(reference)
-    elif mode == "model3d" and model_path.suffix.lower() == ".gltf":
-        try:
-            references = collect_gltf_references(json.loads(model_path.read_text(encoding="utf-8")))
-        except Exception:
-            return {"total": 0, "missing": [], "unsafe": [], "status": "invalid", "label": "依赖：gltf JSON 异常"}
+    elif mode == "model3d" and model_path.suffix.lower() in {".gltf", ".glb", ".vrm"}:
+        payload, source_type, container_probe, error = load_gltf_static_payload(model_path)
+        if payload is None:
+            return {"total": 0, "missing": [], "unsafe": [], "status": "invalid", "label": f"依赖：{error or '入口异常'}"}
+        references = collect_gltf_references(payload)
+        if container_probe and container_probe.get("status") == "needs_attention":
+            status = "partial"
         for reference in references:
             dependency_path = resolve_model3d_dependency_path(model_path, reference, bundle_dir)
             if dependency_path is None:
                 unsafe.append(reference)
             elif not dependency_path.is_file():
                 missing.append(reference)
-    elif mode == "model3d" and model_path.suffix.lower() in {".glb", ".vrm"}:
-        return {"total": 0, "missing": [], "unsafe": [], "status": "ready", "label": f"依赖：{model_path.suffix.upper()[1:]} 单文件"}
+        if not references and container_probe:
+            return {
+                "total": 0,
+                "missing": [],
+                "unsafe": [],
+                "status": status,
+                "label": f"依赖：{source_type.upper()} 单文件 / {container_probe.get('label')}",
+            }
     elif mode == "model3d" and model_path.suffix.lower() in {".fbx", ".obj"}:
         return {"total": 0, "missing": [], "unsafe": [], "status": "partial", "label": "依赖：需转换/材质复核"}
     elif mode == "live2d":
@@ -3009,7 +3652,7 @@ def build_native_scene3d_preview_report(bundle_dir: Path) -> dict:
             status = "missing_file"
         elif dependency_health.get("status") == "invalid" or structure_summary.get("status") == "invalid":
             status = "invalid"
-        elif dependency_health.get("status") == "partial" or structure_summary.get("status") == "empty":
+        elif dependency_health.get("status") == "partial" or structure_summary.get("status") in {"empty", "partial"}:
             status = "partial"
         else:
             status = "ready"
@@ -3126,20 +3769,50 @@ def build_native_3d_asset_report(bundle_dir: Path) -> dict:
         dependency_health = summarize_native_model_dependency_health(bundle_dir, "model3d", asset_path)
         structure_summary = summarize_gltf_structure(asset_path)
         preview_probe = summarize_gltf_preview_probe(asset_path, bundle_dir)
+        integrity_probe = {"status": "skipped", "label": "完整性：仅 glTF/GLB/VRM 可静态检查", "issueCount": 0, "issues": []}
+        container_probe = {}
+        performance_probe = {"status": "skipped", "label": "预算：仅 glTF/GLB/VRM 可静态估算", "issueCount": 0, "issues": [], "metrics": {}, "limits": {}}
+        if asset_path and extension in {".gltf", ".glb", ".vrm"}:
+            integrity_payload, _source_type, loaded_container_probe, error = load_gltf_static_payload(asset_path)
+            container_probe = loaded_container_probe or {}
+            if integrity_payload is None:
+                integrity_probe = {
+                    "status": "invalid",
+                    "label": f"完整性：{error or '入口异常'}",
+                    "issueCount": 1,
+                    "issues": [
+                        {
+                            "code": "gltf_static_payload_invalid",
+                            "path": export_url,
+                            "message": "无法解析 glTF/GLB/VRM 静态元数据。",
+                            "suggestion": "重新导出有效的 glTF/GLB/VRM 文件。",
+                        }
+                    ],
+                }
+            else:
+                integrity_probe = build_gltf_integrity_probe(integrity_payload)
+                performance_probe = build_gltf_performance_budget_probe(integrity_payload, asset_type)
         usage_entries = usages_by_asset.get(asset_id, [])
 
         if asset.get("isMissing") or not asset_path:
             status = "missing_file"
         elif extension not in SUPPORTED_MODEL3D_EXTENSIONS:
             status = "unsupported_extension"
-        elif dependency_health.get("status") == "invalid" or structure_summary.get("status") == "invalid":
+        elif (
+            dependency_health.get("status") == "invalid"
+            or structure_summary.get("status") == "invalid"
+            or integrity_probe.get("status") == "invalid"
+        ):
             status = "invalid"
         elif structure_summary.get("status") == "unsupported" or extension in {".fbx", ".obj"}:
             status = "needs_conversion"
         elif (
             dependency_health.get("status") == "partial"
             or structure_summary.get("status") == "empty"
+            or structure_summary.get("status") == "partial"
             or preview_probe.get("status") == "needs_attention"
+            or integrity_probe.get("status") == "needs_attention"
+            or performance_probe.get("status") == "needs_attention"
         ):
             status = "partial"
         else:
@@ -3150,7 +3823,7 @@ def build_native_3d_asset_report(bundle_dir: Path) -> dict:
             "unsupported_extension": "转换为 glb/gltf/vrm 后再导出，减少目标机兼容风险。",
             "invalid": "修复入口 JSON 或换用自包含 glb 文件。",
             "needs_conversion": "建议用 Blender 或资产管线转换为 glb/gltf，并复核材质贴图。",
-            "partial": "补齐 glTF 外部 bin/贴图依赖，或确认场景内包含 nodes/meshes。",
+            "partial": "补齐 glTF 外部依赖，并修复内部索引断链或空结构。",
             "ready": "可进入原生 Runtime Preview 点测。",
         }
         entries.append(
@@ -3174,6 +3847,9 @@ def build_native_3d_asset_report(bundle_dir: Path) -> dict:
                 "dependencyHealth": dependency_health,
                 "structureSummary": structure_summary,
                 "previewProbe": preview_probe,
+                "gltfIntegrityProbe": integrity_probe,
+                "glbContainerProbe": container_probe,
+                "performanceBudgetProbe": performance_probe,
                 "usageCount": len(usage_entries),
                 "usages": usage_entries,
                 "recommendedAction": action_by_status.get(status, "复核 3D 资产导入状态。"),
@@ -3193,12 +3869,21 @@ def build_native_3d_asset_report(bundle_dir: Path) -> dict:
     )
     empty_structure_count = sum(1 for entry in entries if (entry.get("structureSummary") or {}).get("status") == "empty")
     texture_slot_issue_count = sum(int((entry.get("previewProbe") or {}).get("textureSlotIssueCount") or 0) for entry in entries)
+    integrity_issue_count = sum(int((entry.get("gltfIntegrityProbe") or {}).get("issueCount") or 0) for entry in entries)
+    container_issue_count = sum(int((entry.get("glbContainerProbe") or {}).get("issueCount") or 0) for entry in entries)
+    performance_issue_count = sum(int((entry.get("performanceBudgetProbe") or {}).get("issueCount") or 0) for entry in entries)
     unused_count = sum(1 for entry in entries if entry.get("usageCount") == 0)
     recommendations: list[str] = []
     if missing_dependency_count:
         recommendations.append("补齐 glTF 外部 bin/贴图依赖，或改用自包含 .glb。")
+    if container_issue_count:
+        recommendations.append("重新导出存在容器问题的 GLB/VRM：文件头、长度或 chunk 包装异常会影响后续渲染后端读取。")
     if texture_slot_issue_count:
         recommendations.append("检查材质贴图槽：有贴图索引、图片 URI 或贴图文件未能被预览探针确认。")
+    if integrity_issue_count:
+        recommendations.append("修复 glTF 内部索引断链：scene、node、mesh、material、texture 或 animation 引用需要重新导出确认。")
+    if performance_issue_count:
+        recommendations.append("优化 3D 性能预算：降低面数、合批 draw call、压缩材质/贴图数量，低配设备会更稳。")
     if conversion_hint_count:
         recommendations.append("将 FBX/OBJ 等格式转换为 glb/gltf，并在目标系统实机点测材质。")
     if empty_structure_count:
@@ -3224,6 +3909,9 @@ def build_native_3d_asset_report(bundle_dir: Path) -> dict:
             "missingDependencyCount": missing_dependency_count,
             "emptyStructureCount": empty_structure_count,
             "textureSlotIssueCount": texture_slot_issue_count,
+            "gltfIntegrityIssueCount": integrity_issue_count,
+            "glbContainerIssueCount": container_issue_count,
+            "performanceBudgetIssueCount": performance_issue_count,
             "textureSlotReadyCount": sum(int((entry.get("previewProbe") or {}).get("textureSlotReadyCount") or 0) for entry in entries),
             "totalTextureSlots": sum(int((entry.get("previewProbe") or {}).get("textureSlotCount") or 0) for entry in entries),
             "totalNodes": sum(int((entry.get("structureSummary") or {}).get("nodes") or 0) for entry in entries),
@@ -3231,6 +3919,9 @@ def build_native_3d_asset_report(bundle_dir: Path) -> dict:
             "totalMaterials": sum(int((entry.get("structureSummary") or {}).get("materials") or 0) for entry in entries),
             "totalTextures": sum(int((entry.get("structureSummary") or {}).get("textures") or 0) for entry in entries),
             "totalAnimations": sum(int((entry.get("structureSummary") or {}).get("animations") or 0) for entry in entries),
+            "estimatedVertexCount": sum(int(((entry.get("performanceBudgetProbe") or {}).get("metrics") or {}).get("estimatedVertexCount") or 0) for entry in entries),
+            "estimatedTriangleCount": sum(int(((entry.get("performanceBudgetProbe") or {}).get("metrics") or {}).get("estimatedTriangleCount") or 0) for entry in entries),
+            "drawCallCount": sum(int(((entry.get("performanceBudgetProbe") or {}).get("metrics") or {}).get("drawCallCount") or 0) for entry in entries),
         },
         "recommendations": recommendations,
         "entries": entries,
@@ -3273,6 +3964,12 @@ def render_native_3d_asset_report_markdown(report: dict) -> str:
         f"| 贴图槽 | {int(summary.get('totalTextureSlots') or 0)} |",
         f"| 可读贴图槽 | {int(summary.get('textureSlotReadyCount') or 0)} |",
         f"| 贴图槽问题 | {int(summary.get('textureSlotIssueCount') or 0)} |",
+        f"| glTF 内部引用问题 | {int(summary.get('gltfIntegrityIssueCount') or 0)} |",
+        f"| GLB/VRM 容器问题 | {int(summary.get('glbContainerIssueCount') or 0)} |",
+        f"| 性能预算问题 | {int(summary.get('performanceBudgetIssueCount') or 0)} |",
+        f"| 估算顶点 | {int(summary.get('estimatedVertexCount') or 0)} |",
+        f"| 估算三角面 | {int(summary.get('estimatedTriangleCount') or 0)} |",
+        f"| draw call | {int(summary.get('drawCallCount') or 0)} |",
         f"| 动画 | {int(summary.get('totalAnimations') or 0)} |",
         "",
     ]
@@ -3291,6 +3988,8 @@ def render_native_3d_asset_report_markdown(report: dict) -> str:
         dependency = entry.get("dependencyHealth") if isinstance(entry.get("dependencyHealth"), dict) else {}
         structure = entry.get("structureSummary") if isinstance(entry.get("structureSummary"), dict) else {}
         probe = entry.get("previewProbe") if isinstance(entry.get("previewProbe"), dict) else {}
+        integrity = entry.get("gltfIntegrityProbe") if isinstance(entry.get("gltfIntegrityProbe"), dict) else {}
+        budget = entry.get("performanceBudgetProbe") if isinstance(entry.get("performanceBudgetProbe"), dict) else {}
         lines.extend(
             [
                 f"### {index}. {format_markdown_value(entry.get('typeLabel'))}：{format_markdown_value(entry.get('name'))}",
@@ -3303,10 +4002,32 @@ def render_native_3d_asset_report_markdown(report: dict) -> str:
                 f"| 依赖 | {format_markdown_value(dependency.get('label'))} |",
                 f"| 结构 | {format_markdown_value(structure.get('label'))} |",
                 f"| 预览探针 | {format_markdown_value(probe.get('label'))} |",
+                f"| 内部引用 | {format_markdown_value(integrity.get('label'))} |",
+                f"| 性能预算 | {format_markdown_value(budget.get('label'))} |",
                 f"| 建议动作 | {format_markdown_value(entry.get('recommendedAction'))} |",
                 "",
             ]
         )
+        budget_issues = budget.get("issues") if isinstance(budget.get("issues"), list) else []
+        if budget_issues:
+            lines.extend(["性能预算风险：", ""])
+            for issue in budget_issues[:8]:
+                if not isinstance(issue, dict):
+                    continue
+                lines.append(
+                    f"- {format_markdown_value(issue.get('message'))} {format_markdown_value(issue.get('suggestion'), '')}"
+                )
+            lines.append("")
+        integrity_issues = integrity.get("issues") if isinstance(integrity.get("issues"), list) else []
+        if integrity_issues:
+            lines.extend(["glTF 内部引用问题：", ""])
+            for issue in integrity_issues[:8]:
+                if not isinstance(issue, dict):
+                    continue
+                lines.append(
+                    f"- `{format_markdown_value(issue.get('path'))}`：{format_markdown_value(issue.get('message'))}"
+                )
+            lines.append("")
         materials = probe.get("materials") if isinstance(probe.get("materials"), list) else []
         if materials:
             lines.extend(["材质贴图槽：", ""])

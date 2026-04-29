@@ -48,6 +48,21 @@ def build_fake_png_bytes() -> bytes:
     )
 
 
+def build_fake_glb_bytes(payload: dict) -> bytes:
+    json_chunk = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    json_chunk += b" " * ((4 - len(json_chunk) % 4) % 4)
+    chunk_type_json = 0x4E4F534A
+    total_length = 12 + 8 + len(json_chunk)
+    return (
+        b"glTF"
+        + (2).to_bytes(4, "little")
+        + total_length.to_bytes(4, "little")
+        + len(json_chunk).to_bytes(4, "little")
+        + chunk_type_json.to_bytes(4, "little")
+        + json_chunk
+    )
+
+
 def create_fake_runtime_archive(archive_path: Path, platform_key: str) -> Path:
     with tempfile.TemporaryDirectory() as temp_dir:
         root = Path(temp_dir) / "python"
@@ -594,6 +609,7 @@ class RunEditorSmokeTests(unittest.TestCase):
                             "scenes": [{"name": "Classroom", "nodes": [0, 1]}],
                             "nodes": [{"name": "Room", "mesh": 0}, {"name": "CameraRig", "camera": 0}],
                             "meshes": [{"primitives": [{"attributes": {"POSITION": 0}, "material": 0}]}],
+                            "accessors": [{}, {}],
                             "materials": [
                                 {
                                     "name": "Wall Paint",
@@ -673,7 +689,11 @@ class RunEditorSmokeTests(unittest.TestCase):
         self.assertEqual(asset3d_payload["summary"]["totalTextureSlots"], 1)
         self.assertEqual(asset3d_payload["summary"]["textureSlotReadyCount"], 1)
         self.assertEqual(asset3d_payload["summary"]["textureSlotIssueCount"], 0)
+        self.assertEqual(asset3d_payload["summary"]["gltfIntegrityIssueCount"], 0)
+        self.assertEqual(asset3d_payload["summary"]["performanceBudgetIssueCount"], 0)
         self.assertEqual(asset3d_payload["entries"][0]["previewProbe"]["status"], "ready")
+        self.assertEqual(asset3d_payload["entries"][0]["gltfIntegrityProbe"]["status"], "ready")
+        self.assertEqual(asset3d_payload["entries"][0]["performanceBudgetProbe"]["status"], "ready")
         self.assertEqual(asset3d_payload["entries"][0]["previewProbe"]["materials"][0]["name"], "Wall Paint")
         self.assertEqual(asset3d_payload["entries"][0]["previewProbe"]["materials"][0]["textureSlots"][0]["uri"], "textures/walls.png")
         self.assertEqual(asset3d_payload["entries"][0]["previewProbe"]["animations"][0]["targetPaths"], ["rotation"])
@@ -744,6 +764,122 @@ class RunEditorSmokeTests(unittest.TestCase):
             asset3d_markdown_description.stdout + asset3d_markdown_description.stderr,
         )
         self.assertIn("材质贴图槽", asset3d_markdown_description.stdout)
+        self.assertIn("内部引用", asset3d_markdown_description.stdout)
+        self.assertIn("性能预算", asset3d_markdown_description.stdout)
+
+    def test_scene3d_glb_assets_are_statically_probed_before_native_release(self) -> None:
+        _, chapter_result = self.create_blank_project_with_chapter()
+        scene3d_asset = run_editor.import_assets(
+            "scene3d",
+            [
+                build_upload_payload(
+                    "compact_scene.glb",
+                    build_fake_glb_bytes(
+                        {
+                            "asset": {"version": "2.0"},
+                            "scene": 0,
+                            "scenes": [{"name": "Compact GLB Scene", "nodes": [0]}],
+                            "nodes": [{"name": "Room", "mesh": 0}],
+                            "meshes": [{"primitives": [{"attributes": {"POSITION": 0}, "material": 0}]}],
+                            "accessors": [{}],
+                            "materials": [{"name": "Embedded Paint"}],
+                        }
+                    ),
+                )
+            ],
+        )["assets"][0]
+        self.save_scene_with_blocks(
+            chapter_result["chapterId"],
+            chapter_result["scene"],
+            [
+                {"id": "block_001", "type": "background", "assetId": scene3d_asset["id"]},
+                {"id": "block_002", "type": "narration", "text": "这是一个 GLB 场景。"},
+            ],
+        )
+
+        export_result = run_editor.export_native_runtime_build()
+        build_dir = Path(export_result["buildPath"])
+        release_check_payload = json.loads((build_dir / run_editor.NATIVE_RUNTIME_RELEASE_CHECK_NAME).read_text(encoding="utf-8"))
+        issue_codes = {issue.get("code") for issue in release_check_payload["issues"]}
+        self.assertNotIn("scene3d_glb_json_invalid", issue_codes)
+        self.assertNotIn("scene3d_glb_container_issue", issue_codes)
+
+        asset3d_payload = json.loads((build_dir / run_editor.NATIVE_RUNTIME_3D_ASSET_REPORT_NAME).read_text(encoding="utf-8"))
+        self.assertEqual(asset3d_payload["status"], "ready")
+        self.assertEqual(asset3d_payload["summary"]["totalNodes"], 1)
+        self.assertEqual(asset3d_payload["summary"]["totalMaterials"], 1)
+        self.assertEqual(asset3d_payload["summary"]["gltfIntegrityIssueCount"], 0)
+        self.assertEqual(asset3d_payload["summary"]["glbContainerIssueCount"], 0)
+        self.assertEqual(asset3d_payload["summary"]["performanceBudgetIssueCount"], 0)
+        entry = asset3d_payload["entries"][0]
+        self.assertEqual(entry["structureSummary"]["sourceType"], "glb")
+        self.assertEqual(entry["gltfIntegrityProbe"]["status"], "ready")
+        self.assertEqual(entry["glbContainerProbe"]["status"], "ready")
+        self.assertEqual(entry["performanceBudgetProbe"]["status"], "ready")
+        self.assertEqual(entry["previewProbe"]["materials"][0]["name"], "Embedded Paint")
+
+    def test_native_runtime_release_check_flags_3d_performance_budget_risks(self) -> None:
+        self.create_blank_project_with_chapter()
+        run_editor.import_assets(
+            "scene3d",
+            [
+                build_upload_payload(
+                    "heavy_scene.gltf",
+                    json.dumps(
+                        {
+                            "asset": {"version": "2.0"},
+                            "scene": 0,
+                            "scenes": [{"name": "Heavy Scene", "nodes": [0]}],
+                            "nodes": [{"name": "Massive Room", "mesh": 0}],
+                            "meshes": [
+                                {
+                                    "primitives": [
+                                        {"attributes": {"POSITION": 0}, "indices": 1, "material": 0},
+                                        {"attributes": {"POSITION": 2}, "indices": 3, "material": 1},
+                                    ]
+                                }
+                            ],
+                            "accessors": [
+                                {"count": 420000},
+                                {"count": 900000},
+                                {"count": 390000},
+                                {"count": 720000},
+                            ],
+                            "materials": [{"name": f"Material {index}"} for index in range(90)],
+                            "textures": [{} for _ in range(100)],
+                            "images": [{"bufferView": 0} for _ in range(100)],
+                            "animations": [
+                                {
+                                    "name": "Massive Camera Move",
+                                    "channels": [
+                                        {"sampler": channel_index, "target": {"node": 0, "path": "translation"}}
+                                        for channel_index in range(320)
+                                    ],
+                                    "samplers": [{"input": 0, "output": 1} for _ in range(320)],
+                                }
+                            ],
+                        }
+                    ).encode("utf-8"),
+                )
+            ],
+        )
+
+        export_result = run_editor.export_native_runtime_build()
+        build_dir = Path(export_result["buildPath"])
+        release_check_payload = json.loads((build_dir / run_editor.NATIVE_RUNTIME_RELEASE_CHECK_NAME).read_text(encoding="utf-8"))
+        issue_codes = {issue.get("code") for issue in release_check_payload["issues"]}
+        self.assertIn("scene3d_gltf_performance_budget_risk", issue_codes)
+
+        asset3d_payload = json.loads((build_dir / run_editor.NATIVE_RUNTIME_3D_ASSET_REPORT_NAME).read_text(encoding="utf-8"))
+        self.assertEqual(asset3d_payload["status"], "needs_attention")
+        self.assertGreaterEqual(asset3d_payload["summary"]["performanceBudgetIssueCount"], 4)
+        self.assertEqual(asset3d_payload["summary"]["estimatedVertexCount"], 810000)
+        self.assertEqual(asset3d_payload["summary"]["estimatedTriangleCount"], 540000)
+        budget_probe = asset3d_payload["entries"][0]["performanceBudgetProbe"]
+        self.assertEqual(budget_probe["status"], "needs_attention")
+        budget_metrics = {issue.get("metric") for issue in budget_probe["issues"]}
+        self.assertIn("estimatedVertexCount", budget_metrics)
+        self.assertIn("estimatedTriangleCount", budget_metrics)
 
     def test_variable_rename_migrates_story_references(self) -> None:
         _, chapter_result = self.create_blank_project_with_chapter()
@@ -820,6 +956,107 @@ class RunEditorSmokeTests(unittest.TestCase):
         self.assertEqual(saved_scene["blocks"][0]["variableId"], "var_points")
         self.assertEqual(saved_scene["blocks"][1]["options"][0]["effects"][0]["variableId"], "var_points")
         self.assertEqual(saved_scene["blocks"][2]["branches"][0]["when"][0]["variableId"], "var_points")
+
+    def test_native_runtime_release_check_flags_gltf_material_texture_slot_issues(self) -> None:
+        self.create_blank_project_with_chapter()
+        run_editor.import_assets(
+            "scene3d",
+            [
+                build_upload_payload(
+                    "broken_material_scene.gltf",
+                    json.dumps(
+                        {
+                            "asset": {"version": "2.0"},
+                            "scene": 0,
+                            "scenes": [{"name": "Broken Material Scene", "nodes": [0]}],
+                            "nodes": [{"name": "Room", "mesh": 0}],
+                            "meshes": [{"primitives": [{"attributes": {"POSITION": 0}, "material": 0}]}],
+                            "accessors": [{}],
+                            "materials": [
+                                {
+                                    "name": "Broken Wall",
+                                    "pbrMetallicRoughness": {"baseColorTexture": {"index": 3}},
+                                }
+                            ],
+                            "textures": [],
+                            "images": [],
+                        }
+                    ).encode("utf-8"),
+                )
+            ],
+        )
+
+        export_result = run_editor.export_native_runtime_build()
+        build_dir = Path(export_result["buildPath"])
+        release_check_payload = json.loads((build_dir / run_editor.NATIVE_RUNTIME_RELEASE_CHECK_NAME).read_text(encoding="utf-8"))
+        issue_codes = {issue.get("code") for issue in release_check_payload["issues"]}
+        self.assertIn("scene3d_gltf_material_texture_slot_issue", issue_codes)
+
+        asset3d_payload = json.loads((build_dir / run_editor.NATIVE_RUNTIME_3D_ASSET_REPORT_NAME).read_text(encoding="utf-8"))
+        self.assertEqual(asset3d_payload["status"], "needs_attention")
+        self.assertEqual(asset3d_payload["summary"]["textureSlotIssueCount"], 1)
+        self.assertEqual(asset3d_payload["entries"][0]["previewProbe"]["materials"][0]["textureSlots"][0]["status"], "missing_texture")
+
+    def test_native_runtime_release_check_flags_gltf_internal_reference_issues(self) -> None:
+        self.create_blank_project_with_chapter()
+        run_editor.import_assets(
+            "scene3d",
+            [
+                build_upload_payload(
+                    "broken_integrity_scene.gltf",
+                    json.dumps(
+                        {
+                            "asset": {"version": "2.0"},
+                            "scene": 2,
+                            "scenes": [{"name": "Broken Integrity Scene", "nodes": [4]}],
+                            "nodes": [{"name": "Room", "mesh": 3, "children": [9]}],
+                            "meshes": [{"primitives": [{"attributes": {"POSITION": 7}, "material": 5}]}],
+                            "materials": [{"name": "Broken Material"}],
+                            "animations": [
+                                {
+                                    "name": "Broken Move",
+                                    "channels": [{"sampler": 4, "target": {"node": 8, "path": "rotateAround"}}],
+                                    "samplers": [{"input": 10, "output": 11}],
+                                }
+                            ],
+                        }
+                    ).encode("utf-8"),
+                )
+            ],
+        )
+
+        export_result = run_editor.export_native_runtime_build()
+        build_dir = Path(export_result["buildPath"])
+        release_check_payload = json.loads((build_dir / run_editor.NATIVE_RUNTIME_RELEASE_CHECK_NAME).read_text(encoding="utf-8"))
+        issue_codes = {issue.get("code") for issue in release_check_payload["issues"]}
+        self.assertIn("scene3d_gltf_integrity_issue", issue_codes)
+
+        asset3d_payload = json.loads((build_dir / run_editor.NATIVE_RUNTIME_3D_ASSET_REPORT_NAME).read_text(encoding="utf-8"))
+        self.assertEqual(asset3d_payload["status"], "needs_attention")
+        self.assertGreaterEqual(asset3d_payload["summary"]["gltfIntegrityIssueCount"], 6)
+        integrity_probe = asset3d_payload["entries"][0]["gltfIntegrityProbe"]
+        self.assertEqual(integrity_probe["status"], "needs_attention")
+        integrity_codes = {issue.get("code") for issue in integrity_probe["issues"]}
+        self.assertIn("gltf_default_scene_missing", integrity_codes)
+        self.assertIn("gltf_scene_node_missing", integrity_codes)
+
+    def test_native_runtime_release_check_flags_invalid_glb_container(self) -> None:
+        self.create_blank_project_with_chapter()
+        run_editor.import_assets(
+            "scene3d",
+            [build_upload_payload("broken_container.glb", b"not-a-valid-glb")],
+        )
+
+        export_result = run_editor.export_native_runtime_build()
+        build_dir = Path(export_result["buildPath"])
+        release_check_payload = json.loads((build_dir / run_editor.NATIVE_RUNTIME_RELEASE_CHECK_NAME).read_text(encoding="utf-8"))
+        issue_codes = {issue.get("code") for issue in release_check_payload["issues"]}
+        self.assertIn("scene3d_glb_json_invalid", issue_codes)
+
+        asset3d_payload = json.loads((build_dir / run_editor.NATIVE_RUNTIME_3D_ASSET_REPORT_NAME).read_text(encoding="utf-8"))
+        self.assertEqual(asset3d_payload["status"], "needs_attention")
+        self.assertEqual(asset3d_payload["entries"][0]["status"], "invalid")
+        self.assertEqual(asset3d_payload["entries"][0]["glbContainerProbe"]["status"], "invalid")
 
     def test_creative_assistant_generates_local_insertable_story_blocks(self) -> None:
         _, chapter_result = self.create_blank_project_with_chapter()
