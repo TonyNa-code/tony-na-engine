@@ -151,6 +151,8 @@ python3 runtime_player.py --describe-3d-assets .
 python3 runtime_player.py --describe-3d-assets-markdown .
 ```
 
+编辑器导出的完整原生 Runtime 包还会附带 `native-runtime-3d-risk-digest.json`。这份文件是给发布页和自动化工具读取的精简风险摘要，会把性能预算、GLB/VRM 容器、内部引用、贴图槽和依赖风险浓缩成少量指标与优先问题。
+
 ## 发布前自检
 
 不启动窗口，输出发布前诊断报告。这个检查会覆盖入口场景、缺失素材、素材格式风险、大文件风险、存档位数量、成品 UI 皮肤素材引用等：

@@ -23785,6 +23785,7 @@ function renderInspectionIssueSummary(filteredItems, totalItems) {
 function buildPreviewSprintTasks() {
   const tasks = [];
   const exportResult = state.lastExportResult;
+  const native3dDigest = exportResult?.target === "native_runtime" ? exportResult.asset3dReportDigest ?? null : null;
   const unusedAssets = getUnusedAssets();
   const missingVoiceWarnings = state.validation.warnings.filter(
     (issue) => issue.message === "这句台词还没有绑定语音。"
@@ -23836,6 +23837,33 @@ function buildPreviewSprintTasks() {
           action: "focus-asset-gap",
           dataset: { "asset-filter-mode": "urgent_missing" },
         },
+      ],
+    });
+  }
+
+  if (native3dDigest?.topIssues?.length > 0) {
+    const firstIssue = native3dDigest.topIssues[0] ?? {};
+    tasks.push({
+      tone: native3dDigest.status === "unavailable" ? "danger" : "warn",
+      title: "处理 3D 发布体检风险",
+      description:
+        native3dDigest.summaryLine ??
+        "原生 Runtime 的 3D 资产体检发现了需要发布前确认的问题，优先处理可以减少目标机渲染和打包风险。",
+      metrics: (native3dDigest.metrics ?? [])
+        .filter((metric) => ["问题", "性能预算", "估算三角面", "Draw Call"].includes(metric.label))
+        .slice(0, 4)
+        .map((metric) => [metric.label, metric.value]),
+      tags: [
+        "原生 Runtime",
+        truncateText(`${firstIssue.typeLabel ?? "3D 资产"}：${firstIssue.summary ?? firstIssue.statusLabel ?? "需要复核"}`, 36),
+      ],
+      actions: [
+        exportResult?.asset3dSummaryPublicUrl
+          ? { label: "打开 3D 摘要", href: exportResult.asset3dSummaryPublicUrl }
+          : { label: "生成 3D 摘要", action: "export-build", dataset: { "export-target": "native_runtime" } },
+        exportResult?.asset3dReportPublicUrl
+          ? { label: "打开机器清单", href: exportResult.asset3dReportPublicUrl }
+          : { label: "重新导出", action: "export-build", dataset: { "export-target": "native_runtime" } },
       ],
     });
   }
@@ -23975,6 +24003,7 @@ function buildReleaseChecklistItems() {
   const nativeRcHasReport = exportResult?.target === "native_runtime" && Boolean(nativeRcStatus);
   const native3dStatus = exportResult?.target === "native_runtime" ? exportResult.asset3dReportStatus : "";
   const native3dSummary = exportResult?.asset3dReportSummary ?? {};
+  const native3dDigest = exportResult?.target === "native_runtime" ? exportResult.asset3dReportDigest ?? null : null;
   const native3dHasReport = exportResult?.target === "native_runtime" && Boolean(native3dStatus);
 
   const items = [
@@ -24092,14 +24121,15 @@ function buildReleaseChecklistItems() {
       toneClass: native3dHasReport ? getNativeRuntime3dAssetToneClass(native3dStatus) : "warn-text",
       status: native3dHasReport ? getNativeRuntime3dAssetStatusLabel(native3dStatus) : "还没生成",
       description: native3dHasReport
-        ? `3D 模型 ${native3dSummary.model3dCount ?? 0} / 3D 场景 ${native3dSummary.scene3dCount ?? 0} / 问题 ${
+        ? native3dDigest?.summaryLine ??
+          `3D 模型 ${native3dSummary.model3dCount ?? 0} / 3D 场景 ${native3dSummary.scene3dCount ?? 0} / 问题 ${
             native3dSummary.issueCount ?? 0
           } / 未使用 ${native3dSummary.unusedCount ?? 0}。`
         : "导出原生 Runtime 包后，会自动生成 3D 模型与 3D 场景的结构、依赖和引用位置清单。",
       action: native3dHasReport
         ? {
-            label: "打开 3D 清单",
-            href: exportResult.asset3dReportPublicUrl,
+            label: native3dDigest?.topIssues?.length ? "打开 3D 摘要" : "打开 3D 清单",
+            href: native3dDigest?.topIssues?.length && exportResult.asset3dSummaryPublicUrl ? exportResult.asset3dSummaryPublicUrl : exportResult.asset3dReportPublicUrl,
           }
         : {
             label: "生成 3D 清单",
@@ -24245,6 +24275,20 @@ function getNativeRuntime3dAssetToneClass(status) {
   if (status === "unavailable") return "danger-text";
   if (status === "needs_attention") return "warn-text";
   return "";
+}
+
+function formatNativeRuntime3dNumber(value) {
+  const numberValue = Number(value);
+  if (!Number.isFinite(numberValue)) return "0";
+  return Math.max(0, Math.round(numberValue)).toLocaleString("zh-CN");
+}
+
+function formatNativeRuntime3dRiskLine(digest = {}) {
+  const risks = digest.riskCounts ?? {};
+  const parts = Object.entries(risks)
+    .filter(([, value]) => Number(value) > 0)
+    .map(([label, value]) => `${label} ${value}`);
+  return parts.length ? parts.join(" / ") : "暂无明显风险";
 }
 
 function formatNativeRuntimeReadinessPercent(value) {
@@ -25209,6 +25253,20 @@ function renderProjectValidationSummary() {
             : ""
         }
         ${
+          exportResult?.target === "native_runtime" && exportResult?.asset3dDigestPublicUrl
+            ? `
+              <a
+                class="toolbar-button toolbar-button-primary"
+                href="${escapeHtml(exportResult.asset3dDigestPublicUrl)}"
+                target="_blank"
+                rel="noreferrer"
+              >
+                打开 3D 风险摘要
+              </a>
+            `
+            : ""
+        }
+        ${
           exportResult?.target === "native_runtime" && exportResult?.asset3dReportPublicUrl
             ? `
               <a
@@ -25317,12 +25375,22 @@ function renderProjectValidationSummary() {
                   exportResult.asset3dReportPath ?? "未生成"
                 )}<br />3D Markdown 摘要：${escapeHtml(
                   exportResult.asset3dSummaryPath ?? "未生成"
+                )}<br />3D 风险摘要文件：${escapeHtml(
+                  exportResult.asset3dDigestPath ?? "未生成"
                 )}<br />3D 清单状态：${escapeHtml(
                   getNativeRuntime3dAssetStatusLabel(exportResult.asset3dReportStatus)
                 )}<br />3D 模型 / 场景 / 问题：${escapeHtml(
                   `${exportResult.asset3dReportSummary?.model3dCount ?? 0} / ${
                     exportResult.asset3dReportSummary?.scene3dCount ?? 0
                   } / ${exportResult.asset3dReportSummary?.issueCount ?? 0}`
+                )}<br />3D 风险摘要：${escapeHtml(
+                  exportResult.asset3dReportDigest?.summaryLine ?? "未生成"
+                )}<br />3D 风险拆分：${escapeHtml(
+                  formatNativeRuntime3dRiskLine(exportResult.asset3dReportDigest)
+                )}<br />3D 估算三角面 / Draw Call：${escapeHtml(
+                  `${formatNativeRuntime3dNumber(exportResult.asset3dReportSummary?.estimatedTriangleCount)} / ${formatNativeRuntime3dNumber(
+                    exportResult.asset3dReportSummary?.drawCallCount
+                  )}`
                 )}<br />RC 状态：${escapeHtml(
                   getNativeRuntimeRcStatusLabel(exportResult.releaseCandidateReportStatus)
                 )}<br />桌面 Preview 估算：${escapeHtml(

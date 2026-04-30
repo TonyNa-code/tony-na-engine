@@ -185,6 +185,7 @@ python run_editor.py
 - `native-runtime-release-check.json`：发布前自检，覆盖入口、缺失素材、格式风险、存档位、UI 引用等。
 - `native-runtime-3d-asset-report.json`：3D 模型 / 3D 场景清单，统计 glTF/GLB/VRM 节点、网格、材质、贴图槽、动画通道、相机灯光、二进制容器、性能预算、内部索引、外部依赖和引用位置。
 - `native-runtime-3d-asset-summary.md`：同一份 3D 清单的 Markdown 摘要，适合创作者直接打开阅读或贴到 Issue / Release notes。
+- `native-runtime-3d-risk-digest.json`：面向编辑器和发布页的精简 3D 风险摘要，汇总性能预算、容器、内部引用、贴图槽和依赖风险。
 - `native-runtime-release-candidate-report.json`：发布候选总报告，汇总 doctor、打包脚手架、视频后端、3D 资产和下一步建议。
 
 这些命令在 macOS / Linux / Windows 上逻辑相同，只是 Python 启动器可能不同。

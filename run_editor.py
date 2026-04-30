@@ -295,6 +295,7 @@ NATIVE_RUNTIME_RELEASE_CHECK_NAME = "native-runtime-release-check.json"
 NATIVE_RUNTIME_RC_REPORT_NAME = "native-runtime-release-candidate-report.json"
 NATIVE_RUNTIME_3D_ASSET_REPORT_NAME = "native-runtime-3d-asset-report.json"
 NATIVE_RUNTIME_3D_ASSET_SUMMARY_NAME = "native-runtime-3d-asset-summary.md"
+NATIVE_RUNTIME_3D_ASSET_DIGEST_NAME = "native-runtime-3d-risk-digest.json"
 NATIVE_RUNTIME_MAC_COMMAND_NAME = "启动原生Runtime预览.command"
 NATIVE_RUNTIME_LINUX_COMMAND_NAME = "run_native_runtime_preview.sh"
 NATIVE_RUNTIME_WINDOWS_COMMAND_NAME = "run_native_runtime_preview.bat"
@@ -6734,6 +6735,114 @@ def write_export_app_files(build_dir: Path, export_payload: dict) -> None:
     shutil.copy2(EXPORT_TEMPLATE_DIR / "player.js", build_dir / "player.js")
 
 
+def format_export_digest_number(value: object) -> str:
+    try:
+        number = int(value or 0)
+    except (TypeError, ValueError):
+        number = 0
+    return f"{number:,}"
+
+
+def build_native_3d_asset_export_digest(report_payload: dict | None) -> dict:
+    if not isinstance(report_payload, dict):
+        return {
+            "status": "unavailable",
+            "headline": "3D 资产清单暂不可用",
+            "summaryLine": "导出时没有拿到可读 3D 报告。",
+            "metrics": [],
+            "topIssues": [],
+            "recommendations": ["手动打开 3D 资产清单确认具体问题。"],
+        }
+
+    status = str(report_payload.get("status") or "unavailable")
+    summary = report_payload.get("summary") if isinstance(report_payload.get("summary"), dict) else {}
+    entries = report_payload.get("entries") if isinstance(report_payload.get("entries"), list) else []
+    recommendations = report_payload.get("recommendations") if isinstance(report_payload.get("recommendations"), list) else []
+
+    if status == "no_3d_assets":
+        headline = "当前项目没有 3D 资产"
+    elif status == "ready":
+        headline = "3D 资产发布体检通过"
+    elif status == "needs_attention":
+        headline = "3D 资产需要发布前处理"
+    else:
+        headline = "3D 资产清单需要复核"
+
+    risk_counts = {
+        "性能预算": int(summary.get("performanceBudgetIssueCount") or 0),
+        "GLB/VRM 容器": int(summary.get("glbContainerIssueCount") or 0),
+        "内部引用": int(summary.get("gltfIntegrityIssueCount") or 0),
+        "贴图槽": int(summary.get("textureSlotIssueCount") or 0),
+        "外部依赖": int(summary.get("missingDependencyCount") or 0),
+        "空结构": int(summary.get("emptyStructureCount") or 0),
+    }
+    risk_preview = " / ".join(f"{label} {count}" for label, count in risk_counts.items() if count > 0)
+    if not risk_preview:
+        risk_preview = "暂无明显 3D 风险" if int(summary.get("assetCount") or 0) else "未检测到 3D 资产"
+    summary_line = (
+        f"资产 {int(summary.get('assetCount') or 0)} 个，问题 {int(summary.get('issueCount') or 0)} 个；{risk_preview}。"
+    )
+
+    metrics = [
+        {"label": "3D 资产", "value": f"{int(summary.get('assetCount') or 0)} 个"},
+        {"label": "问题", "value": f"{int(summary.get('issueCount') or 0)} 个"},
+        {"label": "性能预算", "value": f"{int(summary.get('performanceBudgetIssueCount') or 0)} 项"},
+        {"label": "估算三角面", "value": format_export_digest_number(summary.get("estimatedTriangleCount"))},
+        {"label": "Draw Call", "value": format_export_digest_number(summary.get("drawCallCount"))},
+        {"label": "未使用", "value": f"{int(summary.get('unusedCount') or 0)} 个"},
+    ]
+
+    top_issues = []
+    for entry in entries:
+        if not isinstance(entry, dict) or str(entry.get("status") or "") == "ready":
+            continue
+        entry_name = str(entry.get("name") or entry.get("assetId") or "未命名 3D 资产")
+        issue_parts: list[str] = []
+        dependency = entry.get("dependencyHealth") if isinstance(entry.get("dependencyHealth"), dict) else {}
+        preview_probe = entry.get("previewProbe") if isinstance(entry.get("previewProbe"), dict) else {}
+        integrity_probe = entry.get("gltfIntegrityProbe") if isinstance(entry.get("gltfIntegrityProbe"), dict) else {}
+        container_probe = entry.get("glbContainerProbe") if isinstance(entry.get("glbContainerProbe"), dict) else {}
+        budget_probe = entry.get("performanceBudgetProbe") if isinstance(entry.get("performanceBudgetProbe"), dict) else {}
+
+        budget_issue_count = int(budget_probe.get("issueCount") or 0)
+        if budget_issue_count:
+            issue_parts.append(f"性能预算 {budget_issue_count} 项")
+        container_issue_count = int(container_probe.get("issueCount") or 0)
+        if container_issue_count:
+            issue_parts.append(f"容器 {container_issue_count} 项")
+        integrity_issue_count = int(integrity_probe.get("issueCount") or 0)
+        if integrity_issue_count:
+            issue_parts.append(f"内部引用 {integrity_issue_count} 项")
+        texture_issue_count = int(preview_probe.get("textureSlotIssueCount") or 0)
+        if texture_issue_count:
+            issue_parts.append(f"贴图槽 {texture_issue_count} 项")
+        dependency_gap_count = len(dependency.get("missing") or []) + len(dependency.get("unsafe") or [])
+        if dependency_gap_count:
+            issue_parts.append(f"依赖 {dependency_gap_count} 项")
+        if not issue_parts:
+            issue_parts.append(str(entry.get("statusLabel") or "需要复核"))
+        top_issues.append(
+            {
+                "name": entry_name,
+                "typeLabel": str(entry.get("typeLabel") or "3D 资产"),
+                "status": str(entry.get("status") or ""),
+                "statusLabel": str(entry.get("statusLabel") or "需要复核"),
+                "summary": " / ".join(issue_parts),
+                "recommendedAction": str(entry.get("recommendedAction") or "复核 3D 资产导入状态。"),
+            }
+        )
+
+    return {
+        "status": status,
+        "headline": headline,
+        "summaryLine": summary_line,
+        "metrics": metrics,
+        "riskCounts": risk_counts,
+        "topIssues": top_issues[:5],
+        "recommendations": [str(recommendation) for recommendation in recommendations[:4]],
+    }
+
+
 def write_native_runtime_files(build_dir: Path, export_payload: dict) -> dict:
     game_data_path = build_dir / "game_data.json"
     game_data_path.write_text(json.dumps(export_payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -6763,6 +6872,7 @@ def write_native_runtime_files(build_dir: Path, export_payload: dict) -> dict:
     rc_report_path = build_dir / NATIVE_RUNTIME_RC_REPORT_NAME
     asset3d_report_path = build_dir / NATIVE_RUNTIME_3D_ASSET_REPORT_NAME
     asset3d_summary_path = build_dir / NATIVE_RUNTIME_3D_ASSET_SUMMARY_NAME
+    asset3d_digest_path = build_dir / NATIVE_RUNTIME_3D_ASSET_DIGEST_NAME
 
     mac_launcher_path.write_text(
         "\n".join(
@@ -7067,6 +7177,11 @@ def write_native_runtime_files(build_dir: Path, export_payload: dict) -> dict:
     rc_report_summary = rc_report_payload.get("summary") if isinstance(rc_report_payload, dict) else {}
     rc_report_readiness = rc_report_payload.get("readinessEstimate") if isinstance(rc_report_payload, dict) else {}
     asset3d_report_summary = asset3d_report_payload.get("summary") if isinstance(asset3d_report_payload, dict) else {}
+    asset3d_report_digest = build_native_3d_asset_export_digest(asset3d_report_payload if isinstance(asset3d_report_payload, dict) else None)
+    asset3d_digest_path.write_text(
+        json.dumps(asset3d_report_digest, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
 
     return {
         "gameDataName": game_data_path.name,
@@ -7093,8 +7208,11 @@ def write_native_runtime_files(build_dir: Path, export_payload: dict) -> dict:
         "asset3dReportPath": str(asset3d_report_path),
         "asset3dSummaryName": asset3d_summary_path.name,
         "asset3dSummaryPath": str(asset3d_summary_path),
+        "asset3dDigestName": asset3d_digest_path.name,
+        "asset3dDigestPath": str(asset3d_digest_path),
         "asset3dReportStatus": asset3d_report_payload.get("status") if isinstance(asset3d_report_payload, dict) else "unavailable",
         "asset3dReportSummary": asset3d_report_summary if isinstance(asset3d_report_summary, dict) else {},
+        "asset3dReportDigest": asset3d_report_digest,
         "releaseCandidateReportStatus": rc_report_payload.get("status") if isinstance(rc_report_payload, dict) else "unavailable",
         "releaseCandidateReportSummary": rc_report_summary if isinstance(rc_report_summary, dict) else {},
         "releaseCandidateReadinessEstimate": rc_report_readiness if isinstance(rc_report_readiness, dict) else {},
@@ -7149,6 +7267,7 @@ def export_native_runtime_build() -> dict:
             "releaseCandidateReport": runtime_files["releaseCandidateReportName"],
             "asset3dReport": runtime_files["asset3dReportName"],
             "asset3dSummary": runtime_files["asset3dSummaryName"],
+            "asset3dDigest": runtime_files["asset3dDigestName"],
             "macLauncher": runtime_files["macLauncherName"],
             "linuxLauncher": runtime_files["linuxLauncherName"],
             "windowsLauncher": runtime_files["windowsLauncherName"],
@@ -7172,6 +7291,7 @@ def export_native_runtime_build() -> dict:
             "releaseCandidateReport": runtime_files["releaseCandidateReportName"],
             "asset3dReport": runtime_files["asset3dReportName"],
             "asset3dSummary": runtime_files["asset3dSummaryName"],
+            "asset3dDigest": runtime_files["asset3dDigestName"],
             "asset3dReportStatus": runtime_files["asset3dReportStatus"],
             "releaseCandidateReportStatus": runtime_files["releaseCandidateReportStatus"],
         },
@@ -7226,8 +7346,12 @@ def export_native_runtime_build() -> dict:
         "asset3dSummaryName": runtime_files["asset3dSummaryName"],
         "asset3dSummaryPath": runtime_files["asset3dSummaryPath"],
         "asset3dSummaryPublicUrl": f"/exports/{build_dir.name}/{runtime_files['asset3dSummaryName']}",
+        "asset3dDigestName": runtime_files["asset3dDigestName"],
+        "asset3dDigestPath": runtime_files["asset3dDigestPath"],
+        "asset3dDigestPublicUrl": f"/exports/{build_dir.name}/{runtime_files['asset3dDigestName']}",
         "asset3dReportStatus": runtime_files["asset3dReportStatus"],
         "asset3dReportSummary": runtime_files["asset3dReportSummary"],
+        "asset3dReportDigest": runtime_files["asset3dReportDigest"],
         "macLauncherName": runtime_files["macLauncherName"],
         "macLauncherPath": runtime_files["macLauncherPath"],
         "macLauncherPublicUrl": f"/exports/{build_dir.name}/{runtime_files['macLauncherName']}",

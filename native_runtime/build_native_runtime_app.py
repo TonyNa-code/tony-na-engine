@@ -20,6 +20,7 @@ ENGINE_BRAND_LOGO_RELATIVE_PATH = "assets/brand-logo.png"
 VIDEO_REQUIREMENTS_CANDIDATES = ("requirements-native-runtime-video.txt", "requirements-video.txt")
 ASSET3D_REPORT_NAME = "native-runtime-3d-asset-report.json"
 ASSET3D_SUMMARY_NAME = "native-runtime-3d-asset-summary.md"
+ASSET3D_DIGEST_NAME = "native-runtime-3d-risk-digest.json"
 
 
 class NativeAppBuildError(RuntimeError):
@@ -386,6 +387,18 @@ def read_text_report_preview(path: Path, max_lines: int = 32) -> dict:
     }
 
 
+def read_json_report_file(path: Path) -> dict:
+    if not path.is_file():
+        return {"exists": False, "path": str(path), "status": "missing"}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as error:
+        return {"exists": True, "path": str(path), "status": "invalid", "message": str(error)}
+    if isinstance(payload, dict):
+        return {"exists": True, "path": str(path), **payload}
+    return {"exists": True, "path": str(path), "status": "invalid", "message": "JSON 根节点不是对象。"}
+
+
 def describe_build(
     bundle_dir: Path,
     app_name: str | None,
@@ -424,6 +437,7 @@ def describe_build(
     asset3d_report = run_bundle_runtime_json_report(bundle_dir, "--describe-3d-assets", "3D 资产清单")
     asset3d_summary_path = bundle_dir / ASSET3D_SUMMARY_NAME
     asset3d_summary = read_text_report_preview(asset3d_summary_path)
+    asset3d_digest = read_json_report_file(bundle_dir / ASSET3D_DIGEST_NAME)
     return {
         "appName": resolved_app_name,
         "bundleIdentifier": resolved_bundle_identifier,
@@ -446,8 +460,10 @@ def describe_build(
         "asset3d": {
             "reportName": ASSET3D_REPORT_NAME,
             "summaryName": ASSET3D_SUMMARY_NAME,
+            "digestName": ASSET3D_DIGEST_NAME,
             "report": asset3d_report,
             "summary": asset3d_summary,
+            "digest": asset3d_digest,
         },
         "dataEntries": [
             {"source": entry["relativeSource"], "dest": entry["dest"]}
