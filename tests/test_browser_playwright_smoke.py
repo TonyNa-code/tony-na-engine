@@ -7,6 +7,7 @@ import sys
 import tempfile
 import time
 import os
+import json
 import tarfile
 import unittest
 import re
@@ -822,6 +823,31 @@ class BrowserPlaywrightSmokeTests(unittest.TestCase):
         report_content = download_path.read_text(encoding="utf-8-sig")
         self.assertIn("项目巡检报告", report_content)
         self.assertIn("自动回归试玩路线测试", report_content)
+
+        with self.page.expect_download() as markdown_download_info:
+            self.page.get_by_role("button", name="导出发布总控报告").first.click()
+        markdown_download = markdown_download_info.value
+        markdown_path = self.repo_copy / markdown_download.suggested_filename
+        markdown_download.save_as(str(markdown_path))
+        markdown_content = markdown_path.read_text(encoding="utf-8-sig")
+        self.assertTrue(markdown_path.name.endswith(".md"))
+        self.assertIn("# 浏览器烟测项目_C 发布前总控报告", markdown_content)
+        self.assertIn("## 发布检查清单", markdown_content)
+        self.assertIn("## 自动回归试玩路线", markdown_content)
+
+        with self.page.expect_download() as json_download_info:
+            self.page.get_by_role("button", name="导出 JSON 数据").first.click()
+        json_download = json_download_info.value
+        json_path = self.repo_copy / json_download.suggested_filename
+        json_download.save_as(str(json_path))
+        json_payload = json.loads(json_path.read_text(encoding="utf-8"))
+        self.assertTrue(json_path.name.endswith(".json"))
+        self.assertEqual(json_payload["formatVersion"], 1)
+        self.assertEqual(json_payload["project"]["title"], "浏览器烟测项目_C")
+        self.assertIn("releaseChecklist", json_payload)
+        self.assertIn("fixOrder", json_payload)
+        self.assertIn("mediaBudget", json_payload["assets"])
+        self.assertIn("summary", json_payload["regression"])
 
     def test_inspection_flags_number_variable_range_issues(self) -> None:
         self.create_blank_project("浏览器烟测项目_VariableRange")

@@ -108,6 +108,8 @@ const ASSET_FILTER_MODE_LABELS = {
   missing_file: "仅看待导入",
   urgent_missing: "仅看已引用缺口",
   duplicate: "仅看疑似重复",
+  asset3d_risk: "仅看 3D 发布风险",
+  media_budget: "仅看素材预算风险",
 };
 
 const ASSET_FILTER_MODE_STATUS_LABELS = {
@@ -116,6 +118,23 @@ const ASSET_FILTER_MODE_STATUS_LABELS = {
   missing_file: "待导入素材",
   urgent_missing: "已被项目引用但缺文件的素材",
   duplicate: "疑似重复素材",
+  asset3d_risk: "最近一次 3D 发布体检标记的风险素材",
+  media_budget: "体积偏大、建议发布前压缩的素材",
+};
+
+const ASSET_MEDIA_BUDGET_LIMITS = {
+  background: { warnBytes: 8 * 1024 * 1024, blockerBytes: 24 * 1024 * 1024, label: "背景图" },
+  sprite: { warnBytes: 6 * 1024 * 1024, blockerBytes: 18 * 1024 * 1024, label: "立绘" },
+  cg: { warnBytes: 10 * 1024 * 1024, blockerBytes: 32 * 1024 * 1024, label: "CG" },
+  ui: { warnBytes: 4 * 1024 * 1024, blockerBytes: 16 * 1024 * 1024, label: "界面素材" },
+  bgm: { warnBytes: 18 * 1024 * 1024, blockerBytes: 60 * 1024 * 1024, label: "音乐" },
+  sfx: { warnBytes: 6 * 1024 * 1024, blockerBytes: 18 * 1024 * 1024, label: "音效" },
+  voice: { warnBytes: 8 * 1024 * 1024, blockerBytes: 24 * 1024 * 1024, label: "语音" },
+  video: { warnBytes: 120 * 1024 * 1024, blockerBytes: 500 * 1024 * 1024, label: "视频" },
+  font: { warnBytes: 20 * 1024 * 1024, blockerBytes: 60 * 1024 * 1024, label: "字体" },
+  live2d: { warnBytes: 40 * 1024 * 1024, blockerBytes: 120 * 1024 * 1024, label: "Live2D" },
+  model3d: { warnBytes: 80 * 1024 * 1024, blockerBytes: 300 * 1024 * 1024, label: "3D 模型" },
+  scene3d: { warnBytes: 120 * 1024 * 1024, blockerBytes: 500 * 1024 * 1024, label: "3D 场景" },
 };
 
 const CREATIVE_ASSISTANT_MODES = {
@@ -1993,6 +2012,7 @@ const PREVIEW_ISSUE_FILTER_LABELS = {
   errors: "结构错误",
   warnings: "补充提醒",
   export_missing: "导出缺失",
+  media_budget: "素材预算",
   unused_assets: "未使用素材",
 };
 
@@ -4620,6 +4640,32 @@ async function handleClick(event) {
 
   if (action === "export-inspection-report") {
     exportInspectionReport();
+    return;
+  }
+
+  if (action === "export-release-control-report") {
+    state.validation = runValidation(state.data);
+    updateTopbar();
+    exportReleaseControlReport();
+    if (state.currentScreen === "inspection") {
+      renderInspectionScreen();
+    }
+    if (state.currentScreen === "preview") {
+      renderPreviewScreen();
+    }
+    return;
+  }
+
+  if (action === "export-release-control-json") {
+    state.validation = runValidation(state.data);
+    updateTopbar();
+    exportReleaseControlJsonReport();
+    if (state.currentScreen === "inspection") {
+      renderInspectionScreen();
+    }
+    if (state.currentScreen === "preview") {
+      renderPreviewScreen();
+    }
     return;
   }
 
@@ -21025,12 +21071,20 @@ function renderSceneTree(selectedSceneId, actionName, options = {}) {
 
 function renderAssetTypeList(assetPool = state.data.assetList, duplicateOverview = buildAssetDuplicateOverview()) {
   const counts = countAssetsByType(assetPool);
+  const asset3dRiskAssetIds = getNativeRuntime3dRiskAssetIdSet();
+  const mediaBudgetAssetIds = buildAssetMediaBudgetReport(state.data).assetIds;
   return Object.keys(ASSET_TYPE_LABELS)
     .map((type) => {
       const count = counts.get(type) ?? 0;
       const missingCount = assetPool.filter((asset) => asset.type === type && isAssetMissingFile(asset)).length;
       const urgentMissingCount = assetPool.filter((asset) => asset.type === type && isAssetUrgentMissing(asset)).length;
       const duplicateCount = duplicateOverview.perTypeMap.get(type)?.duplicateCount ?? 0;
+      const asset3dRiskCount = assetPool.filter(
+        (asset) => asset.type === type && asset3dRiskAssetIds.has(asset.id)
+      ).length;
+      const mediaBudgetCount = assetPool.filter(
+        (asset) => asset.type === type && mediaBudgetAssetIds.has(asset.id)
+      ).length;
       return `
         <article
           class="scene-card ${type === state.selectedAssetType ? "is-selected" : ""}"
@@ -21039,12 +21093,30 @@ function renderAssetTypeList(assetPool = state.data.assetList, duplicateOverview
         >
           <strong>${ASSET_TYPE_LABELS[type]}</strong>
           <div class="scene-meta">${count} 个文件 · ${
-            missingCount > 0 ? `待导入 ${missingCount}` : duplicateCount > 0 ? `疑似重复 ${duplicateCount}` : "已补齐"
+            asset3dRiskCount > 0
+              ? `3D 风险 ${asset3dRiskCount}`
+              : mediaBudgetCount > 0
+                ? `体积预算 ${mediaBudgetCount}`
+                : missingCount > 0
+                  ? `待导入 ${missingCount}`
+                  : duplicateCount > 0
+                    ? `疑似重复 ${duplicateCount}`
+                    : "已补齐"
           }</div>
           ${
-            missingCount > 0 || urgentMissingCount > 0 || duplicateCount > 0
+            missingCount > 0 || urgentMissingCount > 0 || duplicateCount > 0 || asset3dRiskCount > 0 || mediaBudgetCount > 0
               ? `
                   <div class="scene-card-tags">
+                    ${
+                      asset3dRiskCount > 0
+                        ? `<span class="issue-tag warn-text">3D 发布风险 ${asset3dRiskCount}</span>`
+                        : ""
+                    }
+                    ${
+                      mediaBudgetCount > 0
+                        ? `<span class="issue-tag warn-text">素材预算 ${mediaBudgetCount}</span>`
+                        : ""
+                    }
                     ${
                       missingCount > 0 || urgentMissingCount > 0
                         ? `<span class="issue-tag ${urgentMissingCount > 0 ? "warn-text" : ""}">
@@ -21070,6 +21142,10 @@ function renderAssetTypeList(assetPool = state.data.assetList, duplicateOverview
 function renderAssetGapBoard(duplicateOverview = buildAssetDuplicateOverview()) {
   const overview = buildAssetGapOverview(state.data, duplicateOverview);
   const currentTypeSummary = overview.perTypeMap.get(state.selectedAssetType) ?? null;
+  const native3dRiskCount = countNativeRuntime3dRiskAssetsByType();
+  const currentTypeNative3dRiskCount = countNativeRuntime3dRiskAssetsByType(state.selectedAssetType);
+  const mediaBudgetReport = buildAssetMediaBudgetReport(state.data);
+  const currentTypeMediaBudgetCount = mediaBudgetReport.items.filter((item) => item.type === state.selectedAssetType).length;
   const hasActiveFilters =
     state.assetFilterMode !== "all" ||
     Boolean(state.assetSearchQuery.trim()) ||
@@ -21138,6 +21214,28 @@ function renderAssetGapBoard(duplicateOverview = buildAssetDuplicateOverview()) 
             ? { action: "focus-asset-gap", filterMode: "duplicate" }
             : null
         )}
+        ${renderAssetGapStatCard(
+          "3D 风险",
+          native3dRiskCount,
+          native3dRiskCount > 0
+            ? "最近一次原生 Runtime 体检标记了这些 3D 素材，点一下直接集中处理。"
+            : "最近一次原生 Runtime 3D 体检没有留下风险素材。",
+          native3dRiskCount > 0 ? "urgent" : "good",
+          native3dRiskCount > 0
+            ? { action: "focus-asset-gap", filterMode: "asset3d_risk" }
+            : null
+        )}
+        ${renderAssetGapStatCard(
+          "素材预算",
+          mediaBudgetReport.count,
+          mediaBudgetReport.count > 0
+            ? `有 ${mediaBudgetReport.count} 个素材建议压缩，合计 ${mediaBudgetReport.totalLabel}。`
+            : "当前没有明显超预算的大图、大音频或大视频。",
+          mediaBudgetReport.blockerCount > 0 ? "urgent" : mediaBudgetReport.count > 0 ? "warn" : "good",
+          mediaBudgetReport.count > 0
+            ? { action: "focus-asset-gap", filterMode: "media_budget" }
+            : null
+        )}
       </div>
       <div class="asset-gap-focus-grid">
         <article class="detail-card asset-gap-focus-card">
@@ -21171,6 +21269,16 @@ function renderAssetGapBoard(duplicateOverview = buildAssetDuplicateOverview()) 
                         ? `<span class="issue-tag danger-text">疑似重复 ${currentTypeSummary.duplicateCount}</span>`
                         : ""
                     }
+                    ${
+                      currentTypeNative3dRiskCount > 0
+                        ? `<span class="issue-tag warn-text">3D 发布风险 ${currentTypeNative3dRiskCount}</span>`
+                        : ""
+                    }
+                    ${
+                      currentTypeMediaBudgetCount > 0
+                        ? `<span class="issue-tag warn-text">素材预算 ${currentTypeMediaBudgetCount}</span>`
+                        : ""
+                    }
                   `
                 : `<span class="issue-tag">这一类暂时没有素材</span>`
             }
@@ -21202,6 +21310,24 @@ function renderAssetGapBoard(duplicateOverview = buildAssetDuplicateOverview()) 
               ${currentTypeSummary?.duplicateCount > 0 ? "" : "disabled"}
             >
               只看这类疑似重复
+            </button>
+            <button
+              class="toolbar-button ${state.assetFilterMode === "asset3d_risk" ? "toolbar-button-primary" : ""}"
+              data-action="focus-asset-gap"
+              data-asset-filter-mode="asset3d_risk"
+              data-asset-type="${escapeHtml(state.selectedAssetType)}"
+              ${currentTypeNative3dRiskCount > 0 ? "" : "disabled"}
+            >
+              只看这类 3D 风险
+            </button>
+            <button
+              class="toolbar-button ${state.assetFilterMode === "media_budget" ? "toolbar-button-primary" : ""}"
+              data-action="focus-asset-gap"
+              data-asset-filter-mode="media_budget"
+              data-asset-type="${escapeHtml(state.selectedAssetType)}"
+              ${currentTypeMediaBudgetCount > 0 ? "" : "disabled"}
+            >
+              只看这类体积风险
             </button>
           </div>
         </article>
@@ -21325,6 +21451,8 @@ function renderAssetCard(asset, isSelected, duplicateInfo = null) {
   const usageCount = getAssetUsageCount(asset.id);
   const usageText = usageCount > 0 ? `已使用 ${usageCount} 处` : "暂时未使用";
   const fileText = asset.fileExists ? "文件已就绪" : "还没导入真实文件";
+  const native3dRisk = getNativeRuntime3dRiskForAsset(asset.id);
+  const mediaBudgetRisk = getAssetMediaBudgetRisk(asset);
   return `
     <article
       class="asset-card ${isSelected ? "is-selected" : ""}"
@@ -21358,6 +21486,18 @@ function renderAssetCard(asset, isSelected, duplicateInfo = null) {
               }</span>`
         }
         ${usageCount === 0 ? `<span class="issue-tag">暂未使用</span>` : ""}
+        ${
+          native3dRisk
+            ? `<span class="issue-tag warn-text">3D 风险：${escapeHtml(
+                truncateText(native3dRisk.summary ?? native3dRisk.statusLabel ?? "需要复核", 30)
+              )}</span>`
+            : ""
+        }
+        ${
+          mediaBudgetRisk
+            ? `<span class="issue-tag warn-text">体积：${escapeHtml(mediaBudgetRisk.fileSizeLabel)}</span>`
+            : ""
+        }
         ${
           duplicateInfo
             ? duplicateInfo.isPreferred
@@ -21465,6 +21605,8 @@ function renderAssetDetails(asset, duplicateOverview = buildAssetDuplicateOvervi
       ["使用状态", usages.length > 0 ? `已使用 ${usages.length} 处` : "暂时未使用"],
       ["重复检查", duplicateInfo ? duplicateInfo.summary : "当前没有明显重复信号"],
     ])}
+    ${renderNativeRuntime3dAssetRiskDetail(asset)}
+    ${renderAssetMediaBudgetDetail(asset)}
     <article class="detail-card asset-danger-card">
       <strong>删除这个${escapeHtml(assetTypeLabel)}</strong>
       <div class="scene-card-tags">
@@ -21500,6 +21642,102 @@ function renderAssetDetails(asset, duplicateOverview = buildAssetDuplicateOvervi
     <article class="detail-card">
       <strong>被这些位置使用</strong>
       ${renderAssetUsageList(usages)}
+    </article>
+  `;
+}
+
+function renderAssetMediaBudgetDetail(asset) {
+  const risk = getAssetMediaBudgetRisk(asset);
+  if (!risk) {
+    return "";
+  }
+
+  return `
+    <article class="detail-card asset-gap-focus-card">
+      <strong>素材性能预算</strong>
+      <div class="scene-card-tags">
+        <span class="issue-tag ${risk.severity === "blocker" ? "danger-text" : "warn-text"}">${escapeHtml(risk.severityLabel)}</span>
+        <span class="issue-tag">${escapeHtml(risk.typeLabel)}</span>
+        <span class="issue-tag">当前 ${escapeHtml(risk.fileSizeLabel)}</span>
+      </div>
+      <p class="helper-text">${escapeHtml(risk.suggestion)}</p>
+      ${renderDetailRows([
+        ["建议预算", risk.warnLabel],
+        ["明显超预算线", risk.blockerLabel],
+        ["当前体积", risk.fileSizeLabel],
+      ])}
+      <div class="detail-actions">
+        <button
+          type="button"
+          class="toolbar-button toolbar-button-primary"
+          data-action="focus-asset-gap"
+          data-asset-filter-mode="media_budget"
+        >
+          只看体积风险素材
+        </button>
+      </div>
+    </article>
+  `;
+}
+
+function renderNativeRuntime3dAssetRiskDetail(asset) {
+  const risk = getNativeRuntime3dRiskForAsset(asset.id);
+  if (!risk) {
+    return "";
+  }
+
+  const exportResult = state.lastExportResult;
+  const usagePreview = Array.isArray(risk.usagePreview) ? risk.usagePreview.filter(Boolean) : [];
+  const issueBreakdown = Array.isArray(risk.issueBreakdown) ? risk.issueBreakdown.filter(Boolean) : [];
+  return `
+    <article class="detail-card asset-gap-focus-card">
+      <strong>3D 发布体检定位</strong>
+      <div class="scene-card-tags">
+        <span class="issue-tag warn-text">${escapeHtml(risk.statusLabel ?? "需要复核")}</span>
+        <span class="issue-tag">${escapeHtml(risk.typeLabel ?? getAssetTypeLabel(asset.type))}</span>
+        ${
+          Number.isFinite(Number(risk.usageCount))
+            ? `<span class="issue-tag">引用 ${Number(risk.usageCount)} 处</span>`
+            : ""
+        }
+      </div>
+      <p class="helper-text">${escapeHtml(
+        risk.summary ?? "最近一次原生 Runtime 3D 体检标记了这个素材，建议发布前处理。"
+      )}</p>
+      ${
+        issueBreakdown.length
+          ? `<div class="story-filter-chip-row">
+              ${issueBreakdown
+                .map((item) => `<span class="issue-tag warn-text">${escapeHtml(`${item.label ?? "风险"} ${item.count ?? 0}`)}</span>`)
+                .join("")}
+            </div>`
+          : ""
+      }
+      ${renderDetailRows([
+        ["建议动作", risk.recommendedAction ?? "复核 3D 资产导入状态。"],
+        ["导出路径", risk.exportUrl || "未记录"],
+        ["引用位置", usagePreview.length ? usagePreview.join(" / ") : "最近报告没有记录引用位置"],
+      ])}
+      <div class="detail-actions">
+        <button
+          type="button"
+          class="toolbar-button toolbar-button-primary"
+          data-action="focus-asset-gap"
+          data-asset-filter-mode="asset3d_risk"
+        >
+          只看 3D 风险素材
+        </button>
+        ${
+          exportResult?.asset3dSummaryPublicUrl
+            ? `<a class="toolbar-button" href="${escapeHtml(exportResult.asset3dSummaryPublicUrl)}" target="_blank" rel="noreferrer">打开 3D 摘要</a>`
+            : ""
+        }
+        ${
+          exportResult?.asset3dReportPublicUrl
+            ? `<a class="toolbar-button" href="${escapeHtml(exportResult.asset3dReportPublicUrl)}" target="_blank" rel="noreferrer">打开机器清单</a>`
+            : ""
+        }
+      </div>
     </article>
   `;
 }
@@ -21805,6 +22043,12 @@ function getAssetEmptyMessage(fallback = "这个分类里暂时没有素材。")
   }
   if (state.assetFilterMode === "duplicate") {
     return "这个分类里目前没有疑似重复素材。";
+  }
+  if (state.assetFilterMode === "asset3d_risk") {
+    return "最近一次原生 Runtime 3D 体检里没有需要定位的风险素材。";
+  }
+  if (state.assetFilterMode === "media_budget") {
+    return "当前分类里没有明显超出发布预算的大素材。";
   }
   return fallback;
 }
@@ -23625,6 +23869,31 @@ function buildPreviewIssueItems() {
     });
   }
 
+  const mediaBudgetReport = buildAssetMediaBudgetReport();
+  if (mediaBudgetReport.count > 0) {
+    items.push({
+      kind: "media_budget",
+      toneClass: mediaBudgetReport.blockerCount > 0 ? "danger-text" : "warn-text",
+      label: "素材预算",
+      title: `有 ${mediaBudgetReport.count} 个素材体积建议发布前处理`,
+      meta: mediaBudgetReport.items
+        .slice(0, 6)
+        .map((item) => `${item.name} · ${item.fileSizeLabel}`)
+        .join(" / "),
+      action: {
+        label: "去素材页压缩清单",
+        action: "focus-asset-gap",
+        dataset: { "asset-filter-mode": "media_budget" },
+      },
+      searchText: normalizeDashboardSearchQuery(
+        [
+          "素材预算 大素材 体积 压缩 图片 音频 视频",
+          ...mediaBudgetReport.items.map((item) => `${item.name} ${item.typeLabel} ${item.fileSizeLabel}`),
+        ].join(" ")
+      ),
+    });
+  }
+
   const unusedAssets = getUnusedAssets();
   if (unusedAssets.length > 0) {
     items.push({
@@ -23678,7 +23947,7 @@ function countPreviewIssueItemsByKind(items, kind) {
 }
 
 function renderPreviewIssueFilterBar(items) {
-  const modes = ["all", "errors", "warnings", "export_missing", "unused_assets"];
+  const modes = ["all", "errors", "warnings", "export_missing", "media_budget", "unused_assets"];
 
   return modes
     .map((mode) => `
@@ -23739,7 +24008,7 @@ function getFilteredInspectionIssueItems(items) {
 }
 
 function renderInspectionIssueFilterBar(items) {
-  const modes = ["all", "errors", "warnings", "export_missing", "unused_assets"];
+  const modes = ["all", "errors", "warnings", "export_missing", "media_budget", "unused_assets"];
 
   return modes
     .map((mode) => `
@@ -23786,6 +24055,7 @@ function buildPreviewSprintTasks() {
   const tasks = [];
   const exportResult = state.lastExportResult;
   const native3dDigest = exportResult?.target === "native_runtime" ? exportResult.asset3dReportDigest ?? null : null;
+  const mediaBudgetReport = buildAssetMediaBudgetReport();
   const unusedAssets = getUnusedAssets();
   const missingVoiceWarnings = state.validation.warnings.filter(
     (issue) => issue.message === "这句台词还没有绑定语音。"
@@ -23843,6 +24113,9 @@ function buildPreviewSprintTasks() {
 
   if (native3dDigest?.topIssues?.length > 0) {
     const firstIssue = native3dDigest.topIssues[0] ?? {};
+    const focusFirstIssueAction = firstIssue.assetId
+      ? { label: "定位首个风险素材", action: "open-asset-from-issue", assetId: firstIssue.assetId }
+      : null;
     tasks.push({
       tone: native3dDigest.status === "unavailable" ? "danger" : "warn",
       title: "处理 3D 发布体检风险",
@@ -23858,12 +24131,51 @@ function buildPreviewSprintTasks() {
         truncateText(`${firstIssue.typeLabel ?? "3D 资产"}：${firstIssue.summary ?? firstIssue.statusLabel ?? "需要复核"}`, 36),
       ],
       actions: [
+        focusFirstIssueAction,
+        {
+          label: "只看 3D 风险素材",
+          action: "focus-asset-gap",
+          dataset: { "asset-filter-mode": "asset3d_risk" },
+        },
         exportResult?.asset3dSummaryPublicUrl
           ? { label: "打开 3D 摘要", href: exportResult.asset3dSummaryPublicUrl }
           : { label: "生成 3D 摘要", action: "export-build", dataset: { "export-target": "native_runtime" } },
-        exportResult?.asset3dReportPublicUrl
-          ? { label: "打开机器清单", href: exportResult.asset3dReportPublicUrl }
-          : { label: "重新导出", action: "export-build", dataset: { "export-target": "native_runtime" } },
+      ].filter(Boolean),
+    });
+  }
+
+  if (mediaBudgetReport.count > 0) {
+    const largest = mediaBudgetReport.largest;
+    tasks.push({
+      tone: mediaBudgetReport.blockerCount > 0 ? "warn" : "soft",
+      title: "压一轮大素材预算",
+      description:
+        mediaBudgetReport.blockerCount > 0
+          ? "有素材已经明显超出建议预算，正式发包前最好先压缩，避免包体、加载峰值和低配设备体验一起变重。"
+          : "这些素材不会立刻卡死导出，但发布前压一轮能明显改善包体和加载体验。",
+      metrics: [
+        ["预算风险", `${mediaBudgetReport.count} 个`],
+        ["明显超线", `${mediaBudgetReport.blockerCount} 个`],
+        ["合计体积", mediaBudgetReport.totalLabel],
+        ["最大素材", truncateText(largest ? `${largest.name} · ${largest.fileSizeLabel}` : "未记录", 24)],
+      ],
+      tags: [
+        "包体优化",
+        largest ? truncateText(`${largest.typeLabel}：${largest.suggestion}`, 42) : "建议发布前压缩",
+      ],
+      actions: [
+        {
+          label: "只看体积风险素材",
+          action: "focus-asset-gap",
+          dataset: { "asset-filter-mode": "media_budget" },
+        },
+        largest
+          ? {
+              label: "打开最大素材",
+              action: "open-asset-from-issue",
+              assetId: largest.assetId,
+            }
+          : { label: "去素材页", action: "switch-screen", screen: "assets" },
       ],
     });
   }
@@ -23993,6 +24305,7 @@ function buildReleaseChecklistItems() {
   const releaseVersion = getProjectReleaseVersion(project);
   const hasStoredReleaseVersion = Boolean(String(project.releaseVersion ?? "").trim());
   const urgentMissingAssets = state.data.assetList.filter((asset) => isAssetUrgentMissing(asset)).length;
+  const mediaBudgetReport = buildAssetMediaBudgetReport();
   const missingVoiceWarnings = state.validation.warnings.filter(
     (issue) => issue.message === "这句台词还没有绑定语音。"
   ).length;
@@ -24072,6 +24385,31 @@ function buildReleaseChecklistItems() {
           : null,
     },
     {
+      severity: mediaBudgetReport.blockerCount > 0 ? "blocker" : mediaBudgetReport.count > 0 ? "warn" : "good",
+      title: "素材性能预算",
+      toneClass: mediaBudgetReport.blockerCount > 0 ? "danger-text" : mediaBudgetReport.count > 0 ? "warn-text" : "good-text",
+      status:
+        mediaBudgetReport.count === 0
+          ? "体积健康"
+          : mediaBudgetReport.blockerCount > 0
+            ? `明显超预算 ${mediaBudgetReport.blockerCount} 个`
+            : `建议压缩 ${mediaBudgetReport.count} 个`,
+      description:
+        mediaBudgetReport.count === 0
+          ? "当前没有明显超出建议预算的大图、大音频或大视频。"
+          : `建议发布前处理 ${mediaBudgetReport.count} 个大素材，合计 ${mediaBudgetReport.totalLabel}；最大项是 ${
+              mediaBudgetReport.largest?.name ?? "未记录"
+            }。`,
+      action:
+        mediaBudgetReport.count > 0
+          ? {
+              label: "只看体积风险素材",
+              action: "focus-asset-gap",
+              dataset: { "asset-filter-mode": "media_budget" },
+            }
+          : null,
+    },
+    {
       severity: missingVoiceWarnings === 0 ? "good" : "warn",
       title: "语音覆盖",
       toneClass: missingVoiceWarnings === 0 ? "good-text" : "warn-text",
@@ -24127,10 +24465,16 @@ function buildReleaseChecklistItems() {
           } / 未使用 ${native3dSummary.unusedCount ?? 0}。`
         : "导出原生 Runtime 包后，会自动生成 3D 模型与 3D 场景的结构、依赖和引用位置清单。",
       action: native3dHasReport
-        ? {
-            label: native3dDigest?.topIssues?.length ? "打开 3D 摘要" : "打开 3D 清单",
-            href: native3dDigest?.topIssues?.length && exportResult.asset3dSummaryPublicUrl ? exportResult.asset3dSummaryPublicUrl : exportResult.asset3dReportPublicUrl,
-          }
+        ? native3dDigest?.topIssues?.[0]?.assetId
+          ? {
+              label: "定位首个风险素材",
+              action: "open-asset-from-issue",
+              assetId: native3dDigest.topIssues[0].assetId,
+            }
+          : {
+              label: native3dDigest?.topIssues?.length ? "打开 3D 摘要" : "打开 3D 清单",
+              href: native3dDigest?.topIssues?.length && exportResult.asset3dSummaryPublicUrl ? exportResult.asset3dSummaryPublicUrl : exportResult.asset3dReportPublicUrl,
+            }
         : {
             label: "生成 3D 清单",
             action: "export-build",
@@ -24356,6 +24700,17 @@ function renderReleaseChecklistPanel() {
         <span class="badge badge-soft">导出前最后看一眼</span>
       </div>
       <p class="helper-text">这里会把最容易影响正式交付的检查项集中列出来，每一项都尽量给你一个马上可点的动作。</p>
+      <div class="detail-actions">
+        <button class="toolbar-button toolbar-button-primary" data-action="export-release-control-report">
+          导出发布总控报告
+        </button>
+        <button class="toolbar-button" data-action="export-release-control-json">
+          导出 JSON 数据
+        </button>
+        <button class="toolbar-button" data-action="export-inspection-report">
+          导出巡检报告
+        </button>
+      </div>
       <article class="preview-sprint-card is-soft">
         <div class="preview-sprint-head">
           <strong>${escapeHtml(summary.title)}</strong>
@@ -26466,6 +26821,304 @@ function buildInspectionReportFileName() {
   return `${title}_inspection_report_${dateStamp}.txt`;
 }
 
+function buildReleaseControlReportFileName() {
+  const date = new Date();
+  const dateStamp = [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("");
+  const title = sanitizeFileName(state.data?.project?.title || "tony-na-engine");
+  return `${title}_release_control_report_${dateStamp}.md`;
+}
+
+function buildReleaseControlJsonReportFileName() {
+  const date = new Date();
+  const dateStamp = [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("");
+  const title = sanitizeFileName(state.data?.project?.title || "tony-na-engine");
+  return `${title}_release_control_report_${dateStamp}.json`;
+}
+
+function escapeMarkdownTableCell(value) {
+  return String(value ?? "")
+    .replace(/\|/g, "\\|")
+    .replace(/\r?\n/g, "<br />")
+    .trim();
+}
+
+function buildMarkdownTable(headers, rows) {
+  if (!rows.length) {
+    return "";
+  }
+  return [
+    `| ${headers.map(escapeMarkdownTableCell).join(" | ")} |`,
+    `| ${headers.map(() => "---").join(" | ")} |`,
+    ...rows.map((row) => `| ${row.map(escapeMarkdownTableCell).join(" | ")} |`),
+  ].join("\n");
+}
+
+function getReleaseSeverityLabel(severity) {
+  switch (severity) {
+    case "blocker":
+      return "阻塞";
+    case "warn":
+      return "提醒";
+    case "good":
+      return "通过";
+    default:
+      return severity ? String(severity) : "未分级";
+  }
+}
+
+function getReleaseStepToneLabel(tone) {
+  switch (tone) {
+    case "danger":
+      return "先修";
+    case "warn":
+      return "优先";
+    case "good":
+      return "确认";
+    default:
+      return "收尾";
+  }
+}
+
+function serializeReleaseReportAction(action) {
+  if (!action) {
+    return null;
+  }
+  return {
+    label: action.label ?? "",
+    action: action.action ?? "",
+    href: action.href ?? "",
+    screen: action.screen ?? "",
+    sceneId: action.sceneId ?? "",
+    blockId: action.blockId ?? "",
+    characterId: action.characterId ?? "",
+    chapterId: action.chapterId ?? "",
+    assetId: action.assetId ?? "",
+    dataset: action.dataset ?? {},
+  };
+}
+
+function buildReleaseControlReportPayload() {
+  const generatedAt = new Date().toISOString();
+  const routeOverview = buildSceneRouteOverview();
+  const issueItems = buildPreviewIssueItems();
+  const releaseItems = buildReleaseChecklistItems();
+  const releaseSummary = buildReleaseChecklistSummary(releaseItems);
+  const releaseFixOrder = buildReleaseFixOrder(routeOverview);
+  const mediaBudgetReport = buildAssetMediaBudgetReport();
+  const native3dDigest = getLatestNativeRuntime3dDigest();
+  const regressionResult = state.inspectionRegressionResult;
+  const regressionFixQueue = buildPreviewRegressionFixQueue();
+  const exportResult = state.lastExportResult;
+  const resolution = getProjectResolution();
+  const urgentMissingAssets = state.data.assetList.filter((asset) => isAssetUrgentMissing(asset));
+  const unusedAssets = getUnusedAssets();
+
+  return {
+    formatVersion: 1,
+    generatedAt,
+    generatedAtLabel: formatDate(generatedAt),
+    project: {
+      title: state.data.project.title,
+      editorMode: getProjectEditorMode(),
+      editorModeLabel: getEditorModeLabel(getProjectEditorMode()),
+      releaseVersion: getProjectReleaseVersion(),
+      resolution,
+    },
+    summary: {
+      badge: releaseSummary.badge,
+      title: releaseSummary.title,
+      description: releaseSummary.description,
+      blockerCount: releaseItems.filter((item) => item.severity === "blocker").length,
+      warnCount: releaseItems.filter((item) => item.severity === "warn").length,
+      readyCount: releaseItems.filter((item) => item.severity === "good").length,
+      metrics: releaseSummary.metrics.map(([label, value]) => ({ label, value })),
+    },
+    validation: {
+      errorCount: state.validation.errors.length,
+      warningCount: state.validation.warnings.length,
+      errors: state.validation.errors.map((issue) => ({
+        message: issue.message,
+        location: issue.location,
+        context: issue.context ?? null,
+        action: serializeReleaseReportAction(getValidationIssueAction(issue)),
+      })),
+      warnings: state.validation.warnings.map((issue) => ({
+        message: issue.message,
+        location: issue.location,
+        context: issue.context ?? null,
+        action: serializeReleaseReportAction(getValidationIssueAction(issue)),
+      })),
+    },
+    route: {
+      entrySceneName: routeOverview.metrics.entrySceneName,
+      branchingScenes: routeOverview.metrics.branchingScenes,
+      endingScenes: routeOverview.metrics.endingScenes,
+      orphanScenes: routeOverview.metrics.orphanScenes,
+      brokenRoutes: routeOverview.metrics.brokenRoutes,
+      totalScenes: routeOverview.nodes.length,
+    },
+    releaseChecklist: releaseItems.map((item) => ({
+      title: item.title,
+      status: item.status,
+      severity: item.severity,
+      severityLabel: getReleaseSeverityLabel(item.severity),
+      description: item.description,
+      action: serializeReleaseReportAction(item.action),
+    })),
+    fixOrder: {
+      blockerCount: releaseFixOrder.blockerCount,
+      urgentCount: releaseFixOrder.urgentCount,
+      steps: releaseFixOrder.steps.map((step, index) => ({
+        order: index + 1,
+        tone: step.tone,
+        toneLabel: getReleaseStepToneLabel(step.tone),
+        title: step.title,
+        statusLabel: step.statusLabel,
+        description: step.description,
+        actions: (step.actions ?? []).map(serializeReleaseReportAction).filter(Boolean),
+      })),
+    },
+    issues: issueItems.map((item) => ({
+      kind: item.kind,
+      label: item.label,
+      title: item.title,
+      meta: item.meta,
+      action: serializeReleaseReportAction(item.action),
+    })),
+    assets: {
+      urgentMissingCount: urgentMissingAssets.length,
+      urgentMissingAssets: urgentMissingAssets.slice(0, 50).map((asset) => ({
+        assetId: asset.id,
+        name: asset.name,
+        type: asset.type,
+        typeLabel: getAssetTypeLabel(asset.type),
+        path: asset.path,
+      })),
+      unusedCount: unusedAssets.length,
+      unusedAssets: unusedAssets.slice(0, 50).map((asset) => ({
+        assetId: asset.id,
+        name: asset.name,
+        type: asset.type,
+        typeLabel: getAssetTypeLabel(asset.type),
+        path: asset.path,
+      })),
+      mediaBudget: {
+        count: mediaBudgetReport.count,
+        blockerCount: mediaBudgetReport.blockerCount,
+        warnCount: mediaBudgetReport.warnCount,
+        totalBytes: mediaBudgetReport.totalBytes,
+        totalLabel: mediaBudgetReport.totalLabel,
+        items: mediaBudgetReport.items.slice(0, 50).map((item) => ({
+          assetId: item.assetId,
+          name: item.name,
+          type: item.type,
+          typeLabel: item.typeLabel,
+          fileSizeBytes: item.fileSizeBytes,
+          fileSizeLabel: item.fileSizeLabel,
+          warnBytes: item.warnBytes,
+          warnLabel: item.warnLabel,
+          blockerBytes: item.blockerBytes,
+          blockerLabel: item.blockerLabel,
+          severity: item.severity,
+          severityLabel: item.severityLabel,
+          summary: item.summary,
+          suggestion: item.suggestion,
+        })),
+      },
+      native3dRisk: native3dDigest
+        ? {
+            status: native3dDigest.status ?? "",
+            headline: native3dDigest.headline ?? "",
+            summaryLine: native3dDigest.summaryLine ?? "",
+            riskLine: formatNativeRuntime3dRiskLine(native3dDigest),
+            riskCounts: native3dDigest.riskCounts ?? {},
+            issueAssetIds: native3dDigest.issueAssetIds ?? [],
+            topIssues: getNativeRuntime3dIssueAssets(native3dDigest).slice(0, 50),
+            recommendations: native3dDigest.recommendations ?? [],
+          }
+        : null,
+    },
+    export: exportResult
+      ? {
+          target: exportResult.target ?? "",
+          targetLabel: exportResult.targetLabel ?? "",
+          buildPath: exportResult.buildPath ?? "",
+          missingAssets: exportResult.missingAssets ?? 0,
+          missingAssetNames: exportResult.missingAssetNames ?? [],
+          runtimeMode: exportResult.runtimeMode ?? "",
+          runtimeModeLabel: exportResult.runtimeModeLabel ?? "",
+          runtimeWarning: exportResult.runtimeWarning ?? "",
+          releaseCandidateReportStatus: exportResult.releaseCandidateReportStatus ?? "",
+          releaseCandidateReportSummary: exportResult.releaseCandidateReportSummary ?? {},
+          releaseCandidateReadinessEstimate: exportResult.releaseCandidateReadinessEstimate ?? {},
+          asset3dReportStatus: exportResult.asset3dReportStatus ?? "",
+          asset3dReportSummary: exportResult.asset3dReportSummary ?? {},
+          publicUrls: {
+            manifest: exportResult.manifestPublicUrl ?? "",
+            archive: exportResult.archivePublicUrl ?? "",
+            releaseCandidateReport: exportResult.releaseCandidateReportPublicUrl ?? "",
+            asset3dDigest: exportResult.asset3dDigestPublicUrl ?? "",
+            asset3dReport: exportResult.asset3dReportPublicUrl ?? "",
+            asset3dSummary: exportResult.asset3dSummaryPublicUrl ?? "",
+          },
+        }
+      : null,
+    regression: regressionResult
+      ? {
+          ranAt: regressionResult.ranAt,
+          ranAtLabel: formatDate(regressionResult.ranAt),
+          summary: regressionResult.summary,
+          cases: regressionResult.cases.map((caseResult) => ({
+            sceneId: caseResult.sceneId,
+            sceneName: caseResult.sceneName,
+            chapterName: caseResult.chapterName,
+            sourceLabel: caseResult.sourceLabel,
+            status: caseResult.status,
+            statusLabel: caseResult.statusLabel,
+            reason: caseResult.reason,
+            detail: caseResult.detail,
+            steps: caseResult.steps,
+            visitedSceneCount: caseResult.visitedSceneCount,
+            choiceCount: caseResult.choiceCount,
+            selectedOptionTexts: caseResult.selectedOptionTexts ?? [],
+          })),
+          fixQueue: regressionFixQueue.map((caseResult, index) => ({
+            order: index + 1,
+            sceneId: caseResult.sceneId,
+            sceneName: caseResult.sceneName,
+            chapterName: caseResult.chapterName,
+            sourceLabel: caseResult.sourceLabel,
+            status: caseResult.status,
+            statusLabel: caseResult.statusLabel,
+            priorityScore: caseResult.priorityScore,
+            reason: caseResult.reason,
+            recommendation: caseResult.recommendation,
+          })),
+        }
+      : null,
+    nextStep:
+      releaseFixOrder.steps.length > 0
+        ? {
+            title: releaseFixOrder.steps[0].title,
+            description: releaseFixOrder.steps[0].description,
+            statusLabel: releaseFixOrder.steps[0].statusLabel,
+          }
+        : {
+            title: "最终试玩和正式导出",
+            description: "当前没有明显阻塞，可以直接做最终试玩和正式导出。",
+            statusLabel: "可以继续",
+          },
+  };
+}
+
 function buildInspectionReportContent() {
   const routeOverview = buildSceneRouteOverview();
   const issueItems = buildPreviewIssueItems();
@@ -26612,6 +27265,204 @@ function buildInspectionReportContent() {
   return `\uFEFF${lines.filter(Boolean).join("\n")}`;
 }
 
+function buildReleaseControlReportContent() {
+  const routeOverview = buildSceneRouteOverview();
+  const issueItems = buildPreviewIssueItems();
+  const releaseItems = buildReleaseChecklistItems();
+  const releaseSummary = buildReleaseChecklistSummary(releaseItems);
+  const releaseFixOrder = buildReleaseFixOrder(routeOverview);
+  const mediaBudgetReport = buildAssetMediaBudgetReport();
+  const native3dDigest = getLatestNativeRuntime3dDigest();
+  const regressionResult = state.inspectionRegressionResult;
+  const regressionFixQueue = buildPreviewRegressionFixQueue();
+  const exportResult = state.lastExportResult;
+  const resolution = getProjectResolution();
+  const generatedAt = new Date().toISOString();
+  const releaseChecklistTable = buildMarkdownTable(
+    ["检查项", "状态", "级别", "说明"],
+    releaseItems.map((item) => [
+      item.title,
+      item.status,
+      getReleaseSeverityLabel(item.severity),
+      item.description,
+    ])
+  );
+  const mediaBudgetTable = buildMarkdownTable(
+    ["素材", "类型", "当前体积", "建议预算", "级别", "建议"],
+    mediaBudgetReport.items.slice(0, 20).map((item) => [
+      item.name,
+      item.typeLabel,
+      item.fileSizeLabel,
+      item.warnLabel,
+      item.severityLabel,
+      item.suggestion,
+    ])
+  );
+  const native3dIssueTable = buildMarkdownTable(
+    ["素材", "类型", "状态", "风险", "引用", "建议"],
+    getNativeRuntime3dIssueAssets(native3dDigest)
+      .slice(0, 20)
+      .map((issue) => [
+        issue.name,
+        issue.typeLabel,
+        issue.statusLabel,
+        issue.summary,
+        Array.isArray(issue.usagePreview) && issue.usagePreview.length ? issue.usagePreview.join(" / ") : `${issue.usageCount ?? 0} 处`,
+        issue.recommendedAction,
+      ])
+  );
+  const fixOrderTable = buildMarkdownTable(
+    ["顺序", "优先级", "事项", "当前状态", "说明"],
+    releaseFixOrder.steps.map((step, index) => [
+      `${index + 1}`,
+      getReleaseStepToneLabel(step.tone),
+      step.title,
+      step.statusLabel,
+      step.description,
+    ])
+  );
+  const issueTable = buildMarkdownTable(
+    ["类型", "标题", "位置 / 摘要"],
+    issueItems.slice(0, 30).map((item) => [item.label, item.title, item.meta])
+  );
+  const regressionTable = regressionResult
+    ? buildMarkdownTable(
+        ["路线", "状态", "来源", "细节", "步数"],
+        regressionResult.cases.map((caseResult) => [
+          caseResult.sceneName,
+          caseResult.statusLabel,
+          `${caseResult.chapterName} · ${caseResult.sourceLabel}`,
+          caseResult.detail,
+          `${caseResult.steps}`,
+        ])
+      )
+    : "";
+  const regressionFixTable = buildMarkdownTable(
+    ["顺序", "路线", "状态", "优先分", "处理建议"],
+    regressionFixQueue.map((caseResult, index) => [
+      `${index + 1}`,
+      caseResult.sceneName,
+      caseResult.statusLabel,
+      `${caseResult.priorityScore}`,
+      caseResult.recommendation,
+    ])
+  );
+
+  const lines = [
+    `# ${state.data.project.title} 发布前总控报告`,
+    "",
+    `- 生成时间：${formatDate(generatedAt)}`,
+    `- 项目模式：${getEditorModeLabel(getProjectEditorMode())}`,
+    `- 发布版本：${getProjectReleaseVersion()}`,
+    `- 分辨率：${resolution.width} × ${resolution.height}`,
+    `- 发布判断：${releaseSummary.badge} · ${releaseSummary.title}`,
+    "",
+    "## 总览",
+    "",
+    releaseSummary.description,
+    "",
+    buildMarkdownTable(
+      ["指标", "结果"],
+      [
+        ["结构错误", `${state.validation.errors.length} 项`],
+        ["补充提醒", `${state.validation.warnings.length} 项`],
+        ["已引用缺口素材", `${state.data.assetList.filter((asset) => isAssetUrgentMissing(asset)).length} 个`],
+        ["素材预算风险", `${mediaBudgetReport.count} 个，合计 ${mediaBudgetReport.totalLabel}`],
+        ["闲置素材", `${getUnusedAssets().length} 个`],
+        ["入口场景", routeOverview.metrics.entrySceneName],
+        ["分支 / 收束 / 孤立场景", `${routeOverview.metrics.branchingScenes} / ${routeOverview.metrics.endingScenes} / ${routeOverview.metrics.orphanScenes}`],
+        ["坏链数量", `${routeOverview.metrics.brokenRoutes} 条`],
+      ]
+    ),
+    "",
+    "## 发布检查清单",
+    "",
+    releaseChecklistTable || "当前没有可列出的发布检查项。",
+    "",
+  ];
+
+  if (exportResult) {
+    lines.push(
+      "## 最近一次导出",
+      "",
+      buildMarkdownTable(
+        ["项目", "内容"],
+        [
+          ["目标", exportResult.targetLabel ?? exportResult.target ?? "未记录"],
+          ["路径", exportResult.buildPath ?? "未记录"],
+          ["缺失素材", `${exportResult.missingAssets ?? 0} 个`],
+          ["桌面模式", exportResult.runtimeModeLabel ?? "未记录"],
+          ["桌面壳提示", exportResult.runtimeWarning ?? "无"],
+          ["原生 RC", exportResult.releaseCandidateReportStatus ?? "未生成"],
+          ["3D 清单", exportResult.asset3dReportStatus ?? "未生成"],
+        ]
+      ),
+      ""
+    );
+  }
+
+  lines.push("## 发布前修复顺序", "", fixOrderTable || "当前没有明显阻塞，可以直接做最终试玩和正式导出。", "");
+
+  lines.push("## 素材性能预算", "");
+  if (mediaBudgetReport.count > 0) {
+    lines.push(
+      `当前有 ${mediaBudgetReport.count} 个素材建议发布前压缩，其中明显超预算 ${mediaBudgetReport.blockerCount} 个，合计 ${mediaBudgetReport.totalLabel}。`,
+      "",
+      mediaBudgetTable,
+      ""
+    );
+  } else {
+    lines.push("当前没有明显超出建议预算的大图、大音频、大视频、Live2D 或 3D 资产。", "");
+  }
+
+  lines.push("## 3D 发布风险", "");
+  if (native3dDigest) {
+    lines.push(
+      `- 状态：${native3dDigest.headline ?? native3dDigest.status ?? "未记录"}`,
+      `- 摘要：${native3dDigest.summaryLine ?? "未记录"}`,
+      `- 风险拆分：${formatNativeRuntime3dRiskLine(native3dDigest)}`,
+      ""
+    );
+    if (native3dIssueTable) {
+      lines.push(native3dIssueTable, "");
+    } else {
+      lines.push("当前没有需要定位的 3D 风险素材。", "");
+    }
+  } else {
+    lines.push("还没有最近一次原生 Runtime 3D 风险摘要。导出原生 Runtime 包后会自动生成。", "");
+  }
+
+  lines.push("## 巡检问题 Top 列表", "", issueTable || "当前没有巡检问题。", "");
+
+  lines.push("## 自动回归试玩路线", "");
+  if (regressionResult) {
+    lines.push(
+      `- 已测试：${regressionResult.summary.total} 条`,
+      `- 通过：${regressionResult.summary.passCount} 条`,
+      `- 需要复看：${regressionResult.summary.warnCount} 条`,
+      `- 失败：${regressionResult.summary.failCount} 条`,
+      "",
+      regressionTable || "没有可列出的回归路线。",
+      ""
+    );
+  } else {
+    lines.push("还没有执行自动回归试玩路线测试。", "");
+  }
+
+  lines.push("## 回归修复优先队列", "", regressionFixTable || "当前没有回归修复队列。", "");
+
+  lines.push(
+    "## 下一步建议",
+    "",
+    releaseFixOrder.steps.length > 0
+      ? `先处理「${releaseFixOrder.steps[0].title}」，再重新导出一版原生 Runtime / 桌面包确认。`
+      : "当前没有明显阻塞，可以直接做最终试玩和正式导出。",
+    ""
+  );
+
+  return `\uFEFF${lines.join("\n")}`;
+}
+
 function exportInspectionReport() {
   const fileName = buildInspectionReportFileName();
   const content = buildInspectionReportContent();
@@ -26620,12 +27471,29 @@ function exportInspectionReport() {
   showToast(`巡检报告已导出：${fileName}`);
 }
 
+function exportReleaseControlReport() {
+  const fileName = buildReleaseControlReportFileName();
+  const content = buildReleaseControlReportContent();
+  downloadTextFile(fileName, content, "text/markdown;charset=utf-8");
+  setSaveStatus(`已导出发布总控报告：${fileName}`);
+  showToast(`发布总控报告已导出：${fileName}`);
+}
+
+function exportReleaseControlJsonReport() {
+  const fileName = buildReleaseControlJsonReportFileName();
+  const content = `${JSON.stringify(buildReleaseControlReportPayload(), null, 2)}\n`;
+  downloadTextFile(fileName, content, "application/json;charset=utf-8");
+  setSaveStatus(`已导出发布总控 JSON：${fileName}`);
+  showToast(`发布总控 JSON 已导出：${fileName}`);
+}
+
 function buildReleaseFixOrder(routeOverview) {
   const project = state.data?.project ?? {};
   const resolution = getProjectResolution(project);
   const releaseVersion = getProjectReleaseVersion(project);
   const hasStoredReleaseVersion = Boolean(String(project.releaseVersion ?? "").trim());
   const urgentMissingAssets = state.data.assetList.filter((asset) => isAssetUrgentMissing(asset)).length;
+  const mediaBudgetReport = buildAssetMediaBudgetReport();
   const unusedAssets = getUnusedAssets();
   const missingVoiceWarnings = state.validation.warnings.filter(
     (issue) => issue.message === "这句台词还没有绑定语音。"
@@ -26686,6 +27554,35 @@ function buildReleaseFixOrder(routeOverview) {
           action: "set-preview-issue-filter",
           dataset: { "preview-issue-filter": "export_missing" },
         },
+      ],
+    });
+  }
+
+  if (mediaBudgetReport.count > 0) {
+    const largest = mediaBudgetReport.largest;
+    steps.push({
+      tone: mediaBudgetReport.blockerCount > 0 ? "warn" : "soft",
+      title: "压缩超预算素材",
+      statusLabel:
+        mediaBudgetReport.blockerCount > 0
+          ? `明显超预算 ${mediaBudgetReport.blockerCount} 个`
+          : `建议压缩 ${mediaBudgetReport.count} 个素材`,
+      description: largest
+        ? `先从最大素材「${largest.name}」开始处理。当前风险素材合计 ${mediaBudgetReport.totalLabel}，压一轮会直接改善包体和加载体验。`
+        : "发布前建议压缩体积偏大的素材，降低包体和加载风险。",
+      actions: [
+        {
+          label: "只看体积风险素材",
+          action: "focus-asset-gap",
+          dataset: { "asset-filter-mode": "media_budget" },
+        },
+        largest
+          ? {
+              label: "打开最大素材",
+              action: "open-asset-from-issue",
+              assetId: largest.assetId,
+            }
+          : { label: "去素材页", action: "switch-screen", screen: "assets" },
       ],
     });
   }
@@ -26835,6 +27732,12 @@ function renderReleaseFixOrderPanel(routeOverview) {
         <button class="toolbar-button toolbar-button-primary" data-action="generate-release-fix-order">
           一键生成修复顺序
         </button>
+        <button class="toolbar-button" data-action="export-release-control-report">
+          导出发布总控报告
+        </button>
+        <button class="toolbar-button" data-action="export-release-control-json">
+          导出 JSON 数据
+        </button>
         <button class="toolbar-button" data-action="export-inspection-report">
           导出带修复顺序的巡检报告
         </button>
@@ -26877,6 +27780,12 @@ function renderInspectionOverviewPanel(routeOverview) {
           </button>
           <button class="toolbar-button" data-action="export-inspection-report">
             导出巡检报告
+          </button>
+          <button class="toolbar-button toolbar-button-primary" data-action="export-release-control-report">
+            导出发布总控报告
+          </button>
+          <button class="toolbar-button" data-action="export-release-control-json">
+            导出 JSON 数据
           </button>
           <button class="toolbar-button" data-action="switch-screen" data-screen="preview">
             去试玩收尾
@@ -36919,6 +37828,182 @@ function getAssetFilterModeStatusLabel(filterMode) {
   );
 }
 
+function getLatestNativeRuntime3dDigest() {
+  const exportResult = state.lastExportResult;
+  if (exportResult?.target !== "native_runtime" || !exportResult.asset3dReportDigest) {
+    return null;
+  }
+  return typeof exportResult.asset3dReportDigest === "object" ? exportResult.asset3dReportDigest : null;
+}
+
+function getNativeRuntime3dIssueAssets(digest = getLatestNativeRuntime3dDigest()) {
+  if (!digest) {
+    return [];
+  }
+  if (Array.isArray(digest.issueAssets)) {
+    return digest.issueAssets.filter(Boolean);
+  }
+  return Array.isArray(digest.topIssues) ? digest.topIssues.filter(Boolean) : [];
+}
+
+function getNativeRuntime3dRiskAssetIdSet(digest = getLatestNativeRuntime3dDigest()) {
+  const assetIds = new Set();
+  if (!digest) {
+    return assetIds;
+  }
+  (Array.isArray(digest.issueAssetIds) ? digest.issueAssetIds : []).forEach((assetId) => {
+    const cleanId = String(assetId ?? "").trim();
+    if (cleanId) {
+      assetIds.add(cleanId);
+    }
+  });
+  getNativeRuntime3dIssueAssets(digest).forEach((issue) => {
+    const cleanId = String(issue?.assetId ?? "").trim();
+    if (cleanId) {
+      assetIds.add(cleanId);
+    }
+  });
+  return assetIds;
+}
+
+function getNativeRuntime3dRiskForAsset(assetId) {
+  const cleanAssetId = String(assetId ?? "").trim();
+  if (!cleanAssetId) {
+    return null;
+  }
+
+  const digest = getLatestNativeRuntime3dDigest();
+  const issue = getNativeRuntime3dIssueAssets(digest).find(
+    (item) => String(item?.assetId ?? "").trim() === cleanAssetId
+  );
+  if (issue) {
+    return issue;
+  }
+
+  return getNativeRuntime3dRiskAssetIdSet(digest).has(cleanAssetId)
+    ? {
+        assetId: cleanAssetId,
+        typeLabel: "3D 资产",
+        statusLabel: "需要复核",
+        summary: "最近一次原生 Runtime 3D 体检标记了这个素材。",
+        recommendedAction: "打开 3D 摘要或重新导出，确认具体风险项。",
+      }
+    : null;
+}
+
+function getAssetMediaBudgetLimit(asset) {
+  if (!asset) {
+    return null;
+  }
+  return ASSET_MEDIA_BUDGET_LIMITS[asset.type] ?? null;
+}
+
+function getAssetMediaBudgetSuggestion(asset, severity = "warn") {
+  switch (asset?.type) {
+    case "background":
+    case "sprite":
+    case "cg":
+    case "ui":
+      return severity === "blocker"
+        ? "建议先压到 WebP/高质量 JPEG，或拆分超大 PNG；否则桌面包体和加载峰值都会偏重。"
+        : "建议发布前压缩图片，透明素材优先 WebP/PNGQuant，背景和 CG 可考虑高质量 JPEG/WebP。";
+    case "bgm":
+      return "建议将无压缩或超大音频转为 OGG/MP3，并确认循环点；音乐体积过大时会明显抬高下载包。";
+    case "sfx":
+    case "voice":
+      return "建议把语音/音效批量转成 OGG/MP3，并按章节或角色整理，避免单文件过大影响加载。";
+    case "video":
+      return "建议用 H.264/H.265 重新编码，并控制码率、分辨率和时长；OP/ED 可保留高质版但最好另做预览压缩版。";
+    case "font":
+      return "建议确认字体授权并做子集化；只保留项目实际需要的字重和字符范围。";
+    case "live2d":
+      return "建议清理未用纹理和动作文件，压缩贴图，并保留一份可编辑源文件在项目外归档。";
+    case "model3d":
+    case "scene3d":
+      return "建议压缩贴图、减少内嵌大纹理，并用 3D 资产清单同步确认面数、材质和 draw call 预算。";
+    default:
+      return "建议在正式发布前压缩这个素材，降低包体和加载风险。";
+  }
+}
+
+function getAssetMediaBudgetRisk(asset) {
+  const limit = getAssetMediaBudgetLimit(asset);
+  const size = Number(asset?.fileSizeBytes ?? 0);
+  if (!limit || !asset?.fileExists || !Number.isFinite(size) || size <= limit.warnBytes) {
+    return null;
+  }
+
+  const severity = size >= limit.blockerBytes ? "blocker" : "warn";
+  const overRatio = limit.warnBytes > 0 ? size / limit.warnBytes : 0;
+  return {
+    assetId: asset.id,
+    type: asset.type,
+    typeLabel: getAssetTypeLabel(asset.type),
+    name: asset.name,
+    fileSizeBytes: size,
+    fileSizeLabel: formatFileSize(size),
+    warnBytes: limit.warnBytes,
+    warnLabel: formatFileSize(limit.warnBytes),
+    blockerBytes: limit.blockerBytes,
+    blockerLabel: formatFileSize(limit.blockerBytes),
+    severity,
+    severityLabel: severity === "blocker" ? "明显超预算" : "建议压缩",
+    overRatio,
+    summary: `${getAssetTypeLabel(asset.type)} ${formatFileSize(size)}，建议控制在 ${formatFileSize(limit.warnBytes)} 左右。`,
+    suggestion: getAssetMediaBudgetSuggestion(asset, severity),
+  };
+}
+
+function buildAssetMediaBudgetReport(data = state.data) {
+  const assets = data?.assetList ?? [];
+  const items = assets
+    .map((asset) => getAssetMediaBudgetRisk(asset))
+    .filter(Boolean)
+    .sort((left, right) => {
+      const severityDiff = Number(right.severity === "blocker") - Number(left.severity === "blocker");
+      if (severityDiff !== 0) {
+        return severityDiff;
+      }
+      return right.fileSizeBytes - left.fileSizeBytes;
+    });
+  const assetIds = new Set(items.map((item) => item.assetId));
+  const totalBytes = items.reduce((sum, item) => sum + item.fileSizeBytes, 0);
+  const blockerCount = items.filter((item) => item.severity === "blocker").length;
+  const perType = Object.keys(ASSET_TYPE_LABELS)
+    .map((type) => {
+      const typeItems = items.filter((item) => item.type === type);
+      return {
+        type,
+        label: getAssetTypeLabel(type),
+        count: typeItems.length,
+        totalBytes: typeItems.reduce((sum, item) => sum + item.fileSizeBytes, 0),
+      };
+    })
+    .filter((item) => item.count > 0);
+
+  return {
+    items,
+    assetIds,
+    count: items.length,
+    blockerCount,
+    warnCount: Math.max(items.length - blockerCount, 0),
+    totalBytes,
+    totalLabel: formatFileSize(totalBytes),
+    largest: items[0] ?? null,
+    perType,
+  };
+}
+
+function countNativeRuntime3dRiskAssetsByType(assetType = null, data = state.data) {
+  const riskAssetIds = getNativeRuntime3dRiskAssetIdSet();
+  if (!data || riskAssetIds.size === 0) {
+    return 0;
+  }
+  return data.assetList.filter(
+    (asset) => riskAssetIds.has(asset.id) && (!assetType || asset.type === assetType)
+  ).length;
+}
+
 function getVisibleAssets(
   data = state.data,
   {
@@ -36941,6 +38026,12 @@ function getVisibleAssets(
   } else if (safeFilterMode === "duplicate") {
     const duplicateOverview = buildAssetDuplicateOverview(data);
     assets = data.assetList.filter((asset) => duplicateOverview.assetIdSet.has(asset.id));
+  } else if (safeFilterMode === "asset3d_risk") {
+    const riskAssetIds = getNativeRuntime3dRiskAssetIdSet();
+    assets = data.assetList.filter((asset) => riskAssetIds.has(asset.id));
+  } else if (safeFilterMode === "media_budget") {
+    const mediaBudgetAssetIds = buildAssetMediaBudgetReport(data).assetIds;
+    assets = data.assetList.filter((asset) => mediaBudgetAssetIds.has(asset.id));
   } else {
     assets = data.assetList;
   }

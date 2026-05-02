@@ -822,7 +822,7 @@ class RunEditorSmokeTests(unittest.TestCase):
 
     def test_native_runtime_release_check_flags_3d_performance_budget_risks(self) -> None:
         self.create_blank_project_with_chapter()
-        run_editor.import_assets(
+        scene3d_asset = run_editor.import_assets(
             "scene3d",
             [
                 build_upload_payload(
@@ -864,7 +864,7 @@ class RunEditorSmokeTests(unittest.TestCase):
                     ).encode("utf-8"),
                 )
             ],
-        )
+        )["assets"][0]
 
         export_result = run_editor.export_native_runtime_build()
         build_dir = Path(export_result["buildPath"])
@@ -874,6 +874,10 @@ class RunEditorSmokeTests(unittest.TestCase):
         self.assertEqual(export_result["asset3dReportDigest"]["status"], "needs_attention")
         self.assertTrue(export_result["asset3dReportDigest"]["topIssues"])
         self.assertIn("性能预算", export_result["asset3dReportDigest"]["topIssues"][0]["summary"])
+        self.assertEqual(export_result["asset3dReportDigest"]["topIssues"][0]["assetId"], scene3d_asset["id"])
+        self.assertIn(scene3d_asset["id"], export_result["asset3dReportDigest"]["issueAssetIds"])
+        self.assertEqual(export_result["asset3dReportDigest"]["issueAssets"][0]["assetId"], scene3d_asset["id"])
+        self.assertTrue(export_result["asset3dReportDigest"]["issueAssets"][0]["issueBreakdown"])
 
         asset3d_payload = json.loads((build_dir / run_editor.NATIVE_RUNTIME_3D_ASSET_REPORT_NAME).read_text(encoding="utf-8"))
         self.assertEqual(asset3d_payload["status"], "needs_attention")
