@@ -936,6 +936,8 @@ class BrowserPlaywrightSmokeTests(unittest.TestCase):
         self.page.locator(".detail-meta").filter(has_text="3D 风险摘要").first.wait_for(timeout=20000)
         self.page.locator(".detail-meta").filter(has_text="3D 风险拆分").first.wait_for(timeout=20000)
         self.page.get_by_role("link", name="打开原生 RC 总报告").wait_for(timeout=20000)
+        self.page.get_by_role("link", name="打开发布总控报告").wait_for(timeout=20000)
+        self.page.get_by_role("link", name="打开发布总控 JSON").wait_for(timeout=20000)
         self.page.get_by_role("link", name="打开 3D 风险摘要").wait_for(timeout=20000)
         self.page.get_by_role("link", name="打开 3D 资产清单").wait_for(timeout=20000)
         self.page.get_by_role("link", name="打开 3D 摘要").wait_for(timeout=20000)

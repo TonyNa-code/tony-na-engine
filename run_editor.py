@@ -293,6 +293,8 @@ NATIVE_RUNTIME_APP_BUILDER_SOURCE = NATIVE_RUNTIME_TEMPLATE_DIR / "build_native_
 NATIVE_RUNTIME_APP_BUILDER_NAME = "build_native_runtime_app.py"
 NATIVE_RUNTIME_RELEASE_CHECK_NAME = "native-runtime-release-check.json"
 NATIVE_RUNTIME_RC_REPORT_NAME = "native-runtime-release-candidate-report.json"
+NATIVE_RUNTIME_RELEASE_CONTROL_REPORT_NAME = "native-runtime-release-control-report.md"
+NATIVE_RUNTIME_RELEASE_CONTROL_JSON_NAME = "native-runtime-release-control-report.json"
 NATIVE_RUNTIME_3D_ASSET_REPORT_NAME = "native-runtime-3d-asset-report.json"
 NATIVE_RUNTIME_3D_ASSET_SUMMARY_NAME = "native-runtime-3d-asset-summary.md"
 NATIVE_RUNTIME_3D_ASSET_DIGEST_NAME = "native-runtime-3d-risk-digest.json"
@@ -6887,6 +6889,233 @@ def build_native_3d_asset_export_digest(report_payload: dict | None) -> dict:
     }
 
 
+def get_native_runtime_release_control_status(
+    release_check_payload: dict | None,
+    rc_report_payload: dict | None,
+    asset3d_digest: dict | None,
+) -> dict:
+    release_summary = release_check_payload.get("summary") if isinstance(release_check_payload, dict) else {}
+    rc_summary = rc_report_payload.get("summary") if isinstance(rc_report_payload, dict) else {}
+    release_status = str(release_check_payload.get("status") or "unavailable") if isinstance(release_check_payload, dict) else "unavailable"
+    rc_status = str(rc_report_payload.get("status") or "unavailable") if isinstance(rc_report_payload, dict) else "unavailable"
+    asset_status = str(asset3d_digest.get("status") or "unavailable") if isinstance(asset3d_digest, dict) else "unavailable"
+
+    release_errors = int(release_summary.get("errors") or 0) if isinstance(release_summary, dict) else 0
+    blockers = int(rc_summary.get("blockers") or 0) if isinstance(rc_summary, dict) else 0
+    optional_failures = int(rc_summary.get("optionalFailures") or 0) if isinstance(rc_summary, dict) else 0
+    warnings = int(rc_summary.get("warnings") or 0) if isinstance(rc_summary, dict) else 0
+    top_3d_issues = asset3d_digest.get("topIssues") if isinstance(asset3d_digest, dict) else []
+    has_3d_issues = bool(top_3d_issues)
+
+    if release_status == "fail" or rc_status == "blocked" or release_errors or blockers:
+        return {
+            "status": "blocked",
+            "label": "阻塞发布",
+            "summary": "存在发布阻塞项，应先修复再进入三系统打包或分发。",
+        }
+    if (
+        release_status == "unavailable"
+        or rc_status == "unavailable"
+        or asset_status == "unavailable"
+        or optional_failures
+        or warnings
+        or has_3d_issues
+    ):
+        return {
+            "status": "needs_review",
+            "label": "需要复核",
+            "summary": "主链没有阻塞项，但仍有警告、可选能力失败或资产风险需要发布前确认。",
+        }
+    return {
+        "status": "ready",
+        "label": "可进入发布候选",
+        "summary": "导出包自检、RC 汇总和 3D 风险摘要没有发现阻塞项。",
+    }
+
+
+def build_native_runtime_release_control_next_steps(
+    release_check_payload: dict | None,
+    rc_report_payload: dict | None,
+    asset3d_digest: dict | None,
+    quality_gate: dict,
+) -> list[str]:
+    steps: list[str] = []
+
+    def add_step(value: object) -> None:
+        text = str(value or "").strip()
+        if text and text not in steps:
+            steps.append(text)
+
+    if quality_gate.get("status") == "blocked":
+        add_step("先修复发布自检或 RC 报告里的阻塞项，再重新导出原生 Runtime 包。")
+    elif quality_gate.get("status") == "needs_review":
+        add_step("发布前复核警告项、3D 风险和目标系统 Preview 点测结果。")
+    else:
+        add_step("在目标系统运行 Preview 包，完成一次人工逐按钮长流程点测。")
+
+    if isinstance(rc_report_payload, dict):
+        for action in rc_report_payload.get("nextActions") or []:
+            add_step(action)
+
+    if isinstance(release_check_payload, dict):
+        for issue in (release_check_payload.get("issues") or [])[:5]:
+            if not isinstance(issue, dict):
+                continue
+            suggestion = issue.get("suggestion") or issue.get("message")
+            add_step(suggestion)
+
+    if isinstance(asset3d_digest, dict):
+        for issue in asset3d_digest.get("topIssues") or []:
+            if not isinstance(issue, dict):
+                continue
+            name = issue.get("name") or issue.get("assetId") or "未命名 3D 资产"
+            action = issue.get("recommendedAction") or issue.get("summary") or "复核 3D 资产导入状态。"
+            add_step(f"复核 3D 资产「{name}」：{action}")
+        for recommendation in asset3d_digest.get("recommendations") or []:
+            add_step(recommendation)
+
+    return steps[:10]
+
+
+def build_native_runtime_release_control_payload(
+    export_payload: dict,
+    release_check_payload: dict | None,
+    rc_report_payload: dict | None,
+    asset3d_digest: dict | None,
+) -> dict:
+    project = export_payload.get("project") if isinstance(export_payload.get("project"), dict) else {}
+    build_info = export_payload.get("buildInfo") if isinstance(export_payload.get("buildInfo"), dict) else {}
+    release_summary = release_check_payload.get("summary") if isinstance(release_check_payload, dict) else {}
+    release_issues = release_check_payload.get("issues") if isinstance(release_check_payload, dict) else []
+    rc_summary = rc_report_payload.get("summary") if isinstance(rc_report_payload, dict) else {}
+    readiness = rc_report_payload.get("readinessEstimate") if isinstance(rc_report_payload, dict) else {}
+    quality_gate = get_native_runtime_release_control_status(release_check_payload, rc_report_payload, asset3d_digest)
+    next_steps = build_native_runtime_release_control_next_steps(
+        release_check_payload,
+        rc_report_payload,
+        asset3d_digest,
+        quality_gate,
+    )
+
+    return {
+        "formatVersion": 1,
+        "generatedAt": now_iso(),
+        "engine": {
+            "name": "Tony Na Engine",
+            "target": EXPORT_TARGET_NATIVE_RUNTIME,
+            "targetLabel": "原生 Runtime 包",
+            "runtimeMode": build_info.get("runtimeMode") or "pygame_native",
+            "releaseVersion": build_info.get("releaseVersion") or DEFAULT_EXPORT_RELEASE_VERSION,
+        },
+        "project": {
+            "projectId": project.get("projectId"),
+            "title": project.get("title") or "未命名项目",
+            "language": project.get("language") or "zh-CN",
+            "entrySceneId": project.get("entrySceneId"),
+            "resolution": project.get("resolution") or {"width": 1280, "height": 720},
+        },
+        "qualityGate": quality_gate,
+        "releaseCheck": {
+            "status": release_check_payload.get("status") if isinstance(release_check_payload, dict) else "unavailable",
+            "summary": release_summary if isinstance(release_summary, dict) else {},
+            "topIssues": release_issues[:8] if isinstance(release_issues, list) else [],
+        },
+        "releaseCandidate": {
+            "status": rc_report_payload.get("status") if isinstance(rc_report_payload, dict) else "unavailable",
+            "summary": rc_summary if isinstance(rc_summary, dict) else {},
+            "readinessEstimate": readiness if isinstance(readiness, dict) else {},
+            "videoStrategy": rc_report_payload.get("videoStrategy") if isinstance(rc_report_payload, dict) else {},
+            "commercialReleaseGaps": rc_report_payload.get("commercialReleaseGaps") if isinstance(rc_report_payload, dict) else [],
+        },
+        "asset3d": asset3d_digest if isinstance(asset3d_digest, dict) else build_native_3d_asset_export_digest(None),
+        "nextSteps": next_steps,
+        "includedReports": {
+            "releaseCheck": NATIVE_RUNTIME_RELEASE_CHECK_NAME,
+            "releaseCandidateReport": NATIVE_RUNTIME_RC_REPORT_NAME,
+            "asset3dDigest": NATIVE_RUNTIME_3D_ASSET_DIGEST_NAME,
+            "releaseControlReport": NATIVE_RUNTIME_RELEASE_CONTROL_REPORT_NAME,
+            "releaseControlJson": NATIVE_RUNTIME_RELEASE_CONTROL_JSON_NAME,
+        },
+    }
+
+
+def build_native_runtime_release_control_markdown(payload: dict) -> str:
+    project = payload.get("project") if isinstance(payload.get("project"), dict) else {}
+    engine = payload.get("engine") if isinstance(payload.get("engine"), dict) else {}
+    quality_gate = payload.get("qualityGate") if isinstance(payload.get("qualityGate"), dict) else {}
+    release_check = payload.get("releaseCheck") if isinstance(payload.get("releaseCheck"), dict) else {}
+    release_candidate = payload.get("releaseCandidate") if isinstance(payload.get("releaseCandidate"), dict) else {}
+    asset3d = payload.get("asset3d") if isinstance(payload.get("asset3d"), dict) else {}
+    readiness = release_candidate.get("readinessEstimate") if isinstance(release_candidate.get("readinessEstimate"), dict) else {}
+    release_summary = release_check.get("summary") if isinstance(release_check.get("summary"), dict) else {}
+    rc_summary = release_candidate.get("summary") if isinstance(release_candidate.get("summary"), dict) else {}
+    asset_metrics = asset3d.get("metrics") if isinstance(asset3d.get("metrics"), list) else []
+    next_steps = payload.get("nextSteps") if isinstance(payload.get("nextSteps"), list) else []
+
+    lines = [
+        "# 原生 Runtime 发布总控报告",
+        "",
+        f"- 项目：{project.get('title') or '未命名项目'}",
+        f"- 版本：{engine.get('releaseVersion') or DEFAULT_EXPORT_RELEASE_VERSION}",
+        f"- 生成时间：{payload.get('generatedAt') or now_iso()}",
+        f"- 总体状态：{quality_gate.get('label') or '需要复核'}",
+        "",
+        "## 总结",
+        "",
+        quality_gate.get("summary") or "请结合随包 JSON 报告复核导出状态。",
+        "",
+        "## 核心指标",
+        "",
+        "| 项目 | 值 |",
+        "| --- | --- |",
+        f"| 发布自检 | {release_check.get('status') or 'unavailable'} |",
+        f"| 自检错误 / 警告 | {int(release_summary.get('errors') or 0)} / {int(release_summary.get('warnings') or 0)} |",
+        f"| RC 状态 | {release_candidate.get('status') or 'unavailable'} |",
+        f"| RC 阻塞 / 可选失败 / 警告 | {int(rc_summary.get('blockers') or 0)} / {int(rc_summary.get('optionalFailures') or 0)} / {int(rc_summary.get('warnings') or 0)} |",
+        f"| 桌面 Preview 估算 | {readiness.get('desktopPreviewPercent', 'n/a')}% |",
+        f"| 商业桌面估算 | {readiness.get('commercialDesktopPercent', 'n/a')}% |",
+        f"| 3D 摘要 | {asset3d.get('summaryLine') or '未生成'} |",
+        "",
+    ]
+
+    if asset_metrics:
+        lines.extend(["## 3D 风险快照", "", "| 指标 | 值 |", "| --- | --- |"])
+        for metric in asset_metrics:
+            if not isinstance(metric, dict):
+                continue
+            lines.append(f"| {metric.get('label') or '指标'} | {metric.get('value') or '-'} |")
+        lines.append("")
+
+    top_issues = asset3d.get("topIssues") if isinstance(asset3d.get("topIssues"), list) else []
+    if top_issues:
+        lines.extend(["## 优先处理 3D 资产", ""])
+        for issue in top_issues:
+            if not isinstance(issue, dict):
+                continue
+            lines.append(
+                f"- {issue.get('name') or issue.get('assetId') or '未命名 3D 资产'}："
+                f"{issue.get('summary') or issue.get('statusLabel') or '需要复核'}"
+            )
+        lines.append("")
+
+    lines.extend(["## 下一步", ""])
+    for index, step in enumerate(next_steps or ["完成目标系统实机点测。"], start=1):
+        lines.append(f"{index}. {step}")
+    lines.extend(
+        [
+            "",
+            "## 随包文件",
+            "",
+            f"- `{NATIVE_RUNTIME_RELEASE_CHECK_NAME}`",
+            f"- `{NATIVE_RUNTIME_RC_REPORT_NAME}`",
+            f"- `{NATIVE_RUNTIME_3D_ASSET_DIGEST_NAME}`",
+            f"- `{NATIVE_RUNTIME_RELEASE_CONTROL_JSON_NAME}`",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
 def write_native_runtime_files(build_dir: Path, export_payload: dict) -> dict:
     game_data_path = build_dir / "game_data.json"
     game_data_path.write_text(json.dumps(export_payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -6914,6 +7143,8 @@ def write_native_runtime_files(build_dir: Path, export_payload: dict) -> dict:
     windows_app_builder_path = build_dir / NATIVE_RUNTIME_WINDOWS_APP_BUILDER_COMMAND_NAME
     release_check_path = build_dir / NATIVE_RUNTIME_RELEASE_CHECK_NAME
     rc_report_path = build_dir / NATIVE_RUNTIME_RC_REPORT_NAME
+    release_control_report_path = build_dir / NATIVE_RUNTIME_RELEASE_CONTROL_REPORT_NAME
+    release_control_json_path = build_dir / NATIVE_RUNTIME_RELEASE_CONTROL_JSON_NAME
     asset3d_report_path = build_dir / NATIVE_RUNTIME_3D_ASSET_REPORT_NAME
     asset3d_summary_path = build_dir / NATIVE_RUNTIME_3D_ASSET_SUMMARY_NAME
     asset3d_digest_path = build_dir / NATIVE_RUNTIME_3D_ASSET_DIGEST_NAME
@@ -7132,6 +7363,21 @@ def write_native_runtime_files(build_dir: Path, export_payload: dict) -> dict:
             + "\n",
             encoding="utf-8",
         )
+    try:
+        release_check_payload = json.loads(release_check_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        release_check_payload = {
+            "status": "unavailable",
+            "summary": {"errors": 1, "warnings": 0},
+            "issues": [
+                {
+                    "severity": "error",
+                    "code": "release_check_payload_invalid",
+                    "message": "发布前自检报告不是有效 JSON。",
+                    "suggestion": "手动运行 python runtime_player.py --release-check . 查看具体问题。",
+                }
+            ],
+        }
     asset3d_report = subprocess.run(
         [
             sys.executable,
@@ -7226,6 +7472,20 @@ def write_native_runtime_files(build_dir: Path, export_payload: dict) -> dict:
         json.dumps(asset3d_report_digest, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+    release_control_payload = build_native_runtime_release_control_payload(
+        export_payload,
+        release_check_payload if isinstance(release_check_payload, dict) else None,
+        rc_report_payload if isinstance(rc_report_payload, dict) else None,
+        asset3d_report_digest,
+    )
+    release_control_json_path.write_text(
+        json.dumps(release_control_payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    release_control_report_path.write_text(
+        build_native_runtime_release_control_markdown(release_control_payload),
+        encoding="utf-8",
+    )
 
     return {
         "gameDataName": game_data_path.name,
@@ -7248,6 +7508,12 @@ def write_native_runtime_files(build_dir: Path, export_payload: dict) -> dict:
         "releaseCheckPath": str(release_check_path),
         "releaseCandidateReportName": rc_report_path.name,
         "releaseCandidateReportPath": str(rc_report_path),
+        "releaseControlReportName": release_control_report_path.name,
+        "releaseControlReportPath": str(release_control_report_path),
+        "releaseControlJsonName": release_control_json_path.name,
+        "releaseControlJsonPath": str(release_control_json_path),
+        "releaseControlStatus": release_control_payload["qualityGate"]["status"],
+        "releaseControlSummary": release_control_payload["qualityGate"]["summary"],
         "asset3dReportName": asset3d_report_path.name,
         "asset3dReportPath": str(asset3d_report_path),
         "asset3dSummaryName": asset3d_summary_path.name,
@@ -7309,6 +7575,8 @@ def export_native_runtime_build() -> dict:
             "appBuilder": runtime_files["appBuilderName"],
             "releaseCheck": runtime_files["releaseCheckName"],
             "releaseCandidateReport": runtime_files["releaseCandidateReportName"],
+            "releaseControlReport": runtime_files["releaseControlReportName"],
+            "releaseControlJson": runtime_files["releaseControlJsonName"],
             "asset3dReport": runtime_files["asset3dReportName"],
             "asset3dSummary": runtime_files["asset3dSummaryName"],
             "asset3dDigest": runtime_files["asset3dDigestName"],
@@ -7333,6 +7601,9 @@ def export_native_runtime_build() -> dict:
             "appBuilder": runtime_files["appBuilderName"],
             "releaseCheck": runtime_files["releaseCheckName"],
             "releaseCandidateReport": runtime_files["releaseCandidateReportName"],
+            "releaseControlReport": runtime_files["releaseControlReportName"],
+            "releaseControlJson": runtime_files["releaseControlJsonName"],
+            "releaseControlStatus": runtime_files["releaseControlStatus"],
             "asset3dReport": runtime_files["asset3dReportName"],
             "asset3dSummary": runtime_files["asset3dSummaryName"],
             "asset3dDigest": runtime_files["asset3dDigestName"],
@@ -7384,6 +7655,14 @@ def export_native_runtime_build() -> dict:
         "releaseCandidateReportStatus": runtime_files["releaseCandidateReportStatus"],
         "releaseCandidateReportSummary": runtime_files["releaseCandidateReportSummary"],
         "releaseCandidateReadinessEstimate": runtime_files["releaseCandidateReadinessEstimate"],
+        "releaseControlReportName": runtime_files["releaseControlReportName"],
+        "releaseControlReportPath": runtime_files["releaseControlReportPath"],
+        "releaseControlReportPublicUrl": f"/exports/{build_dir.name}/{runtime_files['releaseControlReportName']}",
+        "releaseControlJsonName": runtime_files["releaseControlJsonName"],
+        "releaseControlJsonPath": runtime_files["releaseControlJsonPath"],
+        "releaseControlJsonPublicUrl": f"/exports/{build_dir.name}/{runtime_files['releaseControlJsonName']}",
+        "releaseControlStatus": runtime_files["releaseControlStatus"],
+        "releaseControlSummary": runtime_files["releaseControlSummary"],
         "asset3dReportName": runtime_files["asset3dReportName"],
         "asset3dReportPath": runtime_files["asset3dReportPath"],
         "asset3dReportPublicUrl": f"/exports/{build_dir.name}/{runtime_files['asset3dReportName']}",

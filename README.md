@@ -175,7 +175,7 @@ python run_editor.py
 
 - `网页试玩包`：适合快速预览、网页分发和轻量测试。
 - `Windows / macOS / Linux 桌面包`：当前主要基于 NW.js 桌面 Runtime。
-- `原生 Runtime 包`：Preview 路线，已覆盖标题页主菜单、基础剧情主链、正式存档/读档、系统菜单设置项、文本历史、自动播放、已读快进、项目字体、玩家档案/自动续玩、基础粒子与镜头演出、3D 资产结构 / 依赖清单、可选 PyAV/FFmpeg 音画同步内嵌视频播放、OpenCV 画面兜底、系统播放器桥接兜底、第一批资料馆，以及随包生成的发布候选总报告。
+- `原生 Runtime 包`：Preview 路线，已覆盖标题页主菜单、基础剧情主链、正式存档/读档、系统菜单设置项、文本历史、自动播放、已读快进、项目字体、玩家档案/自动续玩、基础粒子与镜头演出、3D 资产结构 / 依赖清单、可选 PyAV/FFmpeg 音画同步内嵌视频播放、OpenCV 画面兜底、系统播放器桥接兜底、第一批资料馆，以及随包生成的发布候选总报告与发布总控报告。
 - `手机端 Runtime`：实验规划阶段，当前重点是触控、音频策略和界面适配验证。
 
 ### 原生 Runtime 发布体检
@@ -187,6 +187,8 @@ python run_editor.py
 - `native-runtime-3d-asset-summary.md`：同一份 3D 清单的 Markdown 摘要，适合创作者直接打开阅读或贴到 Issue / Release notes。
 - `native-runtime-3d-risk-digest.json`：面向编辑器和发布页的精简 3D 风险摘要，汇总性能预算、容器、内部引用、贴图槽和依赖风险，并保留素材 ID 供编辑器一键定位。
 - `native-runtime-release-candidate-report.json`：发布候选总报告，汇总 doctor、打包脚手架、视频后端、3D 资产和下一步建议。
+- `native-runtime-release-control-report.md`：面向人工验收的发布总控报告，汇总自检、RC、3D 风险、发布状态和下一步顺序。
+- `native-runtime-release-control-report.json`：同一份总控结论的机器可读版本，适合接 CI、发布脚本或自动化验收。
 
 这些命令在 macOS / Linux / Windows 上逻辑相同，只是 Python 启动器可能不同。
 

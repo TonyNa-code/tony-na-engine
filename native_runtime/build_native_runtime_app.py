@@ -21,6 +21,8 @@ VIDEO_REQUIREMENTS_CANDIDATES = ("requirements-native-runtime-video.txt", "requi
 ASSET3D_REPORT_NAME = "native-runtime-3d-asset-report.json"
 ASSET3D_SUMMARY_NAME = "native-runtime-3d-asset-summary.md"
 ASSET3D_DIGEST_NAME = "native-runtime-3d-risk-digest.json"
+RELEASE_CONTROL_REPORT_NAME = "native-runtime-release-control-report.md"
+RELEASE_CONTROL_JSON_NAME = "native-runtime-release-control-report.json"
 
 
 class NativeAppBuildError(RuntimeError):
@@ -298,6 +300,7 @@ def write_package_manifest(
         "archivePath": str(archive_path) if archive_path else "",
         "releaseCheck": description.get("releaseCheck") or {},
         "releaseCandidateReport": description.get("releaseCandidateReport") or {},
+        "releaseControl": description.get("releaseControl") or {},
         "video": description.get("video") or {},
         "asset3d": description.get("asset3d") or {},
         "signing": {
@@ -438,6 +441,8 @@ def describe_build(
     asset3d_summary_path = bundle_dir / ASSET3D_SUMMARY_NAME
     asset3d_summary = read_text_report_preview(asset3d_summary_path)
     asset3d_digest = read_json_report_file(bundle_dir / ASSET3D_DIGEST_NAME)
+    release_control_report = read_text_report_preview(bundle_dir / RELEASE_CONTROL_REPORT_NAME)
+    release_control_json = read_json_report_file(bundle_dir / RELEASE_CONTROL_JSON_NAME)
     return {
         "appName": resolved_app_name,
         "bundleIdentifier": resolved_bundle_identifier,
@@ -464,6 +469,12 @@ def describe_build(
             "report": asset3d_report,
             "summary": asset3d_summary,
             "digest": asset3d_digest,
+        },
+        "releaseControl": {
+            "reportName": RELEASE_CONTROL_REPORT_NAME,
+            "jsonName": RELEASE_CONTROL_JSON_NAME,
+            "report": release_control_report,
+            "json": release_control_json,
         },
         "dataEntries": [
             {"source": entry["relativeSource"], "dest": entry["dest"]}

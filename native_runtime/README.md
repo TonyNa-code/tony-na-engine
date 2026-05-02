@@ -122,6 +122,15 @@ python3 runtime_player.py --rc-report .
 - `preview_ready_with_optional_failures`：Preview 主链不阻塞，但存在非核心能力失败。
 - `blocked`：存在 Preview 阻塞项，应先修复再打包。
 
+## 发布总控报告
+
+编辑器导出的完整原生 Runtime 包会额外附带：
+
+- `native-runtime-release-control-report.md`：给人工验收看的总控报告，汇总发布自检、RC 状态、3D 风险摘要、发布门禁和下一步处理顺序。
+- `native-runtime-release-control-report.json`：给自动化脚本或 CI 读取的同一份结论，字段包含 `qualityGate`、`releaseCheck`、`releaseCandidate`、`asset3d` 和 `nextSteps`。
+
+这两份文件会在导出包生成时自动写入。若需要重新计算底层检查，可以先运行 `--release-check`、`--doctor`、`--release-candidate-report` 和 `--describe-3d-assets`，再重新从编辑器导出一版包。
+
 ## 3D 资产清单
 
 不启动窗口，输出 3D 模型和 3D 场景的发布前资产清单：

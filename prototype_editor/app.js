@@ -25608,6 +25608,34 @@ function renderProjectValidationSummary() {
             : ""
         }
         ${
+          exportResult?.target === "native_runtime" && exportResult?.releaseControlReportPublicUrl
+            ? `
+              <a
+                class="toolbar-button toolbar-button-primary"
+                href="${escapeHtml(exportResult.releaseControlReportPublicUrl)}"
+                target="_blank"
+                rel="noreferrer"
+              >
+                打开发布总控报告
+              </a>
+            `
+            : ""
+        }
+        ${
+          exportResult?.target === "native_runtime" && exportResult?.releaseControlJsonPublicUrl
+            ? `
+              <a
+                class="toolbar-button"
+                href="${escapeHtml(exportResult.releaseControlJsonPublicUrl)}"
+                target="_blank"
+                rel="noreferrer"
+              >
+                打开发布总控 JSON
+              </a>
+            `
+            : ""
+        }
+        ${
           exportResult?.target === "native_runtime" && exportResult?.asset3dDigestPublicUrl
             ? `
               <a
@@ -25726,6 +25754,12 @@ function renderProjectValidationSummary() {
                   exportResult.releaseCheckPath ?? "未生成"
                 )}<br />发布候选总报告：${escapeHtml(
                   exportResult.releaseCandidateReportPath ?? "未生成"
+                )}<br />发布总控报告：${escapeHtml(
+                  exportResult.releaseControlReportPath ?? "未生成"
+                )}<br />发布总控 JSON：${escapeHtml(
+                  exportResult.releaseControlJsonPath ?? "未生成"
+                )}<br />发布总控状态：${escapeHtml(
+                  exportResult.releaseControlSummary ?? exportResult.releaseControlStatus ?? "未生成"
                 )}<br />3D 资产清单：${escapeHtml(
                   exportResult.asset3dReportPath ?? "未生成"
                 )}<br />3D Markdown 摘要：${escapeHtml(
@@ -27059,12 +27093,16 @@ function buildReleaseControlReportPayload() {
           releaseCandidateReportStatus: exportResult.releaseCandidateReportStatus ?? "",
           releaseCandidateReportSummary: exportResult.releaseCandidateReportSummary ?? {},
           releaseCandidateReadinessEstimate: exportResult.releaseCandidateReadinessEstimate ?? {},
+          releaseControlStatus: exportResult.releaseControlStatus ?? "",
+          releaseControlSummary: exportResult.releaseControlSummary ?? "",
           asset3dReportStatus: exportResult.asset3dReportStatus ?? "",
           asset3dReportSummary: exportResult.asset3dReportSummary ?? {},
           publicUrls: {
             manifest: exportResult.manifestPublicUrl ?? "",
             archive: exportResult.archivePublicUrl ?? "",
             releaseCandidateReport: exportResult.releaseCandidateReportPublicUrl ?? "",
+            releaseControlReport: exportResult.releaseControlReportPublicUrl ?? "",
+            releaseControlJson: exportResult.releaseControlJsonPublicUrl ?? "",
             asset3dDigest: exportResult.asset3dDigestPublicUrl ?? "",
             asset3dReport: exportResult.asset3dReportPublicUrl ?? "",
             asset3dSummary: exportResult.asset3dSummaryPublicUrl ?? "",
