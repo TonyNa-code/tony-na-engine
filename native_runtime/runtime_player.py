@@ -4881,6 +4881,362 @@ def print_native_runtime_release_candidate_report(bundle_dir: Path) -> dict:
     return report
 
 
+def format_release_control_number(value: object) -> str:
+    try:
+        number = int(value or 0)
+    except (TypeError, ValueError):
+        number = 0
+    return f"{number:,}"
+
+
+def build_native_runtime_3d_risk_digest(report: dict | None) -> dict:
+    if not isinstance(report, dict):
+        return {
+            "status": "unavailable",
+            "headline": "3D 资产清单暂不可用",
+            "summaryLine": "没有拿到可读 3D 报告。",
+            "metrics": [],
+            "riskCounts": {},
+            "issueAssetIds": [],
+            "issueAssets": [],
+            "topIssues": [],
+            "recommendations": ["手动运行 --describe-3d-assets 查看具体问题。"],
+        }
+
+    status = str(report.get("status") or "unavailable")
+    summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
+    entries = report.get("entries") if isinstance(report.get("entries"), list) else []
+    recommendations = report.get("recommendations") if isinstance(report.get("recommendations"), list) else []
+    if status == "no_3d_assets":
+        headline = "当前项目没有 3D 资产"
+    elif status == "ready":
+        headline = "3D 资产发布体检通过"
+    elif status == "needs_attention":
+        headline = "3D 资产需要发布前处理"
+    else:
+        headline = "3D 资产清单需要复核"
+
+    risk_counts = {
+        "性能预算": int(summary.get("performanceBudgetIssueCount") or 0),
+        "GLB/VRM 容器": int(summary.get("glbContainerIssueCount") or 0),
+        "内部引用": int(summary.get("gltfIntegrityIssueCount") or 0),
+        "贴图槽": int(summary.get("textureSlotIssueCount") or 0),
+        "外部依赖": int(summary.get("missingDependencyCount") or 0),
+        "空结构": int(summary.get("emptyStructureCount") or 0),
+    }
+    risk_preview = " / ".join(f"{label} {count}" for label, count in risk_counts.items() if count > 0)
+    if not risk_preview:
+        risk_preview = "暂无明显 3D 风险" if int(summary.get("assetCount") or 0) else "未检测到 3D 资产"
+    summary_line = f"资产 {int(summary.get('assetCount') or 0)} 个，问题 {int(summary.get('issueCount') or 0)} 个；{risk_preview}。"
+
+    issue_assets: list[dict] = []
+    for entry in entries:
+        if not isinstance(entry, dict) or str(entry.get("status") or "") == "ready":
+            continue
+        issue_breakdown: list[dict] = []
+        for code, label, probe_name in [
+            ("performance_budget", "性能预算", "performanceBudgetProbe"),
+            ("glb_container", "GLB/VRM 容器", "glbContainerProbe"),
+            ("gltf_integrity", "内部引用", "gltfIntegrityProbe"),
+            ("texture_slot", "贴图槽", "previewProbe"),
+        ]:
+            probe = entry.get(probe_name) if isinstance(entry.get(probe_name), dict) else {}
+            raw_count = probe.get("textureSlotIssueCount") if code == "texture_slot" else probe.get("issueCount")
+            count = int(raw_count or 0)
+            if count:
+                issue_breakdown.append({"code": code, "label": label, "count": count})
+        dependency = entry.get("dependencyHealth") if isinstance(entry.get("dependencyHealth"), dict) else {}
+        dependency_count = len(dependency.get("missing") or []) + len(dependency.get("unsafe") or [])
+        if dependency_count:
+            issue_breakdown.append({"code": "dependency", "label": "外部依赖", "count": dependency_count})
+        if not issue_breakdown:
+            issue_breakdown.append({"code": "status", "label": str(entry.get("statusLabel") or "需要复核"), "count": 1})
+
+        usage_preview: list[str] = []
+        for usage in (entry.get("usages") if isinstance(entry.get("usages"), list) else [])[:3]:
+            if not isinstance(usage, dict):
+                continue
+            if usage.get("kind") == "character_model":
+                usage_preview.append(f"角色：{usage.get('characterName') or usage.get('characterId') or '未命名角色'}")
+            else:
+                scene_label = " / ".join(
+                    str(part)
+                    for part in [usage.get("chapterName"), usage.get("sceneName")]
+                    if str(part or "").strip()
+                )
+                block_index = usage.get("blockIndex")
+                if isinstance(block_index, int):
+                    scene_label = f"{scene_label or '场景'} · 第 {block_index + 1} 张卡片"
+                usage_preview.append(scene_label or str(usage.get("kindLabel") or "剧情引用"))
+
+        issue_assets.append(
+            {
+                "assetId": str(entry.get("assetId") or ""),
+                "type": str(entry.get("type") or ""),
+                "name": str(entry.get("name") or entry.get("assetId") or "未命名 3D 资产"),
+                "typeLabel": str(entry.get("typeLabel") or "3D 资产"),
+                "exportUrl": str(entry.get("exportUrl") or ""),
+                "status": str(entry.get("status") or ""),
+                "statusLabel": str(entry.get("statusLabel") or "需要复核"),
+                "summary": " / ".join(f"{item['label']} {item['count']} 项" for item in issue_breakdown),
+                "issueCount": sum(int(item.get("count") or 0) for item in issue_breakdown),
+                "issueBreakdown": issue_breakdown,
+                "usageCount": int(entry.get("usageCount") or 0),
+                "usagePreview": usage_preview,
+                "recommendedAction": str(entry.get("recommendedAction") or "复核 3D 资产导入状态。"),
+            }
+        )
+
+    issue_asset_ids: list[str] = []
+    seen_ids: set[str] = set()
+    for issue in issue_assets:
+        asset_id = str(issue.get("assetId") or "").strip()
+        if asset_id and asset_id not in seen_ids:
+            seen_ids.add(asset_id)
+            issue_asset_ids.append(asset_id)
+
+    return {
+        "status": status,
+        "headline": headline,
+        "summaryLine": summary_line,
+        "metrics": [
+            {"label": "3D 资产", "value": f"{int(summary.get('assetCount') or 0)} 个"},
+            {"label": "问题", "value": f"{int(summary.get('issueCount') or 0)} 个"},
+            {"label": "性能预算", "value": f"{int(summary.get('performanceBudgetIssueCount') or 0)} 项"},
+            {"label": "估算三角面", "value": format_release_control_number(summary.get("estimatedTriangleCount"))},
+            {"label": "Draw Call", "value": format_release_control_number(summary.get("drawCallCount"))},
+            {"label": "未使用", "value": f"{int(summary.get('unusedCount') or 0)} 个"},
+        ],
+        "riskCounts": risk_counts,
+        "issueAssetIds": issue_asset_ids[:50],
+        "issueAssets": issue_assets[:50],
+        "topIssues": issue_assets[:5],
+        "recommendations": [str(recommendation) for recommendation in recommendations[:4]],
+    }
+
+
+def get_native_runtime_release_control_status(
+    release_check: dict,
+    release_candidate: dict,
+    asset3d_digest: dict,
+) -> dict:
+    release_summary = release_check.get("summary") if isinstance(release_check.get("summary"), dict) else {}
+    rc_summary = release_candidate.get("summary") if isinstance(release_candidate.get("summary"), dict) else {}
+    if (
+        release_check.get("status") == "fail"
+        or release_candidate.get("status") == "blocked"
+        or int(release_summary.get("errors") or 0)
+        or int(rc_summary.get("blockers") or 0)
+    ):
+        return {
+            "status": "blocked",
+            "label": "阻塞发布",
+            "summary": "存在发布阻塞项，应先修复再进入三系统打包或分发。",
+        }
+    if (
+        release_candidate.get("status") != "preview_ready"
+        or int(rc_summary.get("optionalFailures") or 0)
+        or int(rc_summary.get("warnings") or 0)
+        or bool(asset3d_digest.get("topIssues"))
+    ):
+        return {
+            "status": "needs_review",
+            "label": "需要复核",
+            "summary": "主链没有阻塞项，但仍有警告、可选能力失败或资产风险需要发布前确认。",
+        }
+    return {
+        "status": "ready",
+        "label": "可进入发布候选",
+        "summary": "导出包自检、RC 汇总和 3D 风险摘要没有发现阻塞项。",
+    }
+
+
+def build_native_runtime_release_control_next_steps(
+    release_check: dict,
+    release_candidate: dict,
+    asset3d_digest: dict,
+    quality_gate: dict,
+) -> list[str]:
+    steps: list[str] = []
+
+    def add_step(value: object) -> None:
+        text = str(value or "").strip()
+        if text and text not in steps:
+            steps.append(text)
+
+    if quality_gate.get("status") == "blocked":
+        add_step("先修复发布自检或 RC 报告里的阻塞项，再重新生成发布总控报告。")
+    elif quality_gate.get("status") == "needs_review":
+        add_step("发布前复核警告项、3D 风险和目标系统 Preview 点测结果。")
+    else:
+        add_step("在目标系统运行 Preview 包，完成一次人工逐按钮长流程点测。")
+    for action in release_candidate.get("nextActions") or []:
+        add_step(action)
+    for issue in (release_check.get("issues") or [])[:5]:
+        if isinstance(issue, dict):
+            add_step(issue.get("suggestion") or issue.get("message"))
+    for issue in asset3d_digest.get("topIssues") or []:
+        if isinstance(issue, dict):
+            name = issue.get("name") or issue.get("assetId") or "未命名 3D 资产"
+            action = issue.get("recommendedAction") or issue.get("summary") or "复核 3D 资产导入状态。"
+            add_step(f"复核 3D 资产「{name}」：{action}")
+    for recommendation in asset3d_digest.get("recommendations") or []:
+        add_step(recommendation)
+    return steps[:10]
+
+
+def build_native_runtime_release_control_payload(bundle_dir: Path) -> dict:
+    payload = load_game_data(bundle_dir / DEFAULT_GAME_DATA_NAME)
+    project = payload.get("project") if isinstance(payload.get("project"), dict) else {}
+    build_info = payload.get("buildInfo") if isinstance(payload.get("buildInfo"), dict) else {}
+    release_check = build_release_check_report(bundle_dir)
+    release_candidate = build_native_runtime_release_candidate_report(bundle_dir)
+    asset3d_report = build_native_3d_asset_report(bundle_dir)
+    asset3d_digest = build_native_runtime_3d_risk_digest(asset3d_report)
+    quality_gate = get_native_runtime_release_control_status(release_check, release_candidate, asset3d_digest)
+    return {
+        "formatVersion": 1,
+        "generatedAt": now_iso(),
+        "bundleDir": str(bundle_dir),
+        "engine": {
+            "name": "Tony Na Engine",
+            "target": "native_runtime",
+            "targetLabel": "原生 Runtime 包",
+            "runtimeMode": "pygame_native",
+            "releaseVersion": str(build_info.get("releaseVersion") or "1.0.0-preview"),
+        },
+        "project": {
+            "projectId": project.get("projectId"),
+            "title": project.get("title") or release_candidate.get("projectTitle") or "未命名项目",
+            "language": project.get("language") or "zh-CN",
+            "entrySceneId": project.get("entrySceneId"),
+            "resolution": project.get("resolution") or {"width": 1280, "height": 720},
+        },
+        "qualityGate": quality_gate,
+        "releaseCheck": {
+            "status": release_check.get("status"),
+            "summary": release_check.get("summary") or {},
+            "topIssues": (release_check.get("issues") or [])[:8],
+        },
+        "releaseCandidate": {
+            "status": release_candidate.get("status"),
+            "summary": release_candidate.get("summary") or {},
+            "readinessEstimate": release_candidate.get("readinessEstimate") or {},
+            "platformMatrix": release_candidate.get("platformMatrix") or [],
+            "videoStrategy": release_candidate.get("videoStrategy") or {},
+            "commercialReleaseGaps": release_candidate.get("commercialReleaseGaps") or [],
+        },
+        "asset3d": asset3d_digest,
+        "nextSteps": build_native_runtime_release_control_next_steps(
+            release_check,
+            release_candidate,
+            asset3d_digest,
+            quality_gate,
+        ),
+        "includedReports": {
+            "releaseCheck": "native-runtime-release-check.json",
+            "releaseCandidateReport": "native-runtime-release-candidate-report.json",
+            "asset3dDigest": "native-runtime-3d-risk-digest.json",
+            "releaseControlReport": "native-runtime-release-control-report.md",
+            "releaseControlJson": "native-runtime-release-control-report.json",
+        },
+    }
+
+
+def render_native_runtime_release_control_markdown(payload: dict) -> str:
+    project = payload.get("project") if isinstance(payload.get("project"), dict) else {}
+    engine = payload.get("engine") if isinstance(payload.get("engine"), dict) else {}
+    quality_gate = payload.get("qualityGate") if isinstance(payload.get("qualityGate"), dict) else {}
+    release_check = payload.get("releaseCheck") if isinstance(payload.get("releaseCheck"), dict) else {}
+    release_candidate = payload.get("releaseCandidate") if isinstance(payload.get("releaseCandidate"), dict) else {}
+    asset3d = payload.get("asset3d") if isinstance(payload.get("asset3d"), dict) else {}
+    release_summary = release_check.get("summary") if isinstance(release_check.get("summary"), dict) else {}
+    rc_summary = release_candidate.get("summary") if isinstance(release_candidate.get("summary"), dict) else {}
+    readiness = release_candidate.get("readinessEstimate") if isinstance(release_candidate.get("readinessEstimate"), dict) else {}
+    lines = [
+        "# 原生 Runtime 发布总控报告",
+        "",
+        f"- 项目：{format_markdown_value(project.get('title'), '未命名项目')}",
+        f"- 版本：{format_markdown_value(engine.get('releaseVersion'), '1.0.0-preview')}",
+        f"- 生成时间：{format_markdown_value(payload.get('generatedAt'))}",
+        f"- 总体状态：{format_markdown_value(quality_gate.get('label'), '需要复核')}",
+        "",
+        "## 总结",
+        "",
+        format_markdown_value(quality_gate.get("summary"), "请结合随包 JSON 报告复核导出状态。"),
+        "",
+        "## 核心指标",
+        "",
+        "| 项目 | 值 |",
+        "| --- | --- |",
+        f"| 发布自检 | {format_markdown_value(release_check.get('status'), 'unavailable')} |",
+        f"| 自检错误 / 警告 | {int(release_summary.get('errors') or 0)} / {int(release_summary.get('warnings') or 0)} |",
+        f"| RC 状态 | {format_markdown_value(release_candidate.get('status'), 'unavailable')} |",
+        f"| RC 阻塞 / 可选失败 / 警告 | {int(rc_summary.get('blockers') or 0)} / {int(rc_summary.get('optionalFailures') or 0)} / {int(rc_summary.get('warnings') or 0)} |",
+        f"| 桌面 Preview 估算 | {format_markdown_value(readiness.get('desktopPreviewPercent'), 'n/a')}% |",
+        f"| 商业桌面估算 | {format_markdown_value(readiness.get('commercialDesktopPercent'), 'n/a')}% |",
+        f"| 3D 摘要 | {format_markdown_value(asset3d.get('summaryLine'), '未生成')} |",
+        "",
+    ]
+    metrics = asset3d.get("metrics") if isinstance(asset3d.get("metrics"), list) else []
+    if metrics:
+        lines.extend(["## 3D 风险快照", "", "| 指标 | 值 |", "| --- | --- |"])
+        for metric in metrics:
+            if isinstance(metric, dict):
+                lines.append(f"| {format_markdown_value(metric.get('label'), '指标')} | {format_markdown_value(metric.get('value'), '-')} |")
+        lines.append("")
+    top_issues = asset3d.get("topIssues") if isinstance(asset3d.get("topIssues"), list) else []
+    if top_issues:
+        lines.extend(["## 优先处理 3D 资产", ""])
+        for issue in top_issues:
+            if isinstance(issue, dict):
+                lines.append(
+                    f"- {format_markdown_value(issue.get('name') or issue.get('assetId'), '未命名 3D 资产')}："
+                    f"{format_markdown_value(issue.get('summary') or issue.get('statusLabel'), '需要复核')}"
+                )
+        lines.append("")
+    lines.extend(["## 下一步", ""])
+    for index, step in enumerate(payload.get("nextSteps") or ["完成目标系统实机点测。"], start=1):
+        lines.append(f"{index}. {format_markdown_value(step)}")
+    lines.extend(
+        [
+            "",
+            "## 可重新生成",
+            "",
+            "```bash",
+            "python3 runtime_player.py --write-release-control-reports .",
+            "```",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def write_native_runtime_release_control_reports(bundle_dir: Path) -> dict:
+    payload = build_native_runtime_release_control_payload(bundle_dir)
+    (bundle_dir / "native-runtime-release-control-report.json").write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    (bundle_dir / "native-runtime-release-control-report.md").write_text(
+        render_native_runtime_release_control_markdown(payload),
+        encoding="utf-8",
+    )
+    return payload
+
+
+def print_native_runtime_release_control_json_report(bundle_dir: Path) -> dict:
+    payload = build_native_runtime_release_control_payload(bundle_dir)
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    return payload
+
+
+def print_native_runtime_release_control_markdown_report(bundle_dir: Path) -> dict:
+    payload = build_native_runtime_release_control_payload(bundle_dir)
+    print(render_native_runtime_release_control_markdown(payload), end="")
+    return payload
+
+
 def build_save_dialog_page_data_for_doctor(bundle_dir: Path) -> dict:
     payload = load_game_data(bundle_dir / "game_data.json")
     project = payload.get("project") or {}
@@ -11756,6 +12112,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--release-check", dest="release_check", help="输出发布前自检报告 JSON，不启动窗口")
     parser.add_argument("--doctor", "--release-doctor", dest="doctor", help="一键运行原生 Runtime 发布体检报告 JSON，不启动窗口")
     parser.add_argument("--release-candidate-report", "--rc-report", dest="release_candidate_report", help="输出原生 Runtime 发布候选总报告 JSON，不启动窗口")
+    parser.add_argument("--release-control-json", dest="release_control_json", help="输出原生 Runtime 发布总控报告 JSON，不启动窗口")
+    parser.add_argument("--release-control-report", "--release-control-md", dest="release_control_report", help="输出原生 Runtime 发布总控 Markdown 报告，不启动窗口")
+    parser.add_argument("--write-release-control-reports", dest="write_release_control_reports", help="写入原生 Runtime 发布总控 Markdown / JSON 报告，不启动窗口")
     parser.add_argument("--exercise-save-load", dest="exercise_save_load", help="检查存档文件能否写入和读回")
     parser.add_argument("--exercise-settings", dest="exercise_settings", help="检查原生 Runtime 设置能否写入和读回")
     parser.add_argument("--exercise-archives", dest="exercise_archives", help="检查原生 Runtime 资料馆进度能否写入和读回")
@@ -11801,6 +12160,42 @@ def main(argv: list[str] | None = None) -> int:
             return 1 if report.get("status") == "blocked" else 0
         except NativeRuntimeError as error:
             print(f"Native runtime release candidate report failed: {error}")
+            return 1
+
+    if args.release_control_json:
+        try:
+            print_native_runtime_release_control_json_report(Path(args.release_control_json).resolve())
+            return 0
+        except NativeRuntimeError as error:
+            print(f"Native runtime release control JSON failed: {error}")
+            return 1
+
+    if args.release_control_report:
+        try:
+            print_native_runtime_release_control_markdown_report(Path(args.release_control_report).resolve())
+            return 0
+        except NativeRuntimeError as error:
+            print(f"Native runtime release control report failed: {error}")
+            return 1
+
+    if args.write_release_control_reports:
+        try:
+            payload = write_native_runtime_release_control_reports(Path(args.write_release_control_reports).resolve())
+            print(
+                json.dumps(
+                    {
+                        "status": payload.get("qualityGate", {}).get("status"),
+                        "label": payload.get("qualityGate", {}).get("label"),
+                        "markdown": "native-runtime-release-control-report.md",
+                        "json": "native-runtime-release-control-report.json",
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+            return 0
+        except NativeRuntimeError as error:
+            print(f"Native runtime release control report write failed: {error}")
             return 1
 
     if args.exercise_save_load:

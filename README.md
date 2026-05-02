@@ -189,6 +189,7 @@ python run_editor.py
 - `native-runtime-release-candidate-report.json`：发布候选总报告，汇总 doctor、打包脚手架、视频后端、3D 资产和下一步建议。
 - `native-runtime-release-control-report.md`：面向人工验收的发布总控报告，汇总自检、RC、3D 风险、发布状态和下一步顺序。
 - `native-runtime-release-control-report.json`：同一份总控结论的机器可读版本，适合接 CI、发布脚本或自动化验收。
+- `生成原生Runtime发布总控报告.command` / `generate_native_runtime_release_control.sh` / `generate_native_runtime_release_control.bat`：三系统刷新脚本，可在不打开编辑器的情况下重新生成发布总控 Markdown / JSON。
 
 这些命令在 macOS / Linux / Windows 上逻辑相同，只是 Python 启动器可能不同。
 
@@ -200,6 +201,7 @@ python3 runtime_player.py --describe-3d-assets .
 python3 runtime_player.py --describe-3d-assets-markdown .
 python3 runtime_player.py --doctor .
 python3 runtime_player.py --release-candidate-report .
+python3 runtime_player.py --write-release-control-reports .
 ```
 
 Windows：
@@ -210,6 +212,7 @@ py -3 runtime_player.py --describe-3d-assets .
 py -3 runtime_player.py --describe-3d-assets-markdown .
 py -3 runtime_player.py --doctor .
 py -3 runtime_player.py --release-candidate-report .
+py -3 runtime_player.py --write-release-control-reports .
 ```
 
 ## 测试

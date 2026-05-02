@@ -23,6 +23,11 @@ ASSET3D_SUMMARY_NAME = "native-runtime-3d-asset-summary.md"
 ASSET3D_DIGEST_NAME = "native-runtime-3d-risk-digest.json"
 RELEASE_CONTROL_REPORT_NAME = "native-runtime-release-control-report.md"
 RELEASE_CONTROL_JSON_NAME = "native-runtime-release-control-report.json"
+RELEASE_CONTROL_REFRESHER_NAMES = (
+    "生成原生Runtime发布总控报告.command",
+    "generate_native_runtime_release_control.sh",
+    "generate_native_runtime_release_control.bat",
+)
 
 
 class NativeAppBuildError(RuntimeError):
@@ -473,6 +478,10 @@ def describe_build(
         "releaseControl": {
             "reportName": RELEASE_CONTROL_REPORT_NAME,
             "jsonName": RELEASE_CONTROL_JSON_NAME,
+            "refreshers": [
+                {"name": name, "exists": (bundle_dir / name).is_file()}
+                for name in RELEASE_CONTROL_REFRESHER_NAMES
+            ],
             "report": release_control_report,
             "json": release_control_json,
         },

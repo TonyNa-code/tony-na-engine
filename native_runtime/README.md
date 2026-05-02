@@ -131,6 +131,25 @@ python3 runtime_player.py --rc-report .
 
 这两份文件会在导出包生成时自动写入。若需要重新计算底层检查，可以先运行 `--release-check`、`--doctor`、`--release-candidate-report` 和 `--describe-3d-assets`，再重新从编辑器导出一版包。
 
+也可以直接在导出的原生 Runtime 包里刷新总控报告：
+
+```bash
+python3 runtime_player.py --write-release-control-reports .
+```
+
+或分别输出到终端：
+
+```bash
+python3 runtime_player.py --release-control-json .
+python3 runtime_player.py --release-control-report .
+```
+
+随包脚本会自动调用同一条刷新命令：
+
+- macOS：双击 `生成原生Runtime发布总控报告.command`
+- Linux：运行 `./generate_native_runtime_release_control.sh`
+- Windows：双击 `generate_native_runtime_release_control.bat`
+
 ## 3D 资产清单
 
 不启动窗口，输出 3D 模型和 3D 场景的发布前资产清单：

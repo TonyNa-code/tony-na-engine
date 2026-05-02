@@ -304,6 +304,9 @@ NATIVE_RUNTIME_WINDOWS_COMMAND_NAME = "run_native_runtime_preview.bat"
 NATIVE_RUNTIME_MAC_RC_COMMAND_NAME = "检查原生Runtime发布候选.command"
 NATIVE_RUNTIME_LINUX_RC_COMMAND_NAME = "check_native_runtime_release_candidate.sh"
 NATIVE_RUNTIME_WINDOWS_RC_COMMAND_NAME = "check_native_runtime_release_candidate.bat"
+NATIVE_RUNTIME_MAC_RELEASE_CONTROL_COMMAND_NAME = "生成原生Runtime发布总控报告.command"
+NATIVE_RUNTIME_LINUX_RELEASE_CONTROL_COMMAND_NAME = "generate_native_runtime_release_control.sh"
+NATIVE_RUNTIME_WINDOWS_RELEASE_CONTROL_COMMAND_NAME = "generate_native_runtime_release_control.bat"
 NATIVE_RUNTIME_MAC_APP_BUILDER_COMMAND_NAME = "打包原生Runtime应用.command"
 NATIVE_RUNTIME_LINUX_APP_BUILDER_COMMAND_NAME = "build_native_runtime_app.sh"
 NATIVE_RUNTIME_WINDOWS_APP_BUILDER_COMMAND_NAME = "build_native_runtime_app.bat"
@@ -7138,6 +7141,9 @@ def write_native_runtime_files(build_dir: Path, export_payload: dict) -> dict:
     mac_rc_path = build_dir / NATIVE_RUNTIME_MAC_RC_COMMAND_NAME
     linux_rc_path = build_dir / NATIVE_RUNTIME_LINUX_RC_COMMAND_NAME
     windows_rc_path = build_dir / NATIVE_RUNTIME_WINDOWS_RC_COMMAND_NAME
+    mac_release_control_path = build_dir / NATIVE_RUNTIME_MAC_RELEASE_CONTROL_COMMAND_NAME
+    linux_release_control_path = build_dir / NATIVE_RUNTIME_LINUX_RELEASE_CONTROL_COMMAND_NAME
+    windows_release_control_path = build_dir / NATIVE_RUNTIME_WINDOWS_RELEASE_CONTROL_COMMAND_NAME
     mac_app_builder_path = build_dir / NATIVE_RUNTIME_MAC_APP_BUILDER_COMMAND_NAME
     linux_app_builder_path = build_dir / NATIVE_RUNTIME_LINUX_APP_BUILDER_COMMAND_NAME
     windows_app_builder_path = build_dir / NATIVE_RUNTIME_WINDOWS_APP_BUILDER_COMMAND_NAME
@@ -7258,6 +7264,63 @@ def write_native_runtime_files(build_dir: Path, export_payload: dict) -> dict:
         ),
         encoding="utf-8",
     )
+    mac_release_control_path.write_text(
+        "\n".join(
+            [
+                "#!/bin/bash",
+                "set -e",
+                'SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"',
+                'cd "$SCRIPT_DIR"',
+                'python3 runtime_player.py --write-release-control-reports . || {',
+                '  echo ""',
+                '  echo "发布总控报告没有生成成功。请先确认 Python 3 和 pygame-ce 已安装。"',
+                '  echo "安装命令：python3 -m pip install -r requirements-native-runtime.txt"',
+                '  echo ""',
+                '  read -r -p "按回车关闭..." _',
+                '  exit 1',
+                '}',
+                'echo ""',
+                'echo "发布总控报告已生成：native-runtime-release-control-report.md / .json"',
+                'read -r -p "按回车关闭..." _',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    linux_release_control_path.write_text(
+        "\n".join(
+            [
+                "#!/bin/bash",
+                "set -e",
+                'SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"',
+                'cd "$SCRIPT_DIR"',
+                'python3 runtime_player.py --write-release-control-reports .',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    windows_release_control_path.write_text(
+        "\r\n".join(
+            [
+                "@echo off",
+                "cd /d %~dp0",
+                "python runtime_player.py --write-release-control-reports .",
+                "if errorlevel 1 (",
+                "  echo.",
+                "  echo 发布总控报告没有生成成功，请先确认 Python 3 和 pygame-ce 已安装。",
+                "  echo 安装命令：python -m pip install -r requirements-native-runtime.txt",
+                "  pause",
+                "  exit /b 1",
+                ")",
+                "echo.",
+                "echo 发布总控报告已生成：native-runtime-release-control-report.md / .json",
+                "pause",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
     mac_app_builder_path.write_text(
         "\n".join(
             [
@@ -7324,6 +7387,8 @@ def write_native_runtime_files(build_dir: Path, export_payload: dict) -> dict:
     linux_launcher_path.chmod(0o755)
     mac_rc_path.chmod(0o755)
     linux_rc_path.chmod(0o755)
+    mac_release_control_path.chmod(0o755)
+    linux_release_control_path.chmod(0o755)
     mac_app_builder_path.chmod(0o755)
     linux_app_builder_path.chmod(0o755)
 
@@ -7538,6 +7603,12 @@ def write_native_runtime_files(build_dir: Path, export_payload: dict) -> dict:
         "linuxReleaseCandidateCheckerPath": str(linux_rc_path),
         "windowsReleaseCandidateCheckerName": windows_rc_path.name,
         "windowsReleaseCandidateCheckerPath": str(windows_rc_path),
+        "macReleaseControlReporterName": mac_release_control_path.name,
+        "macReleaseControlReporterPath": str(mac_release_control_path),
+        "linuxReleaseControlReporterName": linux_release_control_path.name,
+        "linuxReleaseControlReporterPath": str(linux_release_control_path),
+        "windowsReleaseControlReporterName": windows_release_control_path.name,
+        "windowsReleaseControlReporterPath": str(windows_release_control_path),
         "macAppBuilderName": mac_app_builder_path.name,
         "macAppBuilderPath": str(mac_app_builder_path),
         "linuxAppBuilderName": linux_app_builder_path.name,
@@ -7586,6 +7657,9 @@ def export_native_runtime_build() -> dict:
             "macReleaseCandidateChecker": runtime_files["macReleaseCandidateCheckerName"],
             "linuxReleaseCandidateChecker": runtime_files["linuxReleaseCandidateCheckerName"],
             "windowsReleaseCandidateChecker": runtime_files["windowsReleaseCandidateCheckerName"],
+            "macReleaseControlReporter": runtime_files["macReleaseControlReporterName"],
+            "linuxReleaseControlReporter": runtime_files["linuxReleaseControlReporterName"],
+            "windowsReleaseControlReporter": runtime_files["windowsReleaseControlReporterName"],
             "macAppBuilder": runtime_files["macAppBuilderName"],
             "linuxAppBuilder": runtime_files["linuxAppBuilderName"],
             "windowsAppBuilder": runtime_files["windowsAppBuilderName"],
@@ -7604,6 +7678,11 @@ def export_native_runtime_build() -> dict:
             "releaseControlReport": runtime_files["releaseControlReportName"],
             "releaseControlJson": runtime_files["releaseControlJsonName"],
             "releaseControlStatus": runtime_files["releaseControlStatus"],
+            "releaseControlReporter": {
+                "macos": runtime_files["macReleaseControlReporterName"],
+                "linux": runtime_files["linuxReleaseControlReporterName"],
+                "windows": runtime_files["windowsReleaseControlReporterName"],
+            },
             "asset3dReport": runtime_files["asset3dReportName"],
             "asset3dSummary": runtime_files["asset3dSummaryName"],
             "asset3dDigest": runtime_files["asset3dDigestName"],
@@ -7693,6 +7772,15 @@ def export_native_runtime_build() -> dict:
         "windowsReleaseCandidateCheckerName": runtime_files["windowsReleaseCandidateCheckerName"],
         "windowsReleaseCandidateCheckerPath": runtime_files["windowsReleaseCandidateCheckerPath"],
         "windowsReleaseCandidateCheckerPublicUrl": f"/exports/{build_dir.name}/{runtime_files['windowsReleaseCandidateCheckerName']}",
+        "macReleaseControlReporterName": runtime_files["macReleaseControlReporterName"],
+        "macReleaseControlReporterPath": runtime_files["macReleaseControlReporterPath"],
+        "macReleaseControlReporterPublicUrl": f"/exports/{build_dir.name}/{runtime_files['macReleaseControlReporterName']}",
+        "linuxReleaseControlReporterName": runtime_files["linuxReleaseControlReporterName"],
+        "linuxReleaseControlReporterPath": runtime_files["linuxReleaseControlReporterPath"],
+        "linuxReleaseControlReporterPublicUrl": f"/exports/{build_dir.name}/{runtime_files['linuxReleaseControlReporterName']}",
+        "windowsReleaseControlReporterName": runtime_files["windowsReleaseControlReporterName"],
+        "windowsReleaseControlReporterPath": runtime_files["windowsReleaseControlReporterPath"],
+        "windowsReleaseControlReporterPublicUrl": f"/exports/{build_dir.name}/{runtime_files['windowsReleaseControlReporterName']}",
         "macAppBuilderName": runtime_files["macAppBuilderName"],
         "macAppBuilderPath": runtime_files["macAppBuilderPath"],
         "macAppBuilderPublicUrl": f"/exports/{build_dir.name}/{runtime_files['macAppBuilderName']}",

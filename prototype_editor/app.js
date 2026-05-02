@@ -25636,6 +25636,48 @@ function renderProjectValidationSummary() {
             : ""
         }
         ${
+          exportResult?.target === "native_runtime" && exportResult?.macReleaseControlReporterPublicUrl
+            ? `
+              <a
+                class="toolbar-button"
+                href="${escapeHtml(exportResult.macReleaseControlReporterPublicUrl)}"
+                target="_blank"
+                rel="noreferrer"
+              >
+                打开 mac 总控刷新脚本
+              </a>
+            `
+            : ""
+        }
+        ${
+          exportResult?.target === "native_runtime" && exportResult?.windowsReleaseControlReporterPublicUrl
+            ? `
+              <a
+                class="toolbar-button"
+                href="${escapeHtml(exportResult.windowsReleaseControlReporterPublicUrl)}"
+                target="_blank"
+                rel="noreferrer"
+              >
+                打开 Windows 总控刷新脚本
+              </a>
+            `
+            : ""
+        }
+        ${
+          exportResult?.target === "native_runtime" && exportResult?.linuxReleaseControlReporterPublicUrl
+            ? `
+              <a
+                class="toolbar-button"
+                href="${escapeHtml(exportResult.linuxReleaseControlReporterPublicUrl)}"
+                target="_blank"
+                rel="noreferrer"
+              >
+                打开 Linux 总控刷新脚本
+              </a>
+            `
+            : ""
+        }
+        ${
           exportResult?.target === "native_runtime" && exportResult?.asset3dDigestPublicUrl
             ? `
               <a
@@ -25760,6 +25802,14 @@ function renderProjectValidationSummary() {
                   exportResult.releaseControlJsonPath ?? "未生成"
                 )}<br />发布总控状态：${escapeHtml(
                   exportResult.releaseControlSummary ?? exportResult.releaseControlStatus ?? "未生成"
+                )}<br />发布总控刷新脚本：${escapeHtml(
+                  [
+                    exportResult.macReleaseControlReporterName,
+                    exportResult.linuxReleaseControlReporterName,
+                    exportResult.windowsReleaseControlReporterName,
+                  ]
+                    .filter(Boolean)
+                    .join(" / ") || "未生成"
                 )}<br />3D 资产清单：${escapeHtml(
                   exportResult.asset3dReportPath ?? "未生成"
                 )}<br />3D Markdown 摘要：${escapeHtml(
@@ -27103,6 +27153,9 @@ function buildReleaseControlReportPayload() {
             releaseCandidateReport: exportResult.releaseCandidateReportPublicUrl ?? "",
             releaseControlReport: exportResult.releaseControlReportPublicUrl ?? "",
             releaseControlJson: exportResult.releaseControlJsonPublicUrl ?? "",
+            macReleaseControlReporter: exportResult.macReleaseControlReporterPublicUrl ?? "",
+            linuxReleaseControlReporter: exportResult.linuxReleaseControlReporterPublicUrl ?? "",
+            windowsReleaseControlReporter: exportResult.windowsReleaseControlReporterPublicUrl ?? "",
             asset3dDigest: exportResult.asset3dDigestPublicUrl ?? "",
             asset3dReport: exportResult.asset3dReportPublicUrl ?? "",
             asset3dSummary: exportResult.asset3dSummaryPublicUrl ?? "",
