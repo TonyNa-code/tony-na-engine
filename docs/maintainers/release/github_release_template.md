@@ -34,4 +34,4 @@ TNE_PRIVACY_EXTRA_PATTERNS="old-real-name,old-username" python3 tools/release/pr
 - 不把当前版本称为完全稳定商业正式版。
 - 如果没有签名 / 公证 / 代码签名，必须在 Release notes 里明确说明。
 - 不宣传 Android APK / iOS IPA 正式导出。
-- Native Runtime 视频当前说明为系统播放器桥接，不宣传为窗口内嵌视频解码。
+- Native Runtime 视频当前说明为可选 PyAV / FFmpeg 窗口内音画同步播放、OpenCV 画面兜底和系统播放器桥接兜底；不要承诺所有编码都已完成三系统实机覆盖。

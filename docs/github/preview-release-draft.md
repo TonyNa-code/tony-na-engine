@@ -21,13 +21,9 @@ This release is intended for creators who want to try the editor, build a small 
 
 ## Downloads
 
-Attach only the artifacts that have been generated and manually checked:
+Release assets appear below this text on GitHub. If a platform package is not attached, that platform is not included in this specific Preview upload. The source code archive remains available for users who want to run the editor with Python 3.
 
-- Source code archive
-- Editor package, if available
-- Native Runtime Preview package, if available
-
-If no signed installer is attached, keep the build labeled as unsigned Preview.
+<!-- TNE_GENERATED_DOWNLOAD_GUIDE -->
 
 ## Important Notes
 
@@ -35,7 +31,7 @@ If no signed installer is attached, keep the build labeled as unsigned Preview.
 - macOS apps may be unsigned / unnotarized and can trigger Gatekeeper warnings.
 - Windows apps may be unsigned and can trigger SmartScreen warnings.
 - Linux packages are Preview archives unless stated otherwise.
-- Native Runtime video currently uses a system-player bridge instead of embedded video decoding.
+- Native Runtime video supports optional PyAV / FFmpeg embedded playback, OpenCV visual fallback, and system-player bridge fallback. Encoding compatibility still needs real-device testing.
 - Mobile APK / IPA export is not included in this release.
 
 ## Recommended First Test

@@ -5485,7 +5485,7 @@ if %errorlevel%==0 (
 )
 
 echo 需要先安装 Python 3，才能启动 Tony Na Engine 编辑器包。
-echo 你可以先安装 Python 3，再重新双击这个启动器。
+echo 安装 Python 3 后，请重新双击这个启动器。
 pause
 exit /b 1
 """
@@ -6133,7 +6133,7 @@ def build_editor_commercial_readme(
         f"签名前自检脚本：{EDITOR_SIGNING_CHECK_SCRIPT_NAME}",
         f"签名前自检启动器：{EDITOR_SIGNING_CHECK_COMMAND_NAME}",
         "",
-        "如果你要继续维护正式安装包与签名链，最后还需要确认这些：",
+        "继续维护正式安装包与签名链前，请最后确认这些：",
         "1. 填好 editor_distribution.json 里的发行信息。",
         f"2. 如需 mac 正式分发，请提供 {EDITOR_MAC_APP_IDENTITY_ENV} / {EDITOR_MAC_INSTALLER_IDENTITY_ENV} / {EDITOR_MAC_NOTARY_PROFILE_ENV}。",
         f"3. 如需 Windows 正式分发，请提供 {EDITOR_WINDOWS_SIGNTOOL_ENV}，以及证书主题/指纹/PFX（见发行配置）。",
@@ -6473,7 +6473,7 @@ def build_editor_suite_readme(packages: list[dict], distribution_config_path: Pa
             + (f"；签名状态 {package.get('signingInfo', {}).get('statusLabel')}" if package.get("signingInfo") else "")
         )
     lines.append("")
-    lines.append("你可以直接把对应平台目录或压缩包发给创作者使用。")
+    lines.append("对应平台目录或压缩包可直接分发给创作者使用。")
     return "\n".join(lines) + "\n"
 
 
@@ -8108,7 +8108,7 @@ def write_export_release_notes_draft(
         "# Tony Na Engine 原生 Runtime Preview",
         "",
         f"- 类型：{target_label}",
-        "- 这份草稿可以直接复制到 GitHub Release 正文，再按实际版本补充变更摘要。",
+        "- 这是原生 Runtime Preview 包说明。发布时请按实际附件保留适用内容。",
         "",
         "## 下载",
         "",
@@ -8123,6 +8123,13 @@ def write_export_release_notes_draft(
         f"- `{archive_verifiers.get('archiveVerifierMacName')}`",
         f"- `{archive_verifiers.get('archiveVerifierLinuxName')}`",
         f"- `{archive_verifiers.get('archiveVerifierWindowsName')}`",
+        "",
+        "## 首次启动",
+        "",
+        "- macOS：解压后优先打开 `.app`。未签名 Preview 如被拦截，可右键选择“打开”，并确认来源是官方 Release 页面。",
+        "- Windows：解压后运行 `.exe`。如遇 SmartScreen，先完成 SHA-256 校验再继续。",
+        "- Linux：解压后运行可执行文件；如缺执行权限，先给启动文件加执行权限。",
+        "- 如果这是源码式 Runtime 包而不是已打包 App，请使用随包的 `启动原生Runtime预览.command`、`run_native_runtime_preview.sh` 或 `run_native_runtime_preview.bat`。",
         "",
         "## 下载后验证",
         "",
@@ -8769,7 +8776,7 @@ def ensure_nwjs_runtime(platform_key: str) -> tuple[Path, bool, str, str]:
                     "本地 NW.js 运行壳不完整，缺少这些关键文件或目录："
                     + " / ".join(missing_items)
                     + "。"
-                    + f"你可以参考 {ROOT_DIR / 'desktop_runtime' / LOCAL_NWJS_RUNTIME_GUIDE_NAME}。"
+                    + f"可参考 {ROOT_DIR / 'desktop_runtime' / LOCAL_NWJS_RUNTIME_GUIDE_NAME}。"
                 )
             return normalize_nwjs_runtime_dir(platform_key, source_path), False, source_label, str(source_path)
         extract_nwjs_runtime_archive(platform_key, source_path, runtime_dir)
@@ -8941,7 +8948,7 @@ def write_macos_package_readme(
         "Tony Na Engine macOS 桌面发布包",
         "",
         f"1. 优先双击 {start_helper_name}；也可以直接打开 {app_bundle_name}。",
-        "2. 如果你要发给别人，建议把整个文件夹一起打包，不要只拿出 .app 单独发。",
+        "2. 对外分发时，建议把整个文件夹一起打包，不要只拿出 .app 单独发。",
         "3. 应用包里已经内嵌了 Runtime、试玩页面和素材文件。",
         f"4. {manifest_name} 里记录了这次导出的版本、素材缺口和运行壳信息。",
         "",
@@ -9000,7 +9007,7 @@ def write_windows_package_readme(
         "Tony Na Engine Windows 桌面发布包",
         "",
         f"1. 优先双击 启动游戏.cmd；也可以直接双击 {executable_name}。",
-        "2. 如果你要发给别人，建议把整个文件夹一起打包，不要只拿出 exe 单独发。",
+        "2. 对外分发时，建议把整个文件夹一起打包，不要只拿出 exe 单独发。",
         "3. app/assets 文件夹里是已经复制进来的素材文件。",
         f"4. {manifest_name} 里记录了这次导出的版本、素材缺口和桌面模式。",
         "5. app_icon.png / app_icon.ico 是这次自动生成的桌面图标文件。",

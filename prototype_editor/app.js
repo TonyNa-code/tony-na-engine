@@ -29977,7 +29977,7 @@ function renderVideoPlayEditor(block) {
           <option value="false" ${block.skippable === false ? "selected" : ""}>必须播放完</option>
         </select>
       </div>
-      <div class="helper-text">结束秒数填 0 表示播放到视频文件自然结束。网页包和 NW.js 桌面包会直接播放视频；原生 Runtime Preview 会在视频卡上提供按 V 调用系统播放器的桥接入口。</div>
+      <div class="helper-text">结束秒数填 0 表示播放到视频文件自然结束。网页包和 NW.js 桌面包会直接播放视频；原生 Runtime Preview 会优先尝试窗口内 PyAV/FFmpeg 音画同步播放，失败时再回落到 OpenCV 画面兜底或系统播放器桥接。</div>
     </div>
     <div class="detail-actions">
       <button class="toolbar-button toolbar-button-primary" data-action="save-block">保存这张卡片</button>

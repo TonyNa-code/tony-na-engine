@@ -256,6 +256,18 @@ python3 -m pip install -r requirements-native-runtime-video.txt
 python3 runtime_player.py game_data.json
 ```
 
+如果你下载的是已经打包好的 Native Runtime Preview zip，先解压，再按平台启动：
+
+- macOS：优先打开 `.app`；如果系统提示未签名，可右键选择“打开”并确认来源是官方 Release 页面。
+- Windows：打开解压目录里的 `.exe`；如果 SmartScreen 提示未知发布者，先用随包 `.sha256`、`.checksum.json` 或 `.verify.bat` 校验压缩包。
+- Linux：运行解压目录里的可执行文件；如果没有执行权限，先给启动文件加执行权限。
+
+如果你下载的是编辑器导出的源码式 Runtime 包，还没有打成 App，可以用随包脚本启动：
+
+- macOS：双击 `启动原生Runtime预览.command`
+- Linux：运行 `./run_native_runtime_preview.sh`
+- Windows：双击 `run_native_runtime_preview.bat`
+
 ## 打包成独立 App
 
 导出的原生 Runtime 包已经包含 PyInstaller 打包入口。创作者在目标系统上执行对应脚本，就可以把 `runtime_player.py + game_data.json + 素材` 打进 `native_app_dist/`，同时生成 `native_app_package_manifest.json` 和一个用于上传到 Release 的 Preview zip：

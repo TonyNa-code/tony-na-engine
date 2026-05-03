@@ -17,6 +17,7 @@ from typing import Any
 ROOT_DIR = Path(__file__).resolve().parents[2]
 DEFAULT_OUTPUT_DIR = ROOT_DIR / "release_preview"
 RELEASE_DRAFT_PATH = ROOT_DIR / "docs" / "github" / "preview-release-draft.md"
+DOWNLOAD_GUIDE_MARKER = "<!-- TNE_GENERATED_DOWNLOAD_GUIDE -->"
 
 EXCLUDED_PRIVACY_DIRS = {
     ".git",
@@ -395,6 +396,88 @@ def has_release_check_errors(artifact: dict[str, Any]) -> bool:
     return int(summary.get("errors") or 0) > 0
 
 
+ARTIFACT_KIND_LABELS = {
+    "editor-suite": "Editor app bundle",
+    "editor-package": "Editor package",
+    "native-runtime": "Native Runtime package",
+    "web-runtime": "Web runtime package",
+    "windows-package": "Windows package",
+    "macos-package": "macOS package",
+    "linux-package": "Linux package",
+    "other": "Release asset",
+}
+
+
+def artifact_download_hint(artifact: dict[str, Any]) -> str:
+    kind = str(artifact.get("kind") or "other")
+    name = str(artifact.get("name") or "").lower()
+    if kind in {"editor-suite", "editor-package"}:
+        return "Download this if you want to try the editor as an app."
+    if kind == "native-runtime":
+        return "Download this if you want to test a game exported with the Native Runtime."
+    if kind == "web-runtime":
+        return "Download this if you want a browser-playable game build."
+    if kind == "windows-package" or "windows" in name:
+        return "Windows users should choose this package."
+    if kind == "macos-package" or "macos" in name:
+        return "macOS users should choose this package."
+    if kind == "linux-package" or "linux" in name:
+        return "Linux users should choose this package."
+    return "Supplementary release asset."
+
+
+PLATFORM_ORDER = {"macos": 0, "windows": 1, "linux": 2, "unknown": 9}
+PUBLIC_ARTIFACT_KIND_ORDER = {
+    "editor-suite": 0,
+    "editor-package": 0,
+    "macos-package": 1,
+    "windows-package": 1,
+    "linux-package": 1,
+    "native-runtime": 2,
+    "web-runtime": 3,
+    "other": 9,
+}
+
+
+def artifact_platform(artifact: dict[str, Any]) -> str:
+    text = f"{artifact.get('name') or ''} {artifact.get('path') or ''}".lower()
+    if "macos" in text or "darwin" in text or text.endswith(".app"):
+        return "macos"
+    if "windows" in text or text.endswith(".exe") or text.endswith(".msi"):
+        return "windows"
+    if "linux" in text or "appimage" in text:
+        return "linux"
+    return "unknown"
+
+
+def public_artifact_bucket(artifact: dict[str, Any]) -> tuple[str, str]:
+    kind = str(artifact.get("kind") or "other")
+    if kind in {"editor-suite", "editor-package", "macos-package", "windows-package", "linux-package"}:
+        return kind, artifact_platform(artifact)
+    if kind in {"native-runtime", "web-runtime"}:
+        return kind, "latest"
+    return kind, str(artifact.get("name") or "")
+
+
+def public_artifact_sort_key(artifact: dict[str, Any]) -> tuple[int, int, str]:
+    kind = str(artifact.get("kind") or "other")
+    return (
+        PUBLIC_ARTIFACT_KIND_ORDER.get(kind, PUBLIC_ARTIFACT_KIND_ORDER["other"]),
+        PLATFORM_ORDER.get(artifact_platform(artifact), PLATFORM_ORDER["unknown"]),
+        str(artifact.get("name") or "").lower(),
+    )
+
+
+def select_public_release_artifacts(artifacts: list[dict[str, Any]], limit: int = 8) -> list[dict[str, Any]]:
+    selected_by_bucket: dict[tuple[str, str], dict[str, Any]] = {}
+    for artifact in artifacts:
+        bucket = public_artifact_bucket(artifact)
+        if bucket not in selected_by_bucket:
+            selected_by_bucket[bucket] = artifact
+    selected = sorted(selected_by_bucket.values(), key=public_artifact_sort_key)
+    return selected[:limit]
+
+
 def build_warnings(report: dict[str, Any]) -> list[str]:
     warnings: list[str] = []
     git = report["git"]
@@ -431,6 +514,63 @@ def build_warnings(report: dict[str, Any]) -> list[str]:
                 names = ", ".join(f"`{item['name']}`" for item in release["sizeMismatches"])
                 warnings.append(f"GitHub Release `{release.get('tag')}` has asset size mismatches: {names}.")
     return warnings
+
+
+def render_download_guide(report: dict[str, Any]) -> str:
+    lines = [
+        "## Download Guide",
+        "",
+        "Choose the package that matches what you want to do:",
+        "",
+        "| Goal | Recommended file | Notes |",
+        "| --- | --- | --- |",
+        "| Try the editor without cloning source | Editor package for your OS, if attached | Preview packages may be unsigned. See the notes below before opening them. |",
+        "| Run from source | Source code archive | Requires Python 3. Use the start script for your OS. |",
+        "| Test an exported game | Native Runtime or web runtime package, if attached | Native Runtime packages include their own validation reports and integrity checks. |",
+        "| Verify a download | `.sha256`, `.checksum.json`, or `.verify.*` companion files | These are optional but recommended for public releases. |",
+        "",
+    ]
+    artifacts = report.get("artifacts") or []
+    public_artifacts = select_public_release_artifacts(artifacts)
+    if public_artifacts:
+        lines.extend(["### Recommended Assets", "", "| File | Type | Size | Best for |", "| --- | --- | --- | --- |"])
+        for artifact in public_artifacts:
+            kind = str(artifact.get("kind") or "other")
+            lines.append(
+                "| "
+                f"`{artifact.get('name') or ''}` | "
+                f"{ARTIFACT_KIND_LABELS.get(kind, ARTIFACT_KIND_LABELS['other'])} | "
+                f"{artifact.get('sizeLabel') or 'n/a'} | "
+                f"{artifact_download_hint(artifact)} |"
+            )
+        omitted_count = max(0, len(artifacts) - len(public_artifacts))
+        if omitted_count:
+            lines.extend(
+                [
+                    "",
+                    f"{omitted_count} additional local artifact(s) are available in the generated upload manifest. Keep the public Release page focused on the newest recommended downloads.",
+                ]
+            )
+        lines.append("")
+    else:
+        lines.extend(
+            [
+                "No binary package is attached in this generated draft yet. Use the source code archive, or wait for platform packages to be uploaded to the Release assets area.",
+                "",
+            ]
+        )
+    lines.extend(
+        [
+            "### First Launch",
+            "",
+            "- macOS: if an unsigned app is blocked, right-click the app and choose Open. Only do this for packages downloaded from the official Release page.",
+            "- Windows: unsigned Preview builds may show a SmartScreen warning. Verify the package checksum before opening it.",
+            "- Linux: extract the archive, make the launcher executable if needed, then run it from the extracted folder.",
+            "- Source mode: install Python 3, then run `start_editor.command`, `start_editor.cmd`, or `start_editor.sh` for your platform.",
+            "",
+        ]
+    )
+    return "\n".join(lines)
 
 
 def build_report(args: argparse.Namespace) -> dict[str, Any]:
@@ -562,7 +702,13 @@ def render_upload_manifest(report: dict[str, Any]) -> str:
 
 def render_release_body(report: dict[str, Any]) -> str:
     body = RELEASE_DRAFT_PATH.read_text(encoding="utf-8") if RELEASE_DRAFT_PATH.exists() else "# Tony Na Engine Preview\n"
-    lines = [body.rstrip(), "", "## Verification", ""]
+    download_guide = render_download_guide(report).rstrip()
+    body = body.rstrip()
+    if DOWNLOAD_GUIDE_MARKER in body:
+        body = body.replace(DOWNLOAD_GUIDE_MARKER, download_guide)
+        lines = [body, "", "## Verification", ""]
+    else:
+        lines = [body, "", download_guide, "", "## Verification", ""]
     ci = report["githubActions"]
     if ci.get("checked"):
         lines.append(f"- GitHub Actions: `{ci.get('status')}` / `{ci.get('conclusion')}`")
@@ -571,9 +717,10 @@ def render_release_body(report: dict[str, Any]) -> str:
     lines.append(f"- Privacy scan findings: `{len(report['privacy']['sensitiveFindings'])}`")
     lines.append(f"- Working tree clean when prepared: `{report['git']['workingTreeClean']}`")
     lines.extend(["", "## Artifact Checksums", ""])
-    if not report["artifacts"]:
+    public_artifacts = select_public_release_artifacts(report["artifacts"])
+    if not public_artifacts:
         lines.append("- Attach freshly generated artifacts and paste their hashes here.")
-    for artifact in report["artifacts"][:8]:
+    for artifact in public_artifacts:
         lines.append(f"- `{artifact['name']}`: `{artifact['sha256']}`")
     lines.append("")
     return "\n".join(lines)
