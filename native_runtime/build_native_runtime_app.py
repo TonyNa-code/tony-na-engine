@@ -23,10 +23,17 @@ ASSET3D_SUMMARY_NAME = "native-runtime-3d-asset-summary.md"
 ASSET3D_DIGEST_NAME = "native-runtime-3d-risk-digest.json"
 RELEASE_CONTROL_REPORT_NAME = "native-runtime-release-control-report.md"
 RELEASE_CONTROL_JSON_NAME = "native-runtime-release-control-report.json"
+FILE_INTEGRITY_REPORT_NAME = "native-runtime-file-integrity.json"
+FILE_INTEGRITY_MARKDOWN_NAME = "native-runtime-file-integrity.md"
 RELEASE_CONTROL_REFRESHER_NAMES = (
     "生成原生Runtime发布总控报告.command",
     "generate_native_runtime_release_control.sh",
     "generate_native_runtime_release_control.bat",
+)
+FILE_INTEGRITY_CHECKER_NAMES = (
+    "校验原生Runtime文件完整性.command",
+    "verify_native_runtime_file_integrity.sh",
+    "verify_native_runtime_file_integrity.bat",
 )
 
 
@@ -306,6 +313,7 @@ def write_package_manifest(
         "releaseCheck": description.get("releaseCheck") or {},
         "releaseCandidateReport": description.get("releaseCandidateReport") or {},
         "releaseControl": description.get("releaseControl") or {},
+        "fileIntegrity": description.get("fileIntegrity") or {},
         "video": description.get("video") or {},
         "asset3d": description.get("asset3d") or {},
         "signing": {
@@ -448,6 +456,8 @@ def describe_build(
     asset3d_digest = read_json_report_file(bundle_dir / ASSET3D_DIGEST_NAME)
     release_control_report = read_text_report_preview(bundle_dir / RELEASE_CONTROL_REPORT_NAME)
     release_control_json = read_json_report_file(bundle_dir / RELEASE_CONTROL_JSON_NAME)
+    file_integrity_report = read_json_report_file(bundle_dir / FILE_INTEGRITY_REPORT_NAME)
+    file_integrity_markdown = read_text_report_preview(bundle_dir / FILE_INTEGRITY_MARKDOWN_NAME)
     return {
         "appName": resolved_app_name,
         "bundleIdentifier": resolved_bundle_identifier,
@@ -484,6 +494,16 @@ def describe_build(
             ],
             "report": release_control_report,
             "json": release_control_json,
+        },
+        "fileIntegrity": {
+            "reportName": FILE_INTEGRITY_REPORT_NAME,
+            "markdownName": FILE_INTEGRITY_MARKDOWN_NAME,
+            "checkers": [
+                {"name": name, "exists": (bundle_dir / name).is_file()}
+                for name in FILE_INTEGRITY_CHECKER_NAMES
+            ],
+            "report": file_integrity_report,
+            "markdown": file_integrity_markdown,
         },
         "dataEntries": [
             {"source": entry["relativeSource"], "dest": entry["dest"]}

@@ -29,6 +29,26 @@ NATIVE_VIDEO_OPTIONAL_REQUIREMENTS_NAME = "requirements-native-runtime-video.txt
 NATIVE_VIDEO_OPTIONAL_REQUIREMENTS_CANDIDATES = (NATIVE_VIDEO_OPTIONAL_REQUIREMENTS_NAME, "requirements-video.txt")
 NATIVE_VIDEO_SYNC_BACKEND_ID = "pyav_audio_video_sync"
 NATIVE_VIDEO_EMBEDDED_BACKEND_ID = "opencv_embedded_playback"
+FILE_INTEGRITY_REPORT_NAME = "native-runtime-file-integrity.json"
+FILE_INTEGRITY_MARKDOWN_NAME = "native-runtime-file-integrity.md"
+FILE_INTEGRITY_EXCLUDED_FILE_NAMES = {
+    FILE_INTEGRITY_REPORT_NAME,
+    FILE_INTEGRITY_MARKDOWN_NAME,
+    "native_app_package_manifest.json",
+}
+FILE_INTEGRITY_EXCLUDED_PREFIXES = {
+    "__pycache__",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".git",
+    "native_app_build",
+    "native_app_dist",
+}
+FILE_INTEGRITY_VOLATILE_REPORT_PREFIXES = (
+    "native-runtime-release-",
+    "native-runtime-3d-",
+)
 GAME_UI_ASSET_REFERENCE_LABELS = {
     "titleBackgroundAssetId": "标题背景",
     "titleLogoAssetId": "标题 Logo",
@@ -2242,6 +2262,232 @@ def validate_bundle(bundle_dir: Path) -> None:
             continue
         if not (bundle_dir / export_url).is_file():
             raise NativeRuntimeError(f"导出资源不存在：{export_url}")
+
+
+def get_bundle_relative_path(bundle_dir: Path, path: Path) -> str:
+    return path.relative_to(bundle_dir).as_posix()
+
+
+def should_include_file_integrity_entry(bundle_dir: Path, path: Path) -> bool:
+    if not path.is_file():
+        return False
+    relative = get_bundle_relative_path(bundle_dir, path)
+    parts = Path(relative).parts
+    if any(part in FILE_INTEGRITY_EXCLUDED_PREFIXES for part in parts):
+        return False
+    file_name = path.name
+    if file_name in FILE_INTEGRITY_EXCLUDED_FILE_NAMES:
+        return False
+    if any(file_name.startswith(prefix) for prefix in FILE_INTEGRITY_VOLATILE_REPORT_PREFIXES):
+        return False
+    if file_name == ".DS_Store" or file_name.endswith((".pyc", ".pyo")):
+        return False
+    return True
+
+
+def iter_file_integrity_paths(bundle_dir: Path) -> list[Path]:
+    if not bundle_dir.is_dir():
+        raise NativeRuntimeError(f"导出包目录不存在：{bundle_dir}")
+    paths: list[Path] = []
+    for root, dir_names, file_names in os.walk(bundle_dir):
+        dir_names[:] = [
+            name
+            for name in dir_names
+            if name not in FILE_INTEGRITY_EXCLUDED_PREFIXES
+        ]
+        root_path = Path(root)
+        for file_name in file_names:
+            path = root_path / file_name
+            if should_include_file_integrity_entry(bundle_dir, path):
+                paths.append(path)
+    return sorted(paths, key=lambda item: get_bundle_relative_path(bundle_dir, item))
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as file_handle:
+        for chunk in iter(lambda: file_handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def format_file_size_label(size_bytes: int) -> str:
+    size = float(max(0, size_bytes))
+    for unit in ["B", "KB", "MB", "GB"]:
+        if size < 1024 or unit == "GB":
+            return f"{size:.1f} {unit}" if unit != "B" else f"{int(size)} B"
+        size /= 1024
+    return f"{size_bytes} B"
+
+
+def build_native_runtime_file_integrity_report(bundle_dir: Path) -> dict:
+    files = []
+    total_bytes = 0
+    for path in iter_file_integrity_paths(bundle_dir):
+        relative_path = get_bundle_relative_path(bundle_dir, path)
+        size_bytes = path.stat().st_size
+        total_bytes += size_bytes
+        files.append(
+            {
+                "path": relative_path,
+                "sizeBytes": size_bytes,
+                "sizeLabel": format_file_size_label(size_bytes),
+                "sha256": sha256_file(path),
+            }
+        )
+    largest_files = sorted(files, key=lambda item: int(item.get("sizeBytes") or 0), reverse=True)[:10]
+    return {
+        "formatVersion": 1,
+        "algorithm": "sha256",
+        "generatedAt": now_iso(),
+        "bundleDir": str(bundle_dir),
+        "scope": "导出包核心文件；不包含可重新生成的诊断报告、完整性报告、缓存和本机 App 构建输出。",
+        "summary": {
+            "fileCount": len(files),
+            "totalBytes": total_bytes,
+            "totalSizeLabel": format_file_size_label(total_bytes),
+            "largestFiles": largest_files,
+        },
+        "files": files,
+    }
+
+
+def render_native_runtime_file_integrity_markdown(report: dict) -> str:
+    summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
+    files = report.get("files") if isinstance(report.get("files"), list) else []
+    largest_files = summary.get("largestFiles") if isinstance(summary.get("largestFiles"), list) else []
+    lines = [
+        "# 原生 Runtime 文件完整性报告",
+        "",
+        f"- 生成时间：{format_markdown_value(report.get('generatedAt'))}",
+        f"- 算法：{format_markdown_value(report.get('algorithm'), 'sha256')}",
+        f"- 范围：{format_markdown_value(report.get('scope'))}",
+        "",
+        "## 总览",
+        "",
+        "| 指标 | 值 |",
+        "| --- | --- |",
+        f"| 文件数 | {int(summary.get('fileCount') or 0)} |",
+        f"| 总大小 | {format_markdown_value(summary.get('totalSizeLabel'), '0 B')} |",
+        "",
+    ]
+    if largest_files:
+        lines.extend(["## 最大文件", "", "| 文件 | 大小 |", "| --- | ---: |"])
+        for item in largest_files:
+            if isinstance(item, dict):
+                lines.append(
+                    f"| `{format_markdown_value(item.get('path'))}` | {format_markdown_value(item.get('sizeLabel'), '0 B')} |"
+                )
+        lines.append("")
+    lines.extend(["## 校验命令", "", "```bash", "python3 runtime_player.py --verify-file-integrity .", "```", ""])
+    lines.extend(["## 文件指纹", "", "| 文件 | 大小 | SHA-256 |", "| --- | ---: | --- |"])
+    for item in files:
+        if not isinstance(item, dict):
+            continue
+        lines.append(
+            f"| `{format_markdown_value(item.get('path'))}` | "
+            f"{format_markdown_value(item.get('sizeLabel'), '0 B')} | "
+            f"`{format_markdown_value(item.get('sha256'))}` |"
+        )
+    lines.append("")
+    return "\n".join(lines)
+
+
+def write_native_runtime_file_integrity_reports(bundle_dir: Path) -> dict:
+    report = build_native_runtime_file_integrity_report(bundle_dir)
+    (bundle_dir / FILE_INTEGRITY_REPORT_NAME).write_text(
+        json.dumps(report, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    (bundle_dir / FILE_INTEGRITY_MARKDOWN_NAME).write_text(
+        render_native_runtime_file_integrity_markdown(report),
+        encoding="utf-8",
+    )
+    return report
+
+
+def load_native_runtime_file_integrity_report(bundle_dir: Path) -> dict:
+    report_path = bundle_dir / FILE_INTEGRITY_REPORT_NAME
+    if not report_path.is_file():
+        raise NativeRuntimeError(f"缺少文件完整性报告：{FILE_INTEGRITY_REPORT_NAME}")
+    try:
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        raise NativeRuntimeError(f"文件完整性报告不是有效 JSON：{error}") from error
+    if not isinstance(report, dict) or not isinstance(report.get("files"), list):
+        raise NativeRuntimeError("文件完整性报告格式不正确。")
+    return report
+
+
+def build_native_runtime_file_integrity_verification(bundle_dir: Path) -> dict:
+    expected_report = load_native_runtime_file_integrity_report(bundle_dir)
+    expected_files = {
+        str(item.get("path") or ""): item
+        for item in expected_report.get("files") or []
+        if isinstance(item, dict) and str(item.get("path") or "").strip()
+    }
+    current_report = build_native_runtime_file_integrity_report(bundle_dir)
+    current_files = {
+        str(item.get("path") or ""): item
+        for item in current_report.get("files") or []
+        if isinstance(item, dict) and str(item.get("path") or "").strip()
+    }
+    missing_files = []
+    changed_files = []
+    for path, expected in expected_files.items():
+        current = current_files.get(path)
+        if not current:
+            missing_files.append({"path": path, "expectedSha256": expected.get("sha256")})
+            continue
+        if current.get("sha256") != expected.get("sha256") or current.get("sizeBytes") != expected.get("sizeBytes"):
+            changed_files.append(
+                {
+                    "path": path,
+                    "expectedSizeBytes": expected.get("sizeBytes"),
+                    "actualSizeBytes": current.get("sizeBytes"),
+                    "expectedSha256": expected.get("sha256"),
+                    "actualSha256": current.get("sha256"),
+                }
+            )
+    extra_files = [
+        current_files[path]
+        for path in sorted(set(current_files) - set(expected_files))
+    ]
+    status = "fail" if missing_files or changed_files else ("warn" if extra_files else "pass")
+    return {
+        "status": status,
+        "checkedAt": now_iso(),
+        "bundleDir": str(bundle_dir),
+        "algorithm": expected_report.get("algorithm") or "sha256",
+        "summary": {
+            "expectedFileCount": len(expected_files),
+            "currentFileCount": len(current_files),
+            "missingCount": len(missing_files),
+            "changedCount": len(changed_files),
+            "extraCount": len(extra_files),
+        },
+        "missingFiles": missing_files[:50],
+        "changedFiles": changed_files[:50],
+        "extraFiles": extra_files[:50],
+    }
+
+
+def print_native_runtime_file_integrity_report(bundle_dir: Path) -> dict:
+    report = build_native_runtime_file_integrity_report(bundle_dir)
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+    return report
+
+
+def print_native_runtime_file_integrity_markdown_report(bundle_dir: Path) -> dict:
+    report = build_native_runtime_file_integrity_report(bundle_dir)
+    print(render_native_runtime_file_integrity_markdown(report), end="")
+    return report
+
+
+def print_native_runtime_file_integrity_verification(bundle_dir: Path) -> dict:
+    report = build_native_runtime_file_integrity_verification(bundle_dir)
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+    return report
 
 
 def add_release_check_issue(
@@ -5139,6 +5385,8 @@ def build_native_runtime_release_control_payload(bundle_dir: Path) -> dict:
             "asset3dDigest": "native-runtime-3d-risk-digest.json",
             "releaseControlReport": "native-runtime-release-control-report.md",
             "releaseControlJson": "native-runtime-release-control-report.json",
+            "fileIntegrityReport": FILE_INTEGRITY_REPORT_NAME,
+            "fileIntegrityMarkdown": FILE_INTEGRITY_MARKDOWN_NAME,
         },
     }
 
@@ -12115,6 +12363,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--release-control-json", dest="release_control_json", help="输出原生 Runtime 发布总控报告 JSON，不启动窗口")
     parser.add_argument("--release-control-report", "--release-control-md", dest="release_control_report", help="输出原生 Runtime 发布总控 Markdown 报告，不启动窗口")
     parser.add_argument("--write-release-control-reports", dest="write_release_control_reports", help="写入原生 Runtime 发布总控 Markdown / JSON 报告，不启动窗口")
+    parser.add_argument("--file-integrity-report", dest="file_integrity_report", help="输出原生 Runtime 文件完整性清单 JSON，不启动窗口")
+    parser.add_argument("--file-integrity-markdown", "--file-integrity-md", dest="file_integrity_markdown", help="输出原生 Runtime 文件完整性 Markdown 报告，不启动窗口")
+    parser.add_argument("--write-file-integrity-reports", dest="write_file_integrity_reports", help="写入原生 Runtime 文件完整性 Markdown / JSON 报告，不启动窗口")
+    parser.add_argument("--verify-file-integrity", dest="verify_file_integrity", help="校验原生 Runtime 文件完整性报告，不启动窗口")
     parser.add_argument("--exercise-save-load", dest="exercise_save_load", help="检查存档文件能否写入和读回")
     parser.add_argument("--exercise-settings", dest="exercise_settings", help="检查原生 Runtime 设置能否写入和读回")
     parser.add_argument("--exercise-archives", dest="exercise_archives", help="检查原生 Runtime 资料馆进度能否写入和读回")
@@ -12196,6 +12448,50 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         except NativeRuntimeError as error:
             print(f"Native runtime release control report write failed: {error}")
+            return 1
+
+    if args.file_integrity_report:
+        try:
+            print_native_runtime_file_integrity_report(Path(args.file_integrity_report).resolve())
+            return 0
+        except NativeRuntimeError as error:
+            print(f"Native runtime file integrity report failed: {error}")
+            return 1
+
+    if args.file_integrity_markdown:
+        try:
+            print_native_runtime_file_integrity_markdown_report(Path(args.file_integrity_markdown).resolve())
+            return 0
+        except NativeRuntimeError as error:
+            print(f"Native runtime file integrity markdown failed: {error}")
+            return 1
+
+    if args.write_file_integrity_reports:
+        try:
+            payload = write_native_runtime_file_integrity_reports(Path(args.write_file_integrity_reports).resolve())
+            print(
+                json.dumps(
+                    {
+                        "status": "written",
+                        "fileCount": payload.get("summary", {}).get("fileCount"),
+                        "markdown": FILE_INTEGRITY_MARKDOWN_NAME,
+                        "json": FILE_INTEGRITY_REPORT_NAME,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+            return 0
+        except NativeRuntimeError as error:
+            print(f"Native runtime file integrity report write failed: {error}")
+            return 1
+
+    if args.verify_file_integrity:
+        try:
+            report = print_native_runtime_file_integrity_verification(Path(args.verify_file_integrity).resolve())
+            return 1 if report.get("status") == "fail" else 0
+        except NativeRuntimeError as error:
+            print(f"Native runtime file integrity verification failed: {error}")
             return 1
 
     if args.exercise_save_load:

@@ -190,6 +190,12 @@ python run_editor.py
 - `native-runtime-release-control-report.md`：面向人工验收的发布总控报告，汇总自检、RC、3D 风险、发布状态和下一步顺序。
 - `native-runtime-release-control-report.json`：同一份总控结论的机器可读版本，适合接 CI、发布脚本或自动化验收。
 - `生成原生Runtime发布总控报告.command` / `generate_native_runtime_release_control.sh` / `generate_native_runtime_release_control.bat`：三系统刷新脚本，可在不打开编辑器的情况下重新生成发布总控 Markdown / JSON。
+- `native-runtime-file-integrity.md` / `native-runtime-file-integrity.json`：导出包核心文件 SHA-256 完整性清单，用于确认脚本、素材、manifest 和游戏数据没有丢失或被改坏。
+- `校验原生Runtime文件完整性.command` / `verify_native_runtime_file_integrity.sh` / `verify_native_runtime_file_integrity.bat`：三系统完整性校验脚本。
+- `*.zip.sha256` / `*.zip.checksum.json`：导出压缩包的 SHA-256 校验文件，适合上传 GitHub Release 时一起附带，方便下载后先验证压缩包本身。
+- `*.zip.verify.command` / `*.zip.verify.sh` / `*.zip.verify.bat`：三系统压缩包一键校验脚本，下载者无需手动复制 SHA-256 命令。
+- `*.zip.release-artifacts.md` / `*.zip.release-artifacts.json`：发布附件索引，列出建议上传到 GitHub Release 的附件、包内报告和下载者验证步骤。
+- `*.zip.release-notes.md`：可直接复制到 GitHub Release 正文的发布说明草稿，包含主包下载、SHA-256、校验脚本和包内报告提示。
 
 这些命令在 macOS / Linux / Windows 上逻辑相同，只是 Python 启动器可能不同。
 
@@ -202,6 +208,7 @@ python3 runtime_player.py --describe-3d-assets-markdown .
 python3 runtime_player.py --doctor .
 python3 runtime_player.py --release-candidate-report .
 python3 runtime_player.py --write-release-control-reports .
+python3 runtime_player.py --verify-file-integrity .
 ```
 
 Windows：
@@ -213,6 +220,7 @@ py -3 runtime_player.py --describe-3d-assets-markdown .
 py -3 runtime_player.py --doctor .
 py -3 runtime_player.py --release-candidate-report .
 py -3 runtime_player.py --write-release-control-reports .
+py -3 runtime_player.py --verify-file-integrity .
 ```
 
 ## 测试

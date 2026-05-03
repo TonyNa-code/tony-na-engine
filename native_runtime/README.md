@@ -150,6 +150,41 @@ python3 runtime_player.py --release-control-report .
 - Linux：运行 `./generate_native_runtime_release_control.sh`
 - Windows：双击 `generate_native_runtime_release_control.bat`
 
+## 文件完整性校验
+
+编辑器导出的完整原生 Runtime 包会附带：
+
+- `native-runtime-file-integrity.json`：核心文件 SHA-256 清单，覆盖 `game_data.json`、Runtime 脚本、启动脚本、requirements、素材和 `export_manifest.json`。
+- `native-runtime-file-integrity.md`：同一份清单的人类可读摘要，包含文件数量、总大小、最大文件和校验命令。
+
+这份清单默认不包含可重新生成的诊断报告、完整性报告本身、缓存目录和本机 App 构建输出，避免刷新报告或打包 App 后造成误报。
+
+验证当前包：
+
+```bash
+python3 runtime_player.py --verify-file-integrity .
+```
+
+重新生成完整性清单：
+
+```bash
+python3 runtime_player.py --write-file-integrity-reports .
+```
+
+随包脚本：
+
+- macOS：双击 `校验原生Runtime文件完整性.command`
+- Linux：运行 `./verify_native_runtime_file_integrity.sh`
+- Windows：双击 `verify_native_runtime_file_integrity.bat`
+
+如果下载页面同时提供 `.zip.sha256` 或 `.zip.checksum.json`，可以先用它们校验压缩包本身；解压后再运行上面的包内完整性校验，能覆盖“下载损坏”和“解压后文件缺失/被改动”两层风险。
+
+如果同时提供 `.zip.verify.command`、`.zip.verify.sh` 或 `.zip.verify.bat`，下载者可以把脚本和 zip 放在同一目录，直接运行对应系统脚本完成压缩包 SHA-256 校验。
+
+如果下载页面提供 `.zip.release-artifacts.md` 或 `.zip.release-artifacts.json`，它们是维护者生成的发布附件索引：里面会列出这次 Release 建议上传的 zip、校验文件、机器可读索引，以及解压后应查看的包内报告。
+
+如果下载页面提供 `.zip.release-notes.md`，它是维护者可直接复制到 GitHub Release 正文的发布说明草稿，通常会包含主包、SHA-256、三系统一键校验脚本和包内完整性校验步骤。
+
 ## 3D 资产清单
 
 不启动窗口，输出 3D 模型和 3D 场景的发布前资产清单：

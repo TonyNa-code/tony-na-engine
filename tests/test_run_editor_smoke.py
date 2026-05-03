@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import copy
+import hashlib
 import json
 import os
 import plistlib
@@ -1785,6 +1786,8 @@ class RunEditorSmokeTests(unittest.TestCase):
         self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_RC_REPORT_NAME).is_file())
         self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_RELEASE_CONTROL_REPORT_NAME).is_file())
         self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_RELEASE_CONTROL_JSON_NAME).is_file())
+        self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_FILE_INTEGRITY_REPORT_NAME).is_file())
+        self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_FILE_INTEGRITY_MARKDOWN_NAME).is_file())
         self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_3D_ASSET_REPORT_NAME).is_file())
         self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_3D_ASSET_SUMMARY_NAME).is_file())
         self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_3D_ASSET_DIGEST_NAME).is_file())
@@ -1797,11 +1800,73 @@ class RunEditorSmokeTests(unittest.TestCase):
         self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_MAC_RELEASE_CONTROL_COMMAND_NAME).is_file())
         self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_LINUX_RELEASE_CONTROL_COMMAND_NAME).is_file())
         self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_WINDOWS_RELEASE_CONTROL_COMMAND_NAME).is_file())
+        self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_MAC_FILE_INTEGRITY_COMMAND_NAME).is_file())
+        self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_LINUX_FILE_INTEGRITY_COMMAND_NAME).is_file())
+        self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_WINDOWS_FILE_INTEGRITY_COMMAND_NAME).is_file())
         self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_MAC_APP_BUILDER_COMMAND_NAME).is_file())
         self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_LINUX_APP_BUILDER_COMMAND_NAME).is_file())
         self.assertTrue((build_dir / run_editor.NATIVE_RUNTIME_WINDOWS_APP_BUILDER_COMMAND_NAME).is_file())
         self.assertTrue(Path(export_result["archivePath"]).is_file())
+        self.assertTrue(Path(export_result["archiveChecksumPath"]).is_file())
+        self.assertTrue(Path(export_result["archiveChecksumJsonPath"]).is_file())
+        self.assertTrue(Path(export_result["archiveVerifierMacPath"]).is_file())
+        self.assertTrue(Path(export_result["archiveVerifierLinuxPath"]).is_file())
+        self.assertTrue(Path(export_result["archiveVerifierWindowsPath"]).is_file())
+        self.assertTrue(Path(export_result["releaseArtifactIndexPath"]).is_file())
+        self.assertTrue(Path(export_result["releaseArtifactIndexJsonPath"]).is_file())
+        self.assertTrue(Path(export_result["releaseNotesPath"]).is_file())
         self.assertTrue(manifest_path.is_file())
+
+        archive_sha256 = hashlib.sha256(Path(export_result["archivePath"]).read_bytes()).hexdigest()
+        self.assertEqual(export_result["archiveSha256"], archive_sha256)
+        self.assertTrue(export_result["archiveChecksumPublicUrl"].endswith(".zip.sha256"))
+        self.assertTrue(export_result["archiveChecksumJsonPublicUrl"].endswith(".zip.checksum.json"))
+        self.assertTrue(export_result["archiveVerifierMacPublicUrl"].endswith(".zip.verify.command"))
+        self.assertTrue(export_result["archiveVerifierLinuxPublicUrl"].endswith(".zip.verify.sh"))
+        self.assertTrue(export_result["archiveVerifierWindowsPublicUrl"].endswith(".zip.verify.bat"))
+        self.assertTrue(export_result["releaseNotesPublicUrl"].endswith(".zip.release-notes.md"))
+        self.assertIn(archive_sha256, Path(export_result["archiveChecksumPath"]).read_text(encoding="utf-8"))
+        self.assertIn(archive_sha256, Path(export_result["archiveVerifierMacPath"]).read_text(encoding="utf-8"))
+        self.assertIn(archive_sha256, Path(export_result["archiveVerifierWindowsPath"]).read_text(encoding="utf-8"))
+        archive_checksum_payload = json.loads(Path(export_result["archiveChecksumJsonPath"]).read_text(encoding="utf-8"))
+        self.assertEqual(archive_checksum_payload["algorithm"], "sha256")
+        self.assertEqual(archive_checksum_payload["sha256"], archive_sha256)
+        self.assertEqual(archive_checksum_payload["archiveName"], export_result["archiveName"])
+        self.assertGreater(archive_checksum_payload["archiveSizeBytes"], 0)
+        release_artifact_payload = json.loads(Path(export_result["releaseArtifactIndexJsonPath"]).read_text(encoding="utf-8"))
+        self.assertEqual(release_artifact_payload["archive"]["name"], export_result["archiveName"])
+        self.assertEqual(release_artifact_payload["archive"]["sha256"], archive_sha256)
+        self.assertEqual(release_artifact_payload["archive"]["releaseNotesDraft"], export_result["releaseNotesName"])
+        self.assertEqual(release_artifact_payload["archive"]["verifiers"]["macos"], export_result["archiveVerifierMacName"])
+        self.assertTrue(any(item["name"] == export_result["archiveVerifierWindowsName"] for item in release_artifact_payload["uploadArtifacts"]))
+        self.assertTrue(
+            any(
+                item["name"] == export_result["releaseNotesName"] and item["type"] == "release_notes_draft"
+                for item in release_artifact_payload["uploadArtifacts"]
+            )
+        )
+        self.assertGreaterEqual(export_result["releaseArtifactUploadCount"], 5)
+        self.assertTrue(export_result["releaseArtifactIndexPublicUrl"].endswith(".zip.release-artifacts.md"))
+        self.assertTrue(export_result["releaseArtifactIndexJsonPublicUrl"].endswith(".zip.release-artifacts.json"))
+        release_artifact_markdown = Path(export_result["releaseArtifactIndexPath"]).read_text(encoding="utf-8")
+        self.assertIn("# 原生 Runtime 发布附件索引", release_artifact_markdown)
+        self.assertIn("运行 .verify.command / .verify.sh / .verify.bat", release_artifact_markdown)
+        self.assertIn("Release Notes 摘要", release_artifact_markdown)
+        release_notes_markdown = Path(export_result["releaseNotesPath"]).read_text(encoding="utf-8")
+        self.assertIn("# Tony Na Engine 原生 Runtime Preview", release_notes_markdown)
+        self.assertIn("GitHub Release", release_notes_markdown)
+        self.assertIn(export_result["archiveName"], release_notes_markdown)
+        self.assertIn(archive_sha256, release_notes_markdown)
+        self.assertIn("下载后验证", release_notes_markdown)
+
+        linux_archive_verifier = subprocess.run(
+            ["bash", str(Path(export_result["archiveVerifierLinuxPath"]))],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(linux_archive_verifier.returncode, 0, linux_archive_verifier.stdout + linux_archive_verifier.stderr)
+        self.assertIn("SHA-256", linux_archive_verifier.stdout)
 
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         self.assertEqual(manifest["engine"]["exportTarget"], run_editor.EXPORT_TARGET_NATIVE_RUNTIME)
@@ -1813,6 +1878,11 @@ class RunEditorSmokeTests(unittest.TestCase):
         self.assertEqual(manifest["runtime"]["releaseControlReporter"]["macos"], run_editor.NATIVE_RUNTIME_MAC_RELEASE_CONTROL_COMMAND_NAME)
         self.assertEqual(manifest["runtime"]["releaseControlReporter"]["linux"], run_editor.NATIVE_RUNTIME_LINUX_RELEASE_CONTROL_COMMAND_NAME)
         self.assertEqual(manifest["runtime"]["releaseControlReporter"]["windows"], run_editor.NATIVE_RUNTIME_WINDOWS_RELEASE_CONTROL_COMMAND_NAME)
+        self.assertEqual(manifest["runtime"]["fileIntegrityReport"], run_editor.NATIVE_RUNTIME_FILE_INTEGRITY_REPORT_NAME)
+        self.assertEqual(manifest["runtime"]["fileIntegrityMarkdown"], run_editor.NATIVE_RUNTIME_FILE_INTEGRITY_MARKDOWN_NAME)
+        self.assertEqual(manifest["runtime"]["fileIntegrityChecker"]["macos"], run_editor.NATIVE_RUNTIME_MAC_FILE_INTEGRITY_COMMAND_NAME)
+        self.assertEqual(manifest["runtime"]["fileIntegrityChecker"]["linux"], run_editor.NATIVE_RUNTIME_LINUX_FILE_INTEGRITY_COMMAND_NAME)
+        self.assertEqual(manifest["runtime"]["fileIntegrityChecker"]["windows"], run_editor.NATIVE_RUNTIME_WINDOWS_FILE_INTEGRITY_COMMAND_NAME)
         self.assertEqual(manifest["runtime"]["asset3dReport"], run_editor.NATIVE_RUNTIME_3D_ASSET_REPORT_NAME)
         self.assertEqual(manifest["runtime"]["asset3dSummary"], run_editor.NATIVE_RUNTIME_3D_ASSET_SUMMARY_NAME)
         self.assertEqual(manifest["runtime"]["asset3dDigest"], run_editor.NATIVE_RUNTIME_3D_ASSET_DIGEST_NAME)
@@ -1822,6 +1892,11 @@ class RunEditorSmokeTests(unittest.TestCase):
         self.assertEqual(manifest["files"]["macReleaseControlReporter"], run_editor.NATIVE_RUNTIME_MAC_RELEASE_CONTROL_COMMAND_NAME)
         self.assertEqual(manifest["files"]["linuxReleaseControlReporter"], run_editor.NATIVE_RUNTIME_LINUX_RELEASE_CONTROL_COMMAND_NAME)
         self.assertEqual(manifest["files"]["windowsReleaseControlReporter"], run_editor.NATIVE_RUNTIME_WINDOWS_RELEASE_CONTROL_COMMAND_NAME)
+        self.assertEqual(manifest["files"]["fileIntegrityReport"], run_editor.NATIVE_RUNTIME_FILE_INTEGRITY_REPORT_NAME)
+        self.assertEqual(manifest["files"]["fileIntegrityMarkdown"], run_editor.NATIVE_RUNTIME_FILE_INTEGRITY_MARKDOWN_NAME)
+        self.assertEqual(manifest["files"]["macFileIntegrityChecker"], run_editor.NATIVE_RUNTIME_MAC_FILE_INTEGRITY_COMMAND_NAME)
+        self.assertEqual(manifest["files"]["linuxFileIntegrityChecker"], run_editor.NATIVE_RUNTIME_LINUX_FILE_INTEGRITY_COMMAND_NAME)
+        self.assertEqual(manifest["files"]["windowsFileIntegrityChecker"], run_editor.NATIVE_RUNTIME_WINDOWS_FILE_INTEGRITY_COMMAND_NAME)
         self.assertEqual(manifest["files"]["asset3dReport"], run_editor.NATIVE_RUNTIME_3D_ASSET_REPORT_NAME)
         self.assertEqual(manifest["files"]["asset3dSummary"], run_editor.NATIVE_RUNTIME_3D_ASSET_SUMMARY_NAME)
         self.assertEqual(manifest["files"]["asset3dDigest"], run_editor.NATIVE_RUNTIME_3D_ASSET_DIGEST_NAME)
@@ -1901,6 +1976,40 @@ class RunEditorSmokeTests(unittest.TestCase):
             check=False,
         )
         self.assertEqual(release_control_cli_write.returncode, 0, release_control_cli_write.stdout + release_control_cli_write.stderr)
+
+        integrity_payload = json.loads((build_dir / run_editor.NATIVE_RUNTIME_FILE_INTEGRITY_REPORT_NAME).read_text(encoding="utf-8"))
+        self.assertEqual(integrity_payload["formatVersion"], 1)
+        self.assertEqual(integrity_payload["algorithm"], "sha256")
+        self.assertGreater(integrity_payload["summary"]["fileCount"], 10)
+        integrity_paths = {entry["path"] for entry in integrity_payload["files"]}
+        self.assertIn("game_data.json", integrity_paths)
+        self.assertIn(run_editor.NATIVE_RUNTIME_PLAYER_NAME, integrity_paths)
+        self.assertIn("export_manifest.json", integrity_paths)
+        self.assertNotIn(run_editor.NATIVE_RUNTIME_FILE_INTEGRITY_REPORT_NAME, integrity_paths)
+        integrity_markdown = (build_dir / run_editor.NATIVE_RUNTIME_FILE_INTEGRITY_MARKDOWN_NAME).read_text(encoding="utf-8")
+        self.assertIn("# 原生 Runtime 文件完整性报告", integrity_markdown)
+        self.assertTrue(export_result["fileIntegrityReportPublicUrl"].endswith(run_editor.NATIVE_RUNTIME_FILE_INTEGRITY_REPORT_NAME))
+        self.assertTrue(export_result["fileIntegrityMarkdownPublicUrl"].endswith(run_editor.NATIVE_RUNTIME_FILE_INTEGRITY_MARKDOWN_NAME))
+        self.assertTrue(export_result["macFileIntegrityCheckerPublicUrl"].endswith(run_editor.NATIVE_RUNTIME_MAC_FILE_INTEGRITY_COMMAND_NAME))
+        self.assertTrue(export_result["linuxFileIntegrityCheckerPublicUrl"].endswith(run_editor.NATIVE_RUNTIME_LINUX_FILE_INTEGRITY_COMMAND_NAME))
+        self.assertTrue(export_result["windowsFileIntegrityCheckerPublicUrl"].endswith(run_editor.NATIVE_RUNTIME_WINDOWS_FILE_INTEGRITY_COMMAND_NAME))
+
+        integrity_cli_verify = subprocess.run(
+            [
+                sys.executable,
+                str(build_dir / run_editor.NATIVE_RUNTIME_PLAYER_NAME),
+                "--verify-file-integrity",
+                str(build_dir),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(integrity_cli_verify.returncode, 0, integrity_cli_verify.stdout + integrity_cli_verify.stderr)
+        integrity_verify_payload = json.loads(integrity_cli_verify.stdout)
+        self.assertEqual(integrity_verify_payload["status"], "pass")
+        self.assertEqual(integrity_verify_payload["summary"]["missingCount"], 0)
+        self.assertEqual(integrity_verify_payload["summary"]["changedCount"], 0)
 
         doctor_description = subprocess.run(
             [
@@ -2012,6 +2121,13 @@ class RunEditorSmokeTests(unittest.TestCase):
         self.assertTrue(all(entry["exists"] for entry in app_builder_payload["releaseControl"]["refreshers"]))
         self.assertIn(app_builder_payload["releaseControl"]["json"]["qualityGate"]["status"], {"ready", "needs_review"})
         self.assertIn("# 原生 Runtime 发布总控报告", app_builder_payload["releaseControl"]["report"]["preview"])
+        self.assertEqual(app_builder_payload["fileIntegrity"]["reportName"], run_editor.NATIVE_RUNTIME_FILE_INTEGRITY_REPORT_NAME)
+        self.assertEqual(app_builder_payload["fileIntegrity"]["markdownName"], run_editor.NATIVE_RUNTIME_FILE_INTEGRITY_MARKDOWN_NAME)
+        self.assertTrue(app_builder_payload["fileIntegrity"]["report"]["exists"])
+        self.assertTrue(app_builder_payload["fileIntegrity"]["markdown"]["exists"])
+        self.assertTrue(all(entry["exists"] for entry in app_builder_payload["fileIntegrity"]["checkers"]))
+        self.assertGreater(app_builder_payload["fileIntegrity"]["report"]["summary"]["fileCount"], 10)
+        self.assertIn("# 原生 Runtime 文件完整性报告", app_builder_payload["fileIntegrity"]["markdown"]["preview"])
         self.assertEqual(app_builder_payload["asset3d"]["reportName"], run_editor.NATIVE_RUNTIME_3D_ASSET_REPORT_NAME)
         self.assertEqual(app_builder_payload["asset3d"]["summaryName"], run_editor.NATIVE_RUNTIME_3D_ASSET_SUMMARY_NAME)
         self.assertEqual(app_builder_payload["asset3d"]["digestName"], run_editor.NATIVE_RUNTIME_3D_ASSET_DIGEST_NAME)

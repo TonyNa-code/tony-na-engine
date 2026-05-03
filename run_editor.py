@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import hashlib
 import html
 import json
 import os
@@ -295,6 +296,8 @@ NATIVE_RUNTIME_RELEASE_CHECK_NAME = "native-runtime-release-check.json"
 NATIVE_RUNTIME_RC_REPORT_NAME = "native-runtime-release-candidate-report.json"
 NATIVE_RUNTIME_RELEASE_CONTROL_REPORT_NAME = "native-runtime-release-control-report.md"
 NATIVE_RUNTIME_RELEASE_CONTROL_JSON_NAME = "native-runtime-release-control-report.json"
+NATIVE_RUNTIME_FILE_INTEGRITY_REPORT_NAME = "native-runtime-file-integrity.json"
+NATIVE_RUNTIME_FILE_INTEGRITY_MARKDOWN_NAME = "native-runtime-file-integrity.md"
 NATIVE_RUNTIME_3D_ASSET_REPORT_NAME = "native-runtime-3d-asset-report.json"
 NATIVE_RUNTIME_3D_ASSET_SUMMARY_NAME = "native-runtime-3d-asset-summary.md"
 NATIVE_RUNTIME_3D_ASSET_DIGEST_NAME = "native-runtime-3d-risk-digest.json"
@@ -307,6 +310,9 @@ NATIVE_RUNTIME_WINDOWS_RC_COMMAND_NAME = "check_native_runtime_release_candidate
 NATIVE_RUNTIME_MAC_RELEASE_CONTROL_COMMAND_NAME = "生成原生Runtime发布总控报告.command"
 NATIVE_RUNTIME_LINUX_RELEASE_CONTROL_COMMAND_NAME = "generate_native_runtime_release_control.sh"
 NATIVE_RUNTIME_WINDOWS_RELEASE_CONTROL_COMMAND_NAME = "generate_native_runtime_release_control.bat"
+NATIVE_RUNTIME_MAC_FILE_INTEGRITY_COMMAND_NAME = "校验原生Runtime文件完整性.command"
+NATIVE_RUNTIME_LINUX_FILE_INTEGRITY_COMMAND_NAME = "verify_native_runtime_file_integrity.sh"
+NATIVE_RUNTIME_WINDOWS_FILE_INTEGRITY_COMMAND_NAME = "verify_native_runtime_file_integrity.bat"
 NATIVE_RUNTIME_MAC_APP_BUILDER_COMMAND_NAME = "打包原生Runtime应用.command"
 NATIVE_RUNTIME_LINUX_APP_BUILDER_COMMAND_NAME = "build_native_runtime_app.sh"
 NATIVE_RUNTIME_WINDOWS_APP_BUILDER_COMMAND_NAME = "build_native_runtime_app.bat"
@@ -7038,6 +7044,8 @@ def build_native_runtime_release_control_payload(
             "asset3dDigest": NATIVE_RUNTIME_3D_ASSET_DIGEST_NAME,
             "releaseControlReport": NATIVE_RUNTIME_RELEASE_CONTROL_REPORT_NAME,
             "releaseControlJson": NATIVE_RUNTIME_RELEASE_CONTROL_JSON_NAME,
+            "fileIntegrityReport": NATIVE_RUNTIME_FILE_INTEGRITY_REPORT_NAME,
+            "fileIntegrityMarkdown": NATIVE_RUNTIME_FILE_INTEGRITY_MARKDOWN_NAME,
         },
     }
 
@@ -7144,6 +7152,9 @@ def write_native_runtime_files(build_dir: Path, export_payload: dict) -> dict:
     mac_release_control_path = build_dir / NATIVE_RUNTIME_MAC_RELEASE_CONTROL_COMMAND_NAME
     linux_release_control_path = build_dir / NATIVE_RUNTIME_LINUX_RELEASE_CONTROL_COMMAND_NAME
     windows_release_control_path = build_dir / NATIVE_RUNTIME_WINDOWS_RELEASE_CONTROL_COMMAND_NAME
+    mac_file_integrity_path = build_dir / NATIVE_RUNTIME_MAC_FILE_INTEGRITY_COMMAND_NAME
+    linux_file_integrity_path = build_dir / NATIVE_RUNTIME_LINUX_FILE_INTEGRITY_COMMAND_NAME
+    windows_file_integrity_path = build_dir / NATIVE_RUNTIME_WINDOWS_FILE_INTEGRITY_COMMAND_NAME
     mac_app_builder_path = build_dir / NATIVE_RUNTIME_MAC_APP_BUILDER_COMMAND_NAME
     linux_app_builder_path = build_dir / NATIVE_RUNTIME_LINUX_APP_BUILDER_COMMAND_NAME
     windows_app_builder_path = build_dir / NATIVE_RUNTIME_WINDOWS_APP_BUILDER_COMMAND_NAME
@@ -7321,6 +7332,61 @@ def write_native_runtime_files(build_dir: Path, export_payload: dict) -> dict:
         ),
         encoding="utf-8",
     )
+    mac_file_integrity_path.write_text(
+        "\n".join(
+            [
+                "#!/bin/bash",
+                "set -e",
+                'SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"',
+                'cd "$SCRIPT_DIR"',
+                'python3 runtime_player.py --verify-file-integrity . || {',
+                '  echo ""',
+                '  echo "文件完整性校验未通过。请重新下载或重新导出原生 Runtime 包。"',
+                '  echo ""',
+                '  read -r -p "按回车关闭..." _',
+                '  exit 1',
+                '}',
+                'echo ""',
+                'echo "文件完整性校验通过。"',
+                'read -r -p "按回车关闭..." _',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    linux_file_integrity_path.write_text(
+        "\n".join(
+            [
+                "#!/bin/bash",
+                "set -e",
+                'SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"',
+                'cd "$SCRIPT_DIR"',
+                'python3 runtime_player.py --verify-file-integrity .',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    windows_file_integrity_path.write_text(
+        "\r\n".join(
+            [
+                "@echo off",
+                "cd /d %~dp0",
+                "python runtime_player.py --verify-file-integrity .",
+                "if errorlevel 1 (",
+                "  echo.",
+                "  echo 文件完整性校验未通过，请重新下载或重新导出原生 Runtime 包。",
+                "  pause",
+                "  exit /b 1",
+                ")",
+                "echo.",
+                "echo 文件完整性校验通过。",
+                "pause",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
     mac_app_builder_path.write_text(
         "\n".join(
             [
@@ -7389,6 +7455,8 @@ def write_native_runtime_files(build_dir: Path, export_payload: dict) -> dict:
     linux_rc_path.chmod(0o755)
     mac_release_control_path.chmod(0o755)
     linux_release_control_path.chmod(0o755)
+    mac_file_integrity_path.chmod(0o755)
+    linux_file_integrity_path.chmod(0o755)
     mac_app_builder_path.chmod(0o755)
     linux_app_builder_path.chmod(0o755)
 
@@ -7609,12 +7677,482 @@ def write_native_runtime_files(build_dir: Path, export_payload: dict) -> dict:
         "linuxReleaseControlReporterPath": str(linux_release_control_path),
         "windowsReleaseControlReporterName": windows_release_control_path.name,
         "windowsReleaseControlReporterPath": str(windows_release_control_path),
+        "macFileIntegrityCheckerName": mac_file_integrity_path.name,
+        "macFileIntegrityCheckerPath": str(mac_file_integrity_path),
+        "linuxFileIntegrityCheckerName": linux_file_integrity_path.name,
+        "linuxFileIntegrityCheckerPath": str(linux_file_integrity_path),
+        "windowsFileIntegrityCheckerName": windows_file_integrity_path.name,
+        "windowsFileIntegrityCheckerPath": str(windows_file_integrity_path),
         "macAppBuilderName": mac_app_builder_path.name,
         "macAppBuilderPath": str(mac_app_builder_path),
         "linuxAppBuilderName": linux_app_builder_path.name,
         "linuxAppBuilderPath": str(linux_app_builder_path),
         "windowsAppBuilderName": windows_app_builder_path.name,
         "windowsAppBuilderPath": str(windows_app_builder_path),
+    }
+
+
+def write_native_runtime_file_integrity_reports(build_dir: Path) -> dict:
+    report_path = build_dir / NATIVE_RUNTIME_FILE_INTEGRITY_REPORT_NAME
+    markdown_path = build_dir / NATIVE_RUNTIME_FILE_INTEGRITY_MARKDOWN_NAME
+    integrity_report = subprocess.run(
+        [
+            sys.executable,
+            str(build_dir / NATIVE_RUNTIME_PLAYER_NAME),
+            "--write-file-integrity-reports",
+            str(build_dir),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if integrity_report.returncode != 0:
+        fallback_payload = {
+            "formatVersion": 1,
+            "algorithm": "sha256",
+            "generatedAt": now_iso(),
+            "status": "unavailable",
+            "summary": {"fileCount": 0, "totalBytes": 0, "totalSizeLabel": "0 B"},
+            "message": integrity_report.stderr.strip() or integrity_report.stdout.strip() or "文件完整性报告生成失败。",
+            "files": [],
+        }
+        report_path.write_text(json.dumps(fallback_payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        markdown_path.write_text(
+            "\n".join(
+                [
+                    "# 原生 Runtime 文件完整性报告",
+                    "",
+                    "文件完整性报告暂不可用。",
+                    "",
+                    f"- 原因：{fallback_payload['message']}",
+                    "- 可手动运行 `python3 runtime_player.py --write-file-integrity-reports .` 重新生成。",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        return {
+            "fileIntegrityStatus": "unavailable",
+            "fileIntegritySummary": fallback_payload["summary"],
+            "fileIntegrityReportName": report_path.name,
+            "fileIntegrityReportPath": str(report_path),
+            "fileIntegrityMarkdownName": markdown_path.name,
+            "fileIntegrityMarkdownPath": str(markdown_path),
+        }
+
+    try:
+        payload = json.loads(report_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        payload = {"summary": {"fileCount": 0, "totalBytes": 0, "totalSizeLabel": "0 B"}}
+    summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
+    return {
+        "fileIntegrityStatus": "ready",
+        "fileIntegritySummary": summary,
+        "fileIntegrityReportName": report_path.name,
+        "fileIntegrityReportPath": str(report_path),
+        "fileIntegrityMarkdownName": markdown_path.name,
+        "fileIntegrityMarkdownPath": str(markdown_path),
+    }
+
+
+def format_export_file_size_label(size_bytes: int) -> str:
+    size = float(max(0, size_bytes))
+    for unit in ["B", "KB", "MB", "GB"]:
+        if size < 1024 or unit == "GB":
+            return f"{size:.1f} {unit}" if unit != "B" else f"{int(size)} B"
+        size /= 1024
+    return f"{size_bytes} B"
+
+
+def calculate_file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as file_handle:
+        for chunk in iter(lambda: file_handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def write_export_archive_checksum_files(archive_path: Path, target_label: str) -> dict:
+    sha256 = calculate_file_sha256(archive_path)
+    size_bytes = archive_path.stat().st_size
+    checksum_path = archive_path.with_name(f"{archive_path.name}.sha256")
+    checksum_json_path = archive_path.with_name(f"{archive_path.name}.checksum.json")
+    checksum_path.write_text(f"{sha256}  {archive_path.name}\n", encoding="utf-8")
+    payload = {
+        "formatVersion": 1,
+        "algorithm": "sha256",
+        "generatedAt": now_iso(),
+        "targetLabel": target_label,
+        "archiveName": archive_path.name,
+        "archivePath": str(archive_path),
+        "archiveSizeBytes": size_bytes,
+        "archiveSizeLabel": format_export_file_size_label(size_bytes),
+        "sha256": sha256,
+        "verifyCommands": {
+            "macosLinux": f"shasum -a 256 {archive_path.name}",
+            "windowsPowerShell": f"Get-FileHash .\\{archive_path.name} -Algorithm SHA256",
+            "windowsCmd": f"CertUtil -hashfile {archive_path.name} SHA256",
+        },
+    }
+    checksum_json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return {
+        "archiveSha256": sha256,
+        "archiveSizeBytes": size_bytes,
+        "archiveSizeLabel": payload["archiveSizeLabel"],
+        "archiveChecksumName": checksum_path.name,
+        "archiveChecksumPath": str(checksum_path),
+        "archiveChecksumJsonName": checksum_json_path.name,
+        "archiveChecksumJsonPath": str(checksum_json_path),
+    }
+
+
+def write_export_archive_verifier_scripts(archive_path: Path, sha256: str) -> dict:
+    mac_path = archive_path.with_name(f"{archive_path.name}.verify.command")
+    linux_path = archive_path.with_name(f"{archive_path.name}.verify.sh")
+    windows_path = archive_path.with_name(f"{archive_path.name}.verify.bat")
+    archive_name = archive_path.name
+    mac_path.write_text(
+        "\n".join(
+            [
+                "#!/bin/bash",
+                "set -e",
+                'SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"',
+                'cd "$SCRIPT_DIR"',
+                f'ARCHIVE="{archive_name}"',
+                f'EXPECTED="{sha256}"',
+                'if [ ! -f "$ARCHIVE" ]; then',
+                '  echo "找不到压缩包：$ARCHIVE"',
+                '  read -r -p "按回车关闭..." _',
+                "  exit 1",
+                "fi",
+                "if command -v python3 >/dev/null 2>&1; then",
+                '  ACTUAL="$(python3 - "$ARCHIVE" <<\'PY\'',
+                "import hashlib",
+                "import sys",
+                "path = sys.argv[1]",
+                "digest = hashlib.sha256()",
+                "with open(path, 'rb') as file_handle:",
+                "    for chunk in iter(lambda: file_handle.read(1024 * 1024), b''):",
+                "        digest.update(chunk)",
+                "print(digest.hexdigest())",
+                "PY",
+                ')"',
+                "else",
+                '  ACTUAL="$(shasum -a 256 "$ARCHIVE" | awk \'{print $1}\')"',
+                "fi",
+                'if [ "$ACTUAL" != "$EXPECTED" ]; then',
+                '  echo "压缩包 SHA-256 校验失败。"',
+                '  echo "期望：$EXPECTED"',
+                '  echo "实际：$ACTUAL"',
+                '  echo "请重新下载或重新导出。"',
+                '  read -r -p "按回车关闭..." _',
+                "  exit 1",
+                "fi",
+                'echo "压缩包 SHA-256 校验通过：$ARCHIVE"',
+                'read -r -p "按回车关闭..." _',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    linux_path.write_text(
+        "\n".join(
+            [
+                "#!/bin/bash",
+                "set -e",
+                'SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"',
+                'cd "$SCRIPT_DIR"',
+                f'ARCHIVE="{archive_name}"',
+                f'EXPECTED="{sha256}"',
+                'if [ ! -f "$ARCHIVE" ]; then',
+                '  echo "找不到压缩包：$ARCHIVE"',
+                "  exit 1",
+                "fi",
+                "if command -v sha256sum >/dev/null 2>&1; then",
+                '  ACTUAL="$(sha256sum "$ARCHIVE" | awk \'{print $1}\')"',
+                "else",
+                '  ACTUAL="$(python3 - "$ARCHIVE" <<\'PY\'',
+                "import hashlib",
+                "import sys",
+                "path = sys.argv[1]",
+                "digest = hashlib.sha256()",
+                "with open(path, 'rb') as file_handle:",
+                "    for chunk in iter(lambda: file_handle.read(1024 * 1024), b''):",
+                "        digest.update(chunk)",
+                "print(digest.hexdigest())",
+                "PY",
+                ')"',
+                "fi",
+                'if [ "$ACTUAL" != "$EXPECTED" ]; then',
+                '  echo "压缩包 SHA-256 校验失败。"',
+                '  echo "期望：$EXPECTED"',
+                '  echo "实际：$ACTUAL"',
+                '  echo "请重新下载或重新导出。"',
+                "  exit 1",
+                "fi",
+                'echo "压缩包 SHA-256 校验通过：$ARCHIVE"',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    windows_path.write_text(
+        "\r\n".join(
+            [
+                "@echo off",
+                "setlocal EnableExtensions",
+                f'set "ARCHIVE={archive_name}"',
+                f'set "EXPECTED={sha256}"',
+                'if not exist "%ARCHIVE%" (',
+                "  echo 找不到压缩包：%ARCHIVE%",
+                "  pause",
+                "  exit /b 1",
+                ")",
+                "set \"ACTUAL=\"",
+                "for /f \"usebackq tokens=*\" %%H in (`powershell -NoProfile -ExecutionPolicy Bypass -Command \"(Get-FileHash -LiteralPath '%ARCHIVE%' -Algorithm SHA256).Hash.ToLower()\"`) do set \"ACTUAL=%%H\"",
+                'if "%ACTUAL%"=="" (',
+                "  for /f \"tokens=1\" %%H in ('certutil -hashfile \"%ARCHIVE%\" SHA256 ^| findstr /R /V \"hash CertUtil\"') do if not defined ACTUAL set \"ACTUAL=%%H\"",
+                ")",
+                'if /I not "%ACTUAL%"=="%EXPECTED%" (',
+                "  echo 压缩包 SHA-256 校验失败。",
+                "  echo 期望：%EXPECTED%",
+                "  echo 实际：%ACTUAL%",
+                "  echo 请重新下载或重新导出。",
+                "  pause",
+                "  exit /b 1",
+                ")",
+                "echo 压缩包 SHA-256 校验通过：%ARCHIVE%",
+                "pause",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    mac_path.chmod(0o755)
+    linux_path.chmod(0o755)
+    return {
+        "archiveVerifierMacName": mac_path.name,
+        "archiveVerifierMacPath": str(mac_path),
+        "archiveVerifierLinuxName": linux_path.name,
+        "archiveVerifierLinuxPath": str(linux_path),
+        "archiveVerifierWindowsName": windows_path.name,
+        "archiveVerifierWindowsPath": str(windows_path),
+    }
+
+
+def write_export_release_artifact_index(
+    archive_path: Path,
+    target_label: str,
+    archive_checksum: dict,
+    archive_verifiers: dict,
+    release_notes: dict,
+    internal_reports: list[dict],
+) -> dict:
+    artifact_json_path = archive_path.with_name(f"{archive_path.name}.release-artifacts.json")
+    artifact_markdown_path = archive_path.with_name(f"{archive_path.name}.release-artifacts.md")
+    upload_artifacts = [
+        {
+            "name": archive_path.name,
+            "path": str(archive_path),
+            "type": "archive",
+            "description": "原生 Runtime 可分发压缩包。",
+            "required": True,
+            "sha256": archive_checksum.get("archiveSha256"),
+            "sizeLabel": archive_checksum.get("archiveSizeLabel"),
+        },
+        {
+            "name": archive_checksum.get("archiveChecksumName"),
+            "path": archive_checksum.get("archiveChecksumPath"),
+            "type": "checksum",
+            "description": "压缩包 SHA-256 纯文本校验文件。",
+            "required": True,
+        },
+        {
+            "name": archive_checksum.get("archiveChecksumJsonName"),
+            "path": archive_checksum.get("archiveChecksumJsonPath"),
+            "type": "checksum_json",
+            "description": "压缩包校验信息、大小和跨平台验证命令。",
+            "required": True,
+        },
+        {
+            "name": archive_verifiers.get("archiveVerifierMacName"),
+            "path": archive_verifiers.get("archiveVerifierMacPath"),
+            "type": "archive_verifier",
+            "description": "macOS 一键校验下载压缩包 SHA-256。",
+            "required": False,
+        },
+        {
+            "name": archive_verifiers.get("archiveVerifierLinuxName"),
+            "path": archive_verifiers.get("archiveVerifierLinuxPath"),
+            "type": "archive_verifier",
+            "description": "Linux 一键校验下载压缩包 SHA-256。",
+            "required": False,
+        },
+        {
+            "name": archive_verifiers.get("archiveVerifierWindowsName"),
+            "path": archive_verifiers.get("archiveVerifierWindowsPath"),
+            "type": "archive_verifier",
+            "description": "Windows 一键校验下载压缩包 SHA-256。",
+            "required": False,
+        },
+        {
+            "name": release_notes.get("releaseNotesName"),
+            "path": release_notes.get("releaseNotesPath"),
+            "type": "release_notes_draft",
+            "description": "可直接复制到 GitHub Release 正文的发布说明草稿。",
+            "required": False,
+        },
+        {
+            "name": artifact_markdown_path.name,
+            "path": str(artifact_markdown_path),
+            "type": "release_notes_helper",
+            "description": "发布附件索引，可直接贴到 Release notes 或作为附件上传。",
+            "required": False,
+        },
+        {
+            "name": artifact_json_path.name,
+            "path": str(artifact_json_path),
+            "type": "artifact_manifest",
+            "description": "机器可读发布附件索引。",
+            "required": False,
+        },
+    ]
+    payload = {
+        "formatVersion": 1,
+        "generatedAt": now_iso(),
+        "targetLabel": target_label,
+        "archive": {
+            "name": archive_path.name,
+            "path": str(archive_path),
+            "sha256": archive_checksum.get("archiveSha256"),
+            "sizeBytes": archive_checksum.get("archiveSizeBytes"),
+            "sizeLabel": archive_checksum.get("archiveSizeLabel"),
+            "checksum": archive_checksum.get("archiveChecksumName"),
+            "checksumJson": archive_checksum.get("archiveChecksumJsonName"),
+            "releaseNotesDraft": release_notes.get("releaseNotesName"),
+            "verifiers": {
+                "macos": archive_verifiers.get("archiveVerifierMacName"),
+                "linux": archive_verifiers.get("archiveVerifierLinuxName"),
+                "windows": archive_verifiers.get("archiveVerifierWindowsName"),
+            },
+        },
+        "uploadArtifacts": upload_artifacts,
+        "insideArchiveReports": internal_reports,
+        "verifySteps": [
+            "下载 zip，并把对应系统的一键校验脚本放在同一目录。",
+            "运行 .verify.command / .verify.sh / .verify.bat 校验 zip 压缩包 SHA-256。",
+            "如果不使用脚本，也可以用 .sha256 或 .checksum.json 里的命令手动校验。",
+            "解压后运行 runtime_player.py --verify-file-integrity . 校验包内核心文件。",
+            "再运行发布总控脚本或打开 native-runtime-release-control-report.md 复核发布状态。",
+        ],
+    }
+    artifact_json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    lines = [
+        "# 原生 Runtime 发布附件索引",
+        "",
+        f"- 类型：{target_label}",
+        f"- 生成时间：{payload['generatedAt']}",
+        f"- 压缩包：`{archive_path.name}`",
+        f"- 大小：{archive_checksum.get('archiveSizeLabel') or '未知'}",
+        f"- SHA-256：`{archive_checksum.get('archiveSha256') or '未生成'}`",
+        "",
+        "## 建议上传到 GitHub Release 的附件",
+        "",
+        "| 文件 | 必需 | 说明 |",
+        "| --- | --- | --- |",
+    ]
+    for artifact in upload_artifacts:
+        lines.append(
+            f"| `{artifact.get('name') or ''}` | {'是' if artifact.get('required') else '否'} | {artifact.get('description') or ''} |"
+        )
+    lines.extend(["", "## 包内报告", "", "| 文件 | 说明 |", "| --- | --- |"])
+    for report in internal_reports:
+        lines.append(f"| `{report.get('name') or ''}` | {report.get('description') or ''} |")
+    lines.extend(["", "## 下载者验证步骤", ""])
+    for index, step in enumerate(payload["verifySteps"], start=1):
+        lines.append(f"{index}. {step}")
+    lines.extend(
+        [
+            "",
+            "## Release Notes 摘要",
+            "",
+            "```md",
+            f"- 下载 `{archive_path.name}` 后，先运行对应系统的 `.verify` 脚本或用 `{archive_checksum.get('archiveChecksumName')}` 校验压缩包 SHA-256。",
+            "- 解压后运行 `python3 runtime_player.py --verify-file-integrity .` 校验包内核心文件。",
+            "- 如需发布前复核，打开 `native-runtime-release-control-report.md`。",
+            "```",
+            "",
+        ]
+    )
+    artifact_markdown_path.write_text("\n".join(lines), encoding="utf-8")
+    return {
+        "releaseArtifactIndexName": artifact_markdown_path.name,
+        "releaseArtifactIndexPath": str(artifact_markdown_path),
+        "releaseArtifactIndexJsonName": artifact_json_path.name,
+        "releaseArtifactIndexJsonPath": str(artifact_json_path),
+        "releaseArtifactUploadCount": len(upload_artifacts),
+    }
+
+
+def write_export_release_notes_draft(
+    archive_path: Path,
+    target_label: str,
+    archive_checksum: dict,
+    archive_verifiers: dict,
+    internal_reports: list[dict],
+) -> dict:
+    release_notes_path = archive_path.with_name(f"{archive_path.name}.release-notes.md")
+    report_names = [str(report.get("name") or "") for report in internal_reports if report.get("name")]
+    lines = [
+        "# Tony Na Engine 原生 Runtime Preview",
+        "",
+        f"- 类型：{target_label}",
+        "- 这份草稿可以直接复制到 GitHub Release 正文，再按实际版本补充变更摘要。",
+        "",
+        "## 下载",
+        "",
+        f"- 主包：`{archive_path.name}`",
+        f"- 大小：{archive_checksum.get('archiveSizeLabel') or '未知'}",
+        f"- SHA-256：`{archive_checksum.get('archiveSha256') or '未生成'}`",
+        "",
+        "建议同时上传到 GitHub Release 的校验附件：",
+        "",
+        f"- `{archive_checksum.get('archiveChecksumName')}`",
+        f"- `{archive_checksum.get('archiveChecksumJsonName')}`",
+        f"- `{archive_verifiers.get('archiveVerifierMacName')}`",
+        f"- `{archive_verifiers.get('archiveVerifierLinuxName')}`",
+        f"- `{archive_verifiers.get('archiveVerifierWindowsName')}`",
+        "",
+        "## 下载后验证",
+        "",
+        "1. 将 zip 和对应系统的 `.verify` 脚本放在同一目录。",
+        "2. macOS 双击 `.verify.command`，Linux 运行 `.verify.sh`，Windows 双击 `.verify.bat`。",
+        "3. 解压后运行 `python3 runtime_player.py --verify-file-integrity .` 校验包内核心文件。",
+        "4. 打开 `native-runtime-release-control-report.md` 查看发布总控结论。",
+        "",
+        "## 包内重点报告",
+        "",
+    ]
+    if report_names:
+        for report_name in report_names:
+            lines.append(f"- `{report_name}`")
+    else:
+        lines.append("- 这次导出没有记录额外包内报告。")
+    lines.extend(
+        [
+            "",
+            "## 状态说明",
+            "",
+            "- 原生 Runtime 仍处于 Preview 路线，建议在目标系统完成一次人工逐按钮长流程点测。",
+            "- 若 zip 校验失败，请重新下载或重新导出；若包内完整性失败，请不要继续分发该包。",
+            "",
+        ]
+    )
+    release_notes_path.write_text("\n".join(lines), encoding="utf-8")
+    return {
+        "releaseNotesName": release_notes_path.name,
+        "releaseNotesPath": str(release_notes_path),
     }
 
 
@@ -7648,6 +8186,8 @@ def export_native_runtime_build() -> dict:
             "releaseCandidateReport": runtime_files["releaseCandidateReportName"],
             "releaseControlReport": runtime_files["releaseControlReportName"],
             "releaseControlJson": runtime_files["releaseControlJsonName"],
+            "fileIntegrityReport": NATIVE_RUNTIME_FILE_INTEGRITY_REPORT_NAME,
+            "fileIntegrityMarkdown": NATIVE_RUNTIME_FILE_INTEGRITY_MARKDOWN_NAME,
             "asset3dReport": runtime_files["asset3dReportName"],
             "asset3dSummary": runtime_files["asset3dSummaryName"],
             "asset3dDigest": runtime_files["asset3dDigestName"],
@@ -7660,6 +8200,9 @@ def export_native_runtime_build() -> dict:
             "macReleaseControlReporter": runtime_files["macReleaseControlReporterName"],
             "linuxReleaseControlReporter": runtime_files["linuxReleaseControlReporterName"],
             "windowsReleaseControlReporter": runtime_files["windowsReleaseControlReporterName"],
+            "macFileIntegrityChecker": runtime_files["macFileIntegrityCheckerName"],
+            "linuxFileIntegrityChecker": runtime_files["linuxFileIntegrityCheckerName"],
+            "windowsFileIntegrityChecker": runtime_files["windowsFileIntegrityCheckerName"],
             "macAppBuilder": runtime_files["macAppBuilderName"],
             "linuxAppBuilder": runtime_files["linuxAppBuilderName"],
             "windowsAppBuilder": runtime_files["windowsAppBuilderName"],
@@ -7683,6 +8226,13 @@ def export_native_runtime_build() -> dict:
                 "linux": runtime_files["linuxReleaseControlReporterName"],
                 "windows": runtime_files["windowsReleaseControlReporterName"],
             },
+            "fileIntegrityReport": NATIVE_RUNTIME_FILE_INTEGRITY_REPORT_NAME,
+            "fileIntegrityMarkdown": NATIVE_RUNTIME_FILE_INTEGRITY_MARKDOWN_NAME,
+            "fileIntegrityChecker": {
+                "macos": runtime_files["macFileIntegrityCheckerName"],
+                "linux": runtime_files["linuxFileIntegrityCheckerName"],
+                "windows": runtime_files["windowsFileIntegrityCheckerName"],
+            },
             "asset3dReport": runtime_files["asset3dReportName"],
             "asset3dSummary": runtime_files["asset3dSummaryName"],
             "asset3dDigest": runtime_files["asset3dDigestName"],
@@ -7691,7 +8241,36 @@ def export_native_runtime_build() -> dict:
         },
     )
     manifest_path = write_export_manifest(build_dir, manifest)
+    integrity_files = write_native_runtime_file_integrity_reports(build_dir)
     archive_path = Path(shutil.make_archive(str(build_dir), "zip", root_dir=build_dir))
+    archive_checksum = write_export_archive_checksum_files(archive_path, "原生 Runtime 包（可打包 App）")
+    archive_verifiers = write_export_archive_verifier_scripts(archive_path, archive_checksum["archiveSha256"])
+    internal_reports = [
+        {"name": manifest_path.name, "description": "导出清单，记录目标、版本、素材缺口和 Runtime 信息。"},
+        {"name": runtime_files["releaseCheckName"], "description": "发布前自检 JSON。"},
+        {"name": runtime_files["releaseCandidateReportName"], "description": "原生 Runtime 发布候选总报告。"},
+        {"name": runtime_files["releaseControlReportName"], "description": "人工验收用发布总控 Markdown。"},
+        {"name": runtime_files["releaseControlJsonName"], "description": "机器可读发布总控 JSON。"},
+        {"name": integrity_files["fileIntegrityMarkdownName"], "description": "包内核心文件完整性 Markdown。"},
+        {"name": integrity_files["fileIntegrityReportName"], "description": "包内核心文件 SHA-256 JSON。"},
+        {"name": runtime_files["asset3dSummaryName"], "description": "3D 资产 Markdown 摘要。"},
+        {"name": runtime_files["asset3dDigestName"], "description": "3D 风险精简摘要 JSON。"},
+    ]
+    release_notes = write_export_release_notes_draft(
+        archive_path,
+        "原生 Runtime 包（可打包 App）",
+        archive_checksum,
+        archive_verifiers,
+        internal_reports,
+    )
+    release_artifacts = write_export_release_artifact_index(
+        archive_path,
+        "原生 Runtime 包（可打包 App）",
+        archive_checksum,
+        archive_verifiers,
+        release_notes,
+        internal_reports,
+    )
     return {
         "target": EXPORT_TARGET_NATIVE_RUNTIME,
         "targetLabel": "原生 Runtime 包（可打包 App）",
@@ -7700,6 +8279,34 @@ def export_native_runtime_build() -> dict:
         "archivePath": str(archive_path),
         "archiveName": archive_path.name,
         "archivePublicUrl": f"/exports/{archive_path.name}",
+        "archiveSha256": archive_checksum["archiveSha256"],
+        "archiveSizeBytes": archive_checksum["archiveSizeBytes"],
+        "archiveSizeLabel": archive_checksum["archiveSizeLabel"],
+        "archiveChecksumName": archive_checksum["archiveChecksumName"],
+        "archiveChecksumPath": archive_checksum["archiveChecksumPath"],
+        "archiveChecksumPublicUrl": f"/exports/{archive_checksum['archiveChecksumName']}",
+        "archiveChecksumJsonName": archive_checksum["archiveChecksumJsonName"],
+        "archiveChecksumJsonPath": archive_checksum["archiveChecksumJsonPath"],
+        "archiveChecksumJsonPublicUrl": f"/exports/{archive_checksum['archiveChecksumJsonName']}",
+        "archiveVerifierMacName": archive_verifiers["archiveVerifierMacName"],
+        "archiveVerifierMacPath": archive_verifiers["archiveVerifierMacPath"],
+        "archiveVerifierMacPublicUrl": f"/exports/{archive_verifiers['archiveVerifierMacName']}",
+        "archiveVerifierLinuxName": archive_verifiers["archiveVerifierLinuxName"],
+        "archiveVerifierLinuxPath": archive_verifiers["archiveVerifierLinuxPath"],
+        "archiveVerifierLinuxPublicUrl": f"/exports/{archive_verifiers['archiveVerifierLinuxName']}",
+        "archiveVerifierWindowsName": archive_verifiers["archiveVerifierWindowsName"],
+        "archiveVerifierWindowsPath": archive_verifiers["archiveVerifierWindowsPath"],
+        "archiveVerifierWindowsPublicUrl": f"/exports/{archive_verifiers['archiveVerifierWindowsName']}",
+        "releaseNotesName": release_notes["releaseNotesName"],
+        "releaseNotesPath": release_notes["releaseNotesPath"],
+        "releaseNotesPublicUrl": f"/exports/{release_notes['releaseNotesName']}",
+        "releaseArtifactIndexName": release_artifacts["releaseArtifactIndexName"],
+        "releaseArtifactIndexPath": release_artifacts["releaseArtifactIndexPath"],
+        "releaseArtifactIndexPublicUrl": f"/exports/{release_artifacts['releaseArtifactIndexName']}",
+        "releaseArtifactIndexJsonName": release_artifacts["releaseArtifactIndexJsonName"],
+        "releaseArtifactIndexJsonPath": release_artifacts["releaseArtifactIndexJsonPath"],
+        "releaseArtifactIndexJsonPublicUrl": f"/exports/{release_artifacts['releaseArtifactIndexJsonName']}",
+        "releaseArtifactUploadCount": release_artifacts["releaseArtifactUploadCount"],
         "copiedAssets": copied_assets,
         "missingAssets": len(missing_assets),
         "missingAssetNames": [asset.get("name") or asset.get("id") or "未命名素材" for asset in missing_assets],
@@ -7742,6 +8349,14 @@ def export_native_runtime_build() -> dict:
         "releaseControlJsonPublicUrl": f"/exports/{build_dir.name}/{runtime_files['releaseControlJsonName']}",
         "releaseControlStatus": runtime_files["releaseControlStatus"],
         "releaseControlSummary": runtime_files["releaseControlSummary"],
+        "fileIntegrityReportName": integrity_files["fileIntegrityReportName"],
+        "fileIntegrityReportPath": integrity_files["fileIntegrityReportPath"],
+        "fileIntegrityReportPublicUrl": f"/exports/{build_dir.name}/{integrity_files['fileIntegrityReportName']}",
+        "fileIntegrityMarkdownName": integrity_files["fileIntegrityMarkdownName"],
+        "fileIntegrityMarkdownPath": integrity_files["fileIntegrityMarkdownPath"],
+        "fileIntegrityMarkdownPublicUrl": f"/exports/{build_dir.name}/{integrity_files['fileIntegrityMarkdownName']}",
+        "fileIntegrityStatus": integrity_files["fileIntegrityStatus"],
+        "fileIntegritySummary": integrity_files["fileIntegritySummary"],
         "asset3dReportName": runtime_files["asset3dReportName"],
         "asset3dReportPath": runtime_files["asset3dReportPath"],
         "asset3dReportPublicUrl": f"/exports/{build_dir.name}/{runtime_files['asset3dReportName']}",
@@ -7781,6 +8396,15 @@ def export_native_runtime_build() -> dict:
         "windowsReleaseControlReporterName": runtime_files["windowsReleaseControlReporterName"],
         "windowsReleaseControlReporterPath": runtime_files["windowsReleaseControlReporterPath"],
         "windowsReleaseControlReporterPublicUrl": f"/exports/{build_dir.name}/{runtime_files['windowsReleaseControlReporterName']}",
+        "macFileIntegrityCheckerName": runtime_files["macFileIntegrityCheckerName"],
+        "macFileIntegrityCheckerPath": runtime_files["macFileIntegrityCheckerPath"],
+        "macFileIntegrityCheckerPublicUrl": f"/exports/{build_dir.name}/{runtime_files['macFileIntegrityCheckerName']}",
+        "linuxFileIntegrityCheckerName": runtime_files["linuxFileIntegrityCheckerName"],
+        "linuxFileIntegrityCheckerPath": runtime_files["linuxFileIntegrityCheckerPath"],
+        "linuxFileIntegrityCheckerPublicUrl": f"/exports/{build_dir.name}/{runtime_files['linuxFileIntegrityCheckerName']}",
+        "windowsFileIntegrityCheckerName": runtime_files["windowsFileIntegrityCheckerName"],
+        "windowsFileIntegrityCheckerPath": runtime_files["windowsFileIntegrityCheckerPath"],
+        "windowsFileIntegrityCheckerPublicUrl": f"/exports/{build_dir.name}/{runtime_files['windowsFileIntegrityCheckerName']}",
         "macAppBuilderName": runtime_files["macAppBuilderName"],
         "macAppBuilderPath": runtime_files["macAppBuilderPath"],
         "macAppBuilderPublicUrl": f"/exports/{build_dir.name}/{runtime_files['macAppBuilderName']}",

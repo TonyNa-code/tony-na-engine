@@ -230,6 +230,14 @@ class BrowserPlaywrightSmokeTests(unittest.TestCase):
         self.page.get_by_role("button", name="一键创建第一章").first.click()
         self.page.locator("#screen-story").get_by_role("button", name="加台词").first.wait_for(timeout=15000)
 
+    def test_editor_system_dialog_replaces_native_alert(self) -> None:
+        self.open_editor()
+        self.page.evaluate("window.alert('系统弹窗测试：统一提示层')")
+        dialog = self.page.locator(".system-dialog").filter(has_text="系统弹窗测试：统一提示层").first
+        dialog.wait_for(timeout=15000)
+        dialog.get_by_role("button", name="知道了").click()
+        self.page.locator(".system-dialog").wait_for(state="detached", timeout=15000)
+
     def open_project_by_title(self, title: str) -> None:
         self.open_editor()
         card = self.page.locator(".project-card").filter(has_text=title).first
@@ -697,8 +705,9 @@ class BrowserPlaywrightSmokeTests(unittest.TestCase):
         variable_row.locator('[data-field="project-variable-name"]').fill("积分")
         variable_row.get_by_role("button", name="根据变量名生成 ID").click()
         self.assertEqual(variable_row.locator('[data-field="project-variable-id"]').input_value(), "var_积分")
-        self.page.once("dialog", lambda dialog: dialog.accept())
         variable_row.get_by_role("button", name="保存变量").click()
+        self.page.locator(".system-dialog").filter(has_text="迁移变量逻辑 ID").first.wait_for(timeout=15000)
+        self.page.get_by_role("button", name="迁移引用").click()
         self.page.wait_for_function(
             """async () => {
                 const response = await fetch('/api/project-data');
@@ -793,8 +802,9 @@ class BrowserPlaywrightSmokeTests(unittest.TestCase):
         self.assertIn("预留变量", report_content)
         self.assertIn("未来路线使用，清理时要保留", report_content)
 
-        self.page.once("dialog", lambda dialog: dialog.accept())
         self.page.get_by_role("button", name="清理未引用").click()
+        self.page.locator(".system-dialog").filter(has_text="清理未引用变量").first.wait_for(timeout=15000)
+        self.page.get_by_role("button", name="清理变量").click()
         self.page.wait_for_function(
             """async () => {
                 const response = await fetch('/api/project-data');
@@ -930,17 +940,35 @@ class BrowserPlaywrightSmokeTests(unittest.TestCase):
             timeout=20000
         )
         self.page.locator(".detail-meta").filter(has_text="RC 状态").first.wait_for(timeout=20000)
+        self.page.locator(".detail-meta").filter(has_text="压缩包 SHA-256").first.wait_for(timeout=20000)
+        self.page.locator(".detail-meta").filter(has_text="压缩包校验脚本").first.wait_for(timeout=20000)
+        self.page.locator(".detail-meta").filter(has_text="Release 附件索引").first.wait_for(timeout=20000)
+        self.page.locator(".detail-meta").filter(has_text="Release Notes 草稿").first.wait_for(timeout=20000)
         self.page.locator(".detail-meta").filter(has_text="3D 资产清单").first.wait_for(timeout=20000)
         self.page.locator(".detail-meta").filter(has_text="3D Markdown 摘要").first.wait_for(timeout=20000)
         self.page.locator(".detail-meta").filter(has_text="3D 风险摘要文件").first.wait_for(timeout=20000)
+        self.page.locator(".detail-meta").filter(has_text="文件完整性状态").first.wait_for(timeout=20000)
         self.page.locator(".detail-meta").filter(has_text="3D 风险摘要").first.wait_for(timeout=20000)
         self.page.locator(".detail-meta").filter(has_text="3D 风险拆分").first.wait_for(timeout=20000)
         self.page.get_by_role("link", name="打开原生 RC 总报告").wait_for(timeout=20000)
         self.page.get_by_role("link", name="打开发布总控报告").wait_for(timeout=20000)
         self.page.get_by_role("link", name="打开发布总控 JSON").wait_for(timeout=20000)
+        self.page.get_by_role("link", name="打开压缩包 SHA-256").wait_for(timeout=20000)
+        self.page.get_by_role("link", name="打开压缩包校验 JSON").wait_for(timeout=20000)
+        self.page.get_by_role("link", name="打开 mac 压缩包校验脚本").wait_for(timeout=20000)
+        self.page.get_by_role("link", name="打开 Linux 压缩包校验脚本").wait_for(timeout=20000)
+        self.page.get_by_role("link", name="打开 Windows 压缩包校验脚本").wait_for(timeout=20000)
+        self.page.get_by_role("link", name="打开 Release 附件索引").wait_for(timeout=20000)
+        self.page.get_by_role("link", name="打开 Release 附件 JSON").wait_for(timeout=20000)
+        self.page.get_by_role("link", name="打开 Release Notes 草稿").wait_for(timeout=20000)
         self.page.get_by_role("link", name="打开 mac 总控刷新脚本").wait_for(timeout=20000)
         self.page.get_by_role("link", name="打开 Linux 总控刷新脚本").wait_for(timeout=20000)
         self.page.get_by_role("link", name="打开 Windows 总控刷新脚本").wait_for(timeout=20000)
+        self.page.get_by_role("link", name="打开文件完整性报告").wait_for(timeout=20000)
+        self.page.get_by_role("link", name="打开文件完整性 JSON").wait_for(timeout=20000)
+        self.page.get_by_role("link", name="打开 mac 完整性校验脚本").wait_for(timeout=20000)
+        self.page.get_by_role("link", name="打开 Linux 完整性校验脚本").wait_for(timeout=20000)
+        self.page.get_by_role("link", name="打开 Windows 完整性校验脚本").wait_for(timeout=20000)
         self.page.get_by_role("link", name="打开 3D 风险摘要").wait_for(timeout=20000)
         self.page.get_by_role("link", name="打开 3D 资产清单").wait_for(timeout=20000)
         self.page.get_by_role("link", name="打开 3D 摘要").wait_for(timeout=20000)

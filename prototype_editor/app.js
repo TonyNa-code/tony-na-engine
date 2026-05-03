@@ -2214,6 +2214,10 @@ function scheduleEditorUiThemeAutoRefresh() {
 }
 
 let toastTimer = null;
+let engineDialogRoot = null;
+let activeEngineDialog = null;
+let engineDialogQueue = [];
+const nativeWindowAlert = typeof window.alert === "function" ? window.alert.bind(window) : null;
 let autoSaveTimer = null;
 let autoSavePromise = null;
 let storyChangeVersion = 0;
@@ -2411,6 +2415,7 @@ if (refs.previewStage) {
   refs.previewStage.addEventListener("contextmenu", handlePreviewStageContextMenu);
 }
 
+installEngineDialogBridge();
 init();
 
 async function init() {
@@ -4236,10 +4241,13 @@ async function handleClick(event) {
       return;
     }
 
-    const shouldDelete =
-      typeof window.confirm === "function"
-        ? window.confirm(`确定要删除项目「${project.title}」吗？这个动作会删掉它的项目文件夹。`)
-        : true;
+    const shouldDelete = await showEngineConfirm({
+      title: "删除这个项目？",
+      message: `确定要删除项目「${project.title}」吗？这个动作会删掉它的项目文件夹。`,
+      tone: "danger",
+      confirmLabel: "删除项目",
+      cancelLabel: "保留项目",
+    });
     if (!shouldDelete) {
       return;
     }
@@ -6063,6 +6071,31 @@ function handleInput(event) {
 }
 
 function handleGlobalKeydown(event) {
+  if (activeEngineDialog) {
+    if (event.code === "Escape") {
+      event.preventDefault();
+      closeActiveEngineDialog(false);
+      return;
+    }
+
+    const engineDialogButton =
+      event.target instanceof Element ? event.target.closest(".system-dialog button") : null;
+    if (event.code === "Enter" && !event.shiftKey && !engineDialogButton && !isKeyboardTypingTarget(event.target)) {
+      event.preventDefault();
+      closeActiveEngineDialog(true);
+      return;
+    }
+
+    if (event.code === "Tab" || event.code === "Space") {
+      return;
+    }
+
+    if (!isKeyboardTypingTarget(event.target)) {
+      event.preventDefault();
+    }
+    return;
+  }
+
   if (state.beginnerTutorialOpen && event.code === "Escape") {
     event.preventDefault();
     closeBeginnerTutorial();
@@ -9122,6 +9155,213 @@ function showToast(message, tone = "soft") {
   toastTimer = setTimeout(() => {
     refs.interactionToast.className = tone === "error" ? "interaction-toast is-error" : "interaction-toast";
   }, 1800);
+}
+
+function installEngineDialogBridge() {
+  if (window.__tonyNaEngineDialogBridgeInstalled) {
+    return;
+  }
+
+  window.__tonyNaEngineDialogBridgeInstalled = true;
+  window.alert = (message) => {
+    void showEngineAlert({
+      title: "提示",
+      message,
+      tone: "info",
+    });
+  };
+}
+
+function ensureEngineDialogRoot() {
+  if (engineDialogRoot?.isConnected) {
+    return engineDialogRoot;
+  }
+
+  engineDialogRoot = document.createElement("div");
+  engineDialogRoot.className = "system-dialog-backdrop";
+  engineDialogRoot.setAttribute("role", "presentation");
+  engineDialogRoot.hidden = true;
+  document.body.append(engineDialogRoot);
+  return engineDialogRoot;
+}
+
+function normalizeEngineDialogOptions(options = {}) {
+  const message = Array.isArray(options.message)
+    ? options.message.filter(Boolean).join("\n")
+    : String(options.message ?? "");
+  return {
+    title: String(options.title ?? "提示"),
+    eyebrow: String(options.eyebrow ?? "Tony Na Engine"),
+    message,
+    tone: ["danger", "warning", "success", "info"].includes(options.tone) ? options.tone : "info",
+    confirmLabel: String(options.confirmLabel ?? "知道了"),
+    cancelLabel: String(options.cancelLabel ?? "取消"),
+    showCancel: Boolean(options.showCancel),
+    allowBackdropClose: options.allowBackdropClose !== false,
+  };
+}
+
+function showEngineAlert(options = {}) {
+  if (!document.body) {
+    nativeWindowAlert?.(String(options?.message ?? options ?? ""));
+    return Promise.resolve(true);
+  }
+
+  const normalizedOptions =
+    typeof options === "object" && options !== null
+      ? options
+      : {
+          message: options,
+        };
+  return showEngineDialog({
+    title: "提示",
+    tone: "info",
+    confirmLabel: "知道了",
+    ...normalizedOptions,
+    showCancel: false,
+  });
+}
+
+function showEngineConfirm(options = {}) {
+  return showEngineDialog({
+    title: "确认操作",
+    tone: "warning",
+    confirmLabel: "确认继续",
+    cancelLabel: "先不动",
+    ...options,
+    showCancel: true,
+  });
+}
+
+function showEngineDialog(options = {}) {
+  return new Promise((resolve) => {
+    engineDialogQueue.push({
+      options: normalizeEngineDialogOptions(options),
+      previousFocus: document.activeElement instanceof HTMLElement ? document.activeElement : null,
+      resolve,
+    });
+    renderNextEngineDialog();
+  });
+}
+
+function renderNextEngineDialog() {
+  if (activeEngineDialog || engineDialogQueue.length === 0) {
+    return;
+  }
+
+  const root = ensureEngineDialogRoot();
+  const request = engineDialogQueue.shift();
+  const close = (confirmed) => {
+    if (activeEngineDialog?.close !== close) {
+      return;
+    }
+
+    root.hidden = true;
+    root.replaceChildren();
+    activeEngineDialog = null;
+    if (request.previousFocus?.isConnected) {
+      request.previousFocus.focus({ preventScroll: true });
+    }
+    request.resolve(Boolean(confirmed));
+    renderNextEngineDialog();
+  };
+
+  activeEngineDialog = {
+    close,
+    options: request.options,
+  };
+
+  renderEngineDialog(root, request.options, close);
+}
+
+function renderEngineDialog(root, options, close) {
+  root.hidden = false;
+  root.dataset.tone = options.tone;
+  root.replaceChildren();
+
+  const dialog = document.createElement("section");
+  dialog.className = "system-dialog";
+  dialog.setAttribute("role", "dialog");
+  dialog.setAttribute("aria-modal", "true");
+  dialog.setAttribute("aria-labelledby", "systemDialogTitle");
+  dialog.addEventListener("click", (event) => event.stopPropagation());
+
+  const halo = document.createElement("div");
+  halo.className = "system-dialog-halo";
+  halo.setAttribute("aria-hidden", "true");
+
+  const header = document.createElement("div");
+  header.className = "system-dialog-header";
+
+  const mark = document.createElement("div");
+  mark.className = "system-dialog-mark";
+  mark.setAttribute("aria-hidden", "true");
+  mark.textContent = getEngineDialogToneMark(options.tone);
+
+  const titleWrap = document.createElement("div");
+  const eyebrow = document.createElement("span");
+  eyebrow.className = "system-dialog-eyebrow";
+  eyebrow.textContent = options.eyebrow;
+  const title = document.createElement("h2");
+  title.id = "systemDialogTitle";
+  title.textContent = options.title;
+  titleWrap.append(eyebrow, title);
+
+  header.append(mark, titleWrap);
+
+  const message = document.createElement("p");
+  message.className = "system-dialog-message";
+  message.textContent = options.message || "操作已经完成。";
+
+  const actions = document.createElement("div");
+  actions.className = "system-dialog-actions";
+
+  if (options.showCancel) {
+    const cancelButton = document.createElement("button");
+    cancelButton.type = "button";
+    cancelButton.className = "toolbar-button";
+    cancelButton.textContent = options.cancelLabel;
+    cancelButton.addEventListener("click", () => close(false));
+    actions.append(cancelButton);
+  }
+
+  const confirmButton = document.createElement("button");
+  confirmButton.type = "button";
+  confirmButton.className =
+    options.tone === "danger" ? "toolbar-button toolbar-button-danger" : "toolbar-button toolbar-button-primary";
+  confirmButton.textContent = options.confirmLabel;
+  confirmButton.addEventListener("click", () => close(true));
+  actions.append(confirmButton);
+
+  dialog.append(halo, header, message, actions);
+  root.append(dialog);
+
+  if (options.allowBackdropClose) {
+    root.onclick = () => close(false);
+  } else {
+    root.onclick = null;
+  }
+
+  window.requestAnimationFrame(() => {
+    confirmButton.focus({ preventScroll: true });
+  });
+}
+
+function getEngineDialogToneMark(tone) {
+  if (tone === "danger") {
+    return "!";
+  }
+  if (tone === "warning") {
+    return "?";
+  }
+  if (tone === "success") {
+    return "✓";
+  }
+  return "i";
+}
+
+function closeActiveEngineDialog(confirmed = false) {
+  activeEngineDialog?.close(Boolean(confirmed));
 }
 
 function shouldFlushPendingStoryChanges(action) {
@@ -22223,9 +22463,13 @@ async function applyBulkAssetTags(mode) {
   const actionLabel = mode === "remove" ? "移除" : "添加";
   const targetLabel =
     checkedAssets.length > 0 ? `当前勾选的 ${checkedAssets.length} 个素材` : `当前筛选结果里的 ${assets.length} 个素材`;
-  const confirmed = window.confirm(
-    `确定要给${targetLabel}批量${actionLabel}标签吗？\n\n标签：${tags.join(" / ")}`
-  );
+  const confirmed = await showEngineConfirm({
+    title: `批量${actionLabel}素材标签？`,
+    message: `确定要给${targetLabel}批量${actionLabel}标签吗？\n\n标签：${tags.join(" / ")}`,
+    tone: "warning",
+    confirmLabel: `确认${actionLabel}`,
+    cancelLabel: "先不处理",
+  });
   if (!confirmed) {
     return;
   }
@@ -25435,6 +25679,118 @@ function renderProjectValidationSummary() {
             : ""
         }
         ${
+          exportResult?.target === "native_runtime" && exportResult?.archiveChecksumPublicUrl
+            ? `
+              <a
+                class="toolbar-button"
+                href="${escapeHtml(exportResult.archiveChecksumPublicUrl)}"
+                target="_blank"
+                rel="noreferrer"
+              >
+                打开压缩包 SHA-256
+              </a>
+            `
+            : ""
+        }
+        ${
+          exportResult?.target === "native_runtime" && exportResult?.archiveChecksumJsonPublicUrl
+            ? `
+              <a
+                class="toolbar-button"
+                href="${escapeHtml(exportResult.archiveChecksumJsonPublicUrl)}"
+                target="_blank"
+                rel="noreferrer"
+              >
+                打开压缩包校验 JSON
+              </a>
+            `
+            : ""
+        }
+        ${
+          exportResult?.target === "native_runtime" && exportResult?.archiveVerifierMacPublicUrl
+            ? `
+              <a
+                class="toolbar-button"
+                href="${escapeHtml(exportResult.archiveVerifierMacPublicUrl)}"
+                target="_blank"
+                rel="noreferrer"
+              >
+                打开 mac 压缩包校验脚本
+              </a>
+            `
+            : ""
+        }
+        ${
+          exportResult?.target === "native_runtime" && exportResult?.archiveVerifierLinuxPublicUrl
+            ? `
+              <a
+                class="toolbar-button"
+                href="${escapeHtml(exportResult.archiveVerifierLinuxPublicUrl)}"
+                target="_blank"
+                rel="noreferrer"
+              >
+                打开 Linux 压缩包校验脚本
+              </a>
+            `
+            : ""
+        }
+        ${
+          exportResult?.target === "native_runtime" && exportResult?.archiveVerifierWindowsPublicUrl
+            ? `
+              <a
+                class="toolbar-button"
+                href="${escapeHtml(exportResult.archiveVerifierWindowsPublicUrl)}"
+                target="_blank"
+                rel="noreferrer"
+              >
+                打开 Windows 压缩包校验脚本
+              </a>
+            `
+            : ""
+        }
+        ${
+          exportResult?.target === "native_runtime" && exportResult?.releaseArtifactIndexPublicUrl
+            ? `
+              <a
+                class="toolbar-button toolbar-button-primary"
+                href="${escapeHtml(exportResult.releaseArtifactIndexPublicUrl)}"
+                target="_blank"
+                rel="noreferrer"
+              >
+                打开 Release 附件索引
+              </a>
+            `
+            : ""
+        }
+        ${
+          exportResult?.target === "native_runtime" && exportResult?.releaseArtifactIndexJsonPublicUrl
+            ? `
+              <a
+                class="toolbar-button"
+                href="${escapeHtml(exportResult.releaseArtifactIndexJsonPublicUrl)}"
+                target="_blank"
+                rel="noreferrer"
+              >
+                打开 Release 附件 JSON
+              </a>
+            `
+            : ""
+        }
+        ${
+          exportResult?.target === "native_runtime" && exportResult?.releaseNotesPublicUrl
+            ? `
+              <a
+                class="toolbar-button toolbar-button-primary"
+                href="${escapeHtml(exportResult.releaseNotesPublicUrl)}"
+                target="_blank"
+                rel="noreferrer"
+              >
+                打开 Release Notes 草稿
+              </a>
+            `
+            : ""
+        }
+        ${
           exportResult?.target === "editor_desktop" && exportResult?.archivePublicUrl
             ? `
               <a
@@ -25678,6 +26034,76 @@ function renderProjectValidationSummary() {
             : ""
         }
         ${
+          exportResult?.target === "native_runtime" && exportResult?.fileIntegrityMarkdownPublicUrl
+            ? `
+              <a
+                class="toolbar-button toolbar-button-primary"
+                href="${escapeHtml(exportResult.fileIntegrityMarkdownPublicUrl)}"
+                target="_blank"
+                rel="noreferrer"
+              >
+                打开文件完整性报告
+              </a>
+            `
+            : ""
+        }
+        ${
+          exportResult?.target === "native_runtime" && exportResult?.fileIntegrityReportPublicUrl
+            ? `
+              <a
+                class="toolbar-button"
+                href="${escapeHtml(exportResult.fileIntegrityReportPublicUrl)}"
+                target="_blank"
+                rel="noreferrer"
+              >
+                打开文件完整性 JSON
+              </a>
+            `
+            : ""
+        }
+        ${
+          exportResult?.target === "native_runtime" && exportResult?.macFileIntegrityCheckerPublicUrl
+            ? `
+              <a
+                class="toolbar-button"
+                href="${escapeHtml(exportResult.macFileIntegrityCheckerPublicUrl)}"
+                target="_blank"
+                rel="noreferrer"
+              >
+                打开 mac 完整性校验脚本
+              </a>
+            `
+            : ""
+        }
+        ${
+          exportResult?.target === "native_runtime" && exportResult?.windowsFileIntegrityCheckerPublicUrl
+            ? `
+              <a
+                class="toolbar-button"
+                href="${escapeHtml(exportResult.windowsFileIntegrityCheckerPublicUrl)}"
+                target="_blank"
+                rel="noreferrer"
+              >
+                打开 Windows 完整性校验脚本
+              </a>
+            `
+            : ""
+        }
+        ${
+          exportResult?.target === "native_runtime" && exportResult?.linuxFileIntegrityCheckerPublicUrl
+            ? `
+              <a
+                class="toolbar-button"
+                href="${escapeHtml(exportResult.linuxFileIntegrityCheckerPublicUrl)}"
+                target="_blank"
+                rel="noreferrer"
+              >
+                打开 Linux 完整性校验脚本
+              </a>
+            `
+            : ""
+        }
+        ${
           exportResult?.target === "native_runtime" && exportResult?.asset3dDigestPublicUrl
             ? `
               <a
@@ -25810,6 +26236,22 @@ function renderProjectValidationSummary() {
                   ]
                     .filter(Boolean)
                     .join(" / ") || "未生成"
+                )}<br />文件完整性报告：${escapeHtml(
+                  exportResult.fileIntegrityMarkdownPath ?? "未生成"
+                )}<br />文件完整性 JSON：${escapeHtml(
+                  exportResult.fileIntegrityReportPath ?? "未生成"
+                )}<br />文件完整性状态：${escapeHtml(
+                  `${exportResult.fileIntegrityStatus ?? "未生成"} · ${
+                    exportResult.fileIntegritySummary?.fileCount ?? 0
+                  } 个文件 / ${exportResult.fileIntegritySummary?.totalSizeLabel ?? "0 B"}`
+                )}<br />完整性校验脚本：${escapeHtml(
+                  [
+                    exportResult.macFileIntegrityCheckerName,
+                    exportResult.linuxFileIntegrityCheckerName,
+                    exportResult.windowsFileIntegrityCheckerName,
+                  ]
+                    .filter(Boolean)
+                    .join(" / ") || "未生成"
                 )}<br />3D 资产清单：${escapeHtml(
                   exportResult.asset3dReportPath ?? "未生成"
                 )}<br />3D Markdown 摘要：${escapeHtml(
@@ -25850,6 +26292,23 @@ function renderProjectValidationSummary() {
                   exportResult.windowsAppBuilderName ?? "未生成"
                 )}<br />压缩档：${escapeHtml(
                   exportResult.archivePath ?? "未生成"
+                )}<br />压缩包 SHA-256：${escapeHtml(
+                  exportResult.archiveSha256
+                    ? `${exportResult.archiveSha256.slice(0, 16)}… · ${exportResult.archiveSizeLabel ?? "未知大小"}`
+                    : "未生成"
+                )}<br />压缩包校验文件：${escapeHtml(
+                  [exportResult.archiveChecksumName, exportResult.archiveChecksumJsonName].filter(Boolean).join(" / ") || "未生成"
+                )}<br />压缩包校验脚本：${escapeHtml(
+                  [exportResult.archiveVerifierMacName, exportResult.archiveVerifierLinuxName, exportResult.archiveVerifierWindowsName]
+                    .filter(Boolean)
+                    .join(" / ") || "未生成"
+                )}<br />Release 附件索引：${escapeHtml(
+                  [exportResult.releaseArtifactIndexName, exportResult.releaseArtifactIndexJsonName].filter(Boolean).join(" / ") ||
+                    "未生成"
+                )}<br />Release Notes 草稿：${escapeHtml(
+                  exportResult.releaseNotesName ?? "未生成"
+                )}<br />Release 建议附件数：${escapeHtml(
+                  String(exportResult.releaseArtifactUploadCount ?? 0)
                 )}<br />发布清单：${escapeHtml(
                   exportResult.manifestPath ?? "未生成"
                 )}<br />桌面模式：${escapeHtml(
@@ -27135,6 +27594,9 @@ function buildReleaseControlReportPayload() {
           target: exportResult.target ?? "",
           targetLabel: exportResult.targetLabel ?? "",
           buildPath: exportResult.buildPath ?? "",
+          archiveSha256: exportResult.archiveSha256 ?? "",
+          archiveSizeLabel: exportResult.archiveSizeLabel ?? "",
+          releaseArtifactUploadCount: exportResult.releaseArtifactUploadCount ?? 0,
           missingAssets: exportResult.missingAssets ?? 0,
           missingAssetNames: exportResult.missingAssetNames ?? [],
           runtimeMode: exportResult.runtimeMode ?? "",
@@ -27145,17 +27607,32 @@ function buildReleaseControlReportPayload() {
           releaseCandidateReadinessEstimate: exportResult.releaseCandidateReadinessEstimate ?? {},
           releaseControlStatus: exportResult.releaseControlStatus ?? "",
           releaseControlSummary: exportResult.releaseControlSummary ?? "",
+          fileIntegrityStatus: exportResult.fileIntegrityStatus ?? "",
+          fileIntegritySummary: exportResult.fileIntegritySummary ?? {},
           asset3dReportStatus: exportResult.asset3dReportStatus ?? "",
           asset3dReportSummary: exportResult.asset3dReportSummary ?? {},
           publicUrls: {
             manifest: exportResult.manifestPublicUrl ?? "",
             archive: exportResult.archivePublicUrl ?? "",
+            archiveChecksum: exportResult.archiveChecksumPublicUrl ?? "",
+            archiveChecksumJson: exportResult.archiveChecksumJsonPublicUrl ?? "",
+            archiveVerifierMac: exportResult.archiveVerifierMacPublicUrl ?? "",
+            archiveVerifierLinux: exportResult.archiveVerifierLinuxPublicUrl ?? "",
+            archiveVerifierWindows: exportResult.archiveVerifierWindowsPublicUrl ?? "",
+            releaseArtifactIndex: exportResult.releaseArtifactIndexPublicUrl ?? "",
+            releaseArtifactIndexJson: exportResult.releaseArtifactIndexJsonPublicUrl ?? "",
+            releaseNotes: exportResult.releaseNotesPublicUrl ?? "",
             releaseCandidateReport: exportResult.releaseCandidateReportPublicUrl ?? "",
             releaseControlReport: exportResult.releaseControlReportPublicUrl ?? "",
             releaseControlJson: exportResult.releaseControlJsonPublicUrl ?? "",
             macReleaseControlReporter: exportResult.macReleaseControlReporterPublicUrl ?? "",
             linuxReleaseControlReporter: exportResult.linuxReleaseControlReporterPublicUrl ?? "",
             windowsReleaseControlReporter: exportResult.windowsReleaseControlReporterPublicUrl ?? "",
+            fileIntegrityReport: exportResult.fileIntegrityReportPublicUrl ?? "",
+            fileIntegrityMarkdown: exportResult.fileIntegrityMarkdownPublicUrl ?? "",
+            macFileIntegrityChecker: exportResult.macFileIntegrityCheckerPublicUrl ?? "",
+            linuxFileIntegrityChecker: exportResult.linuxFileIntegrityCheckerPublicUrl ?? "",
+            windowsFileIntegrityChecker: exportResult.windowsFileIntegrityCheckerPublicUrl ?? "",
             asset3dDigest: exportResult.asset3dDigestPublicUrl ?? "",
             asset3dReport: exportResult.asset3dReportPublicUrl ?? "",
             asset3dSummary: exportResult.asset3dSummaryPublicUrl ?? "",
@@ -32011,10 +32488,13 @@ async function deleteSelectedBlock() {
   }
 
   const summary = getBlockSummary(block, scene);
-  const shouldDelete =
-    typeof window.confirm === "function"
-      ? window.confirm(`要删除这张“${summary.title}”卡片吗？删除后会立刻写回项目文件。`)
-      : true;
+  const shouldDelete = await showEngineConfirm({
+    title: "删除这张剧情卡片？",
+    message: `要删除这张“${summary.title}”卡片吗？删除后会立刻写回项目文件。`,
+    tone: "danger",
+    confirmLabel: "删除卡片",
+    cancelLabel: "保留卡片",
+  });
 
   if (!shouldDelete) {
     return;
@@ -32276,12 +32756,22 @@ async function confirmRestoreProjectHistorySnapshot(snapshot, options = {}) {
     const preview = await previewProjectHistoryRestore(snapshot);
     const summaryText = formatHistoryRestorePreview(preview);
     const introText = String(options.introText ?? "").trim();
-    return typeof window.confirm === "function"
-      ? window.confirm(`${introText ? `${introText}\n\n` : ""}要恢复到「${label}」吗？\n\n${summaryText}`)
-      : true;
+    return showEngineConfirm({
+      title: "恢复到这份版本？",
+      message: `${introText ? `${introText}\n\n` : ""}要恢复到「${label}」吗？\n\n${summaryText}`,
+      tone: "warning",
+      confirmLabel: "恢复版本",
+      cancelLabel: "先不恢复",
+    });
   } catch (error) {
     const fallbackMessage = `要恢复到「${label}」吗？当前项目内容会整体回到那个时间点。`;
-    return typeof window.confirm === "function" ? window.confirm(fallbackMessage) : true;
+    return showEngineConfirm({
+      title: "恢复到这份版本？",
+      message: fallbackMessage,
+      tone: "warning",
+      confirmLabel: "恢复版本",
+      cancelLabel: "先不恢复",
+    });
   }
 }
 
@@ -32598,10 +33088,13 @@ async function deleteScene() {
     return;
   }
 
-  const shouldDelete =
-    typeof window.confirm === "function"
-      ? window.confirm(`要删除场景“${scene.name}”吗？这个动作会连同里面的卡片一起删除。`)
-      : true;
+  const shouldDelete = await showEngineConfirm({
+    title: "删除这个场景？",
+    message: `要删除场景“${scene.name}”吗？这个动作会连同里面的卡片一起删除。`,
+    tone: "danger",
+    confirmLabel: "删除场景",
+    cancelLabel: "保留场景",
+  });
 
   if (!shouldDelete) {
     return;
@@ -32638,10 +33131,13 @@ async function deleteChapter() {
     return;
   }
 
-  const shouldDelete =
-    typeof window.confirm === "function"
-      ? window.confirm(`要删除章节“${chapter.name}”吗？这个章节里的所有场景都会一起删除。`)
-      : true;
+  const shouldDelete = await showEngineConfirm({
+    title: "删除这个章节？",
+    message: `要删除章节“${chapter.name}”吗？这个章节里的所有场景都会一起删除。`,
+    tone: "danger",
+    confirmLabel: "删除章节",
+    cancelLabel: "保留章节",
+  });
 
   if (!shouldDelete) {
     return;
@@ -34727,22 +35223,34 @@ async function saveProjectVariable(variableId) {
   if (
     original &&
     original.type !== variable.type &&
-    usage.total > 0 &&
-    typeof window.confirm === "function" &&
-    !window.confirm(`变量「${original.name}」已经被引用 ${usage.total} 次。确认要把类型从「${getVariableTypeLabel(original.type)}」改成「${getVariableTypeLabel(variable.type)}」吗？相关卡片可能需要重新检查。`)
+    usage.total > 0
   ) {
-    return;
+    const shouldChangeType = await showEngineConfirm({
+      title: "变量类型已被剧情引用",
+      message: `变量「${original.name}」已经被引用 ${usage.total} 次。确认要把类型从「${getVariableTypeLabel(original.type)}」改成「${getVariableTypeLabel(variable.type)}」吗？相关卡片可能需要重新检查。`,
+      tone: "warning",
+      confirmLabel: "继续改类型",
+      cancelLabel: "先不修改",
+    });
+    if (!shouldChangeType) {
+      return;
+    }
   }
 
   try {
     setSaveStatus("正在保存变量...");
     if (original && variable.id !== variableId) {
-      if (
-        usage.total > 0 &&
-        typeof window.confirm === "function" &&
-        !window.confirm(`变量「${original.name}」的逻辑 ID 会从「${variableId}」改成「${variable.id}」，并自动迁移 ${usage.total} 处剧情引用。确认继续吗？`)
-      ) {
-        return;
+      if (usage.total > 0) {
+        const shouldMigrateId = await showEngineConfirm({
+          title: "迁移变量逻辑 ID？",
+          message: `变量「${original.name}」的逻辑 ID 会从「${variableId}」改成「${variable.id}」，并自动迁移 ${usage.total} 处剧情引用。确认继续吗？`,
+          tone: "warning",
+          confirmLabel: "迁移引用",
+          cancelLabel: "先不迁移",
+        });
+        if (!shouldMigrateId) {
+          return;
+        }
       }
 
       const result = await postJson(API_RENAME_VARIABLE, {
@@ -34842,7 +35350,14 @@ async function deleteProjectVariable(variableId) {
     usage.total > 0
       ? `变量「${variable.name}」已经被引用 ${usage.total} 次，删除后相关卡片会在巡检里报错。确认删除吗？`
       : `确定删除变量「${variable.name}」吗？`;
-  if (typeof window.confirm === "function" && !window.confirm(confirmMessage)) {
+  const shouldDelete = await showEngineConfirm({
+    title: usage.total > 0 ? "删除已引用变量？" : "删除这个变量？",
+    message: confirmMessage,
+    tone: "danger",
+    confirmLabel: "删除变量",
+    cancelLabel: "保留变量",
+  });
+  if (!shouldDelete) {
     return;
   }
 
@@ -34882,10 +35397,13 @@ async function deleteUnusedProjectVariables() {
     .map((variable) => variable.name || variable.id)
     .join("、");
   const suffix = unusedVariables.length > 6 ? ` 等 ${unusedVariables.length} 个` : "";
-  const shouldDelete =
-    typeof window.confirm === "function"
-      ? window.confirm(`确认清理未引用变量「${previewNames}${suffix}」吗？这不会删除任何已被剧情卡片引用的变量。`)
-      : true;
+  const shouldDelete = await showEngineConfirm({
+    title: "清理未引用变量？",
+    message: `确认清理未引用变量「${previewNames}${suffix}」吗？这不会删除任何已被剧情卡片引用的变量。`,
+    tone: "warning",
+    confirmLabel: "清理变量",
+    cancelLabel: "先不清理",
+  });
   if (!shouldDelete) {
     return;
   }
@@ -35214,17 +35732,25 @@ async function deleteSelectedAsset() {
   const usageCount = getAssetUsageCount(asset.id);
   if (usageCount > 0) {
     const usages = state.data.assetUsage.get(asset.id) ?? [];
-    window.alert(
-      `这个素材还在被 ${usageCount} 个位置使用，暂时不能删除。\n\n先解除这些引用后再删：\n${usages
+    await showEngineAlert({
+      title: "素材仍在使用",
+      message: `这个素材还在被 ${usageCount} 个位置使用，暂时不能删除。\n\n先解除这些引用后再删：\n${usages
         .slice(0, 6)
-        .join("\n")}`
-    );
+        .join("\n")}`,
+      tone: "warning",
+    });
     setSaveStatus("这个素材还在被使用，不能直接删除", true);
     showToast("这个素材还在被使用，先解除引用", "error");
     return;
   }
 
-  const confirmed = window.confirm(`确定要删掉素材「${asset.name}」吗？这个动作不能撤回。`);
+  const confirmed = await showEngineConfirm({
+    title: "删除这个素材？",
+    message: `确定要删掉素材「${asset.name}」吗？这个动作不能撤回。`,
+    tone: "danger",
+    confirmLabel: "删除素材",
+    cancelLabel: "保留素材",
+  });
   if (!confirmed) {
     return;
   }
@@ -35296,19 +35822,25 @@ async function deleteSelectedUnusedAssets() {
       .slice(0, 6)
       .map((asset) => `${asset.name} · 已使用 ${getAssetUsageCount(asset.id)} 处`)
       .join("\n");
-    window.alert(
-      `当前勾选的 ${checkedAssets.length} 个素材都还在被使用，暂时不能批量删除。\n\n${usageLines}`
-    );
+    await showEngineAlert({
+      title: "没有可批量删除的素材",
+      message: `当前勾选的 ${checkedAssets.length} 个素材都还在被使用，暂时不能批量删除。\n\n${usageLines}`,
+      tone: "warning",
+    });
     setSaveStatus("勾选项里没有可删除的未使用素材", true);
     showToast("勾选项都还在被使用", "error");
     return;
   }
 
-  const confirmed = window.confirm(
-    `确定要批量删除当前勾选里的未使用素材吗？\n\n可删除：${unusedAssets.length} 个\n${
+  const confirmed = await showEngineConfirm({
+    title: "批量删除未使用素材？",
+    message: `确定要批量删除当前勾选里的未使用素材吗？\n\n可删除：${unusedAssets.length} 个\n${
       usedAssets.length > 0 ? `会自动跳过：${usedAssets.length} 个仍在使用的素材` : "没有检测到正在使用的勾选项"
-    }`
-  );
+    }`,
+    tone: "danger",
+    confirmLabel: "批量删除",
+    cancelLabel: "先不删除",
+  });
   if (!confirmed) {
     return;
   }
@@ -37323,10 +37855,13 @@ async function deleteParticleCustomPreset() {
     return;
   }
 
-  const shouldDelete =
-    typeof window.confirm === "function"
-      ? window.confirm(`确定要删除粒子预设「${preset.name}」吗？`)
-      : true;
+  const shouldDelete = await showEngineConfirm({
+    title: "删除这个粒子预设？",
+    message: `确定要删除粒子预设「${preset.name}」吗？`,
+    tone: "danger",
+    confirmLabel: "删除预设",
+    cancelLabel: "保留预设",
+  });
   if (!shouldDelete) {
     return;
   }
