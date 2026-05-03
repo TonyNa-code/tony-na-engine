@@ -9182,11 +9182,7 @@ function installEngineDialogBridge() {
 
   window.__tonyNaEngineDialogBridgeInstalled = true;
   window.alert = (message) => {
-    void showEngineAlert({
-      title: "提示",
-      message,
-      tone: "info",
-    });
+    void showEngineAlert(inferEngineAlertOptions(message));
   };
 }
 
@@ -9208,6 +9204,13 @@ function normalizeEngineDialogOptions(options = {}) {
     ? options.message.filter(Boolean).join("\n")
     : String(options.message ?? "");
   const input = options.input && typeof options.input === "object" ? options.input : null;
+  const copyText =
+    options.copyText === false
+      ? ""
+      : String(
+          options.copyText ??
+            (options.copyable || message.length > 90 || message.includes("\n") ? message : "")
+        );
   return {
     title: String(options.title ?? "提示"),
     eyebrow: String(options.eyebrow ?? "Tony Na Engine"),
@@ -9217,6 +9220,9 @@ function normalizeEngineDialogOptions(options = {}) {
     cancelLabel: String(options.cancelLabel ?? "取消"),
     showCancel: Boolean(options.showCancel),
     allowBackdropClose: options.allowBackdropClose !== false,
+    copyText,
+    copyLabel: String(options.copyLabel ?? "复制详情"),
+    copySuccessMessage: String(options.copySuccessMessage ?? "弹窗详情已复制"),
     input: input
       ? {
           value: String(input.value ?? ""),
@@ -9226,6 +9232,20 @@ function normalizeEngineDialogOptions(options = {}) {
           requiredMessage: String(input.requiredMessage ?? "这里需要填写内容。"),
         }
       : null,
+  };
+}
+
+function inferEngineAlertOptions(message) {
+  const text = String(message ?? "");
+  const isFailure = /失败|没有成功|错误|异常|Error|Exception|Traceback/i.test(text);
+  const isWarning = /不能|无法|暂时|先选|先填|缺失|找不到/.test(text);
+  const tone = isFailure ? "danger" : isWarning ? "warning" : "info";
+  const title = isFailure ? "操作失败" : isWarning ? "需要处理" : "提示";
+  return {
+    title,
+    message: text,
+    tone,
+    copyable: isFailure || text.length > 90 || text.includes("\n"),
   };
 }
 
@@ -9381,6 +9401,18 @@ function renderEngineDialog(root, options, close) {
 
   const actions = document.createElement("div");
   actions.className = "system-dialog-actions";
+
+  if (options.copyText) {
+    const copyButton = document.createElement("button");
+    copyButton.type = "button";
+    copyButton.className = "toolbar-button";
+    copyButton.textContent = options.copyLabel;
+    copyButton.addEventListener("click", async () => {
+      const copied = await copyTextToClipboard(options.copyText);
+      showToast(copied ? options.copySuccessMessage : "复制失败，请手动选择文本", copied ? "soft" : "error");
+    });
+    actions.append(copyButton);
+  }
 
   if (options.showCancel) {
     const cancelButton = document.createElement("button");

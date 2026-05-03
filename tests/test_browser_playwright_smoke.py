@@ -252,6 +252,16 @@ class BrowserPlaywrightSmokeTests(unittest.TestCase):
         dialog.get_by_role("button", name="知道了").click()
         self.page.locator(".system-dialog").wait_for(state="detached", timeout=15000)
 
+    def test_editor_system_alert_infers_failure_dialog(self) -> None:
+        self.open_editor()
+        self.page.evaluate("window.alert('导出失败：素材文件缺失\\n详情：missing background.png')")
+        dialog = self.page.locator(".system-dialog").filter(has_text="导出失败").first
+        dialog.wait_for(timeout=15000)
+        dialog.get_by_text("操作失败").wait_for(timeout=15000)
+        dialog.get_by_role("button", name="复制详情").wait_for(timeout=15000)
+        dialog.get_by_role("button", name="知道了").click()
+        self.page.locator(".system-dialog").wait_for(state="detached", timeout=15000)
+
     def open_project_by_title(self, title: str) -> None:
         self.open_editor()
         card = self.page.locator(".project-card").filter(has_text=title).first
