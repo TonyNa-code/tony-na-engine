@@ -5223,6 +5223,37 @@ button.asset-gap-stat-card:hover {
   white-space: pre-line;
 }
 
+.system-dialog-input {
+  position: relative;
+  width: 100%;
+  padding: 14px 15px;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--brand) 30%, transparent);
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+.system-dialog-input:focus {
+  outline: 2px solid color-mix(in srgb, var(--brand) 36%, transparent);
+  outline-offset: 2px;
+}
+
+.system-dialog-input.is-invalid {
+  border-color: color-mix(in srgb, var(--danger) 64%, transparent);
+}
+
+.system-dialog-input-hint {
+  display: none;
+  margin-top: -10px;
+  color: var(--danger);
+  font-size: 12px;
+}
+
+.system-dialog-input-hint.is-visible {
+  display: block;
+}
+
 .system-dialog-actions {
   position: relative;
   display: flex;

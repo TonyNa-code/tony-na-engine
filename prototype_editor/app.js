@@ -4090,7 +4090,7 @@ async function handleClick(event) {
   }
 
   if (action === "create-project") {
-    const name = promptForText("给这个新项目起个名字：", "未命名新作");
+    const name = await promptForText("给这个新项目起个名字：", "未命名新作");
     if (!name) {
       return;
     }
@@ -4170,7 +4170,7 @@ async function handleClick(event) {
       return;
     }
 
-    const nextName = promptForText("把这个项目改成什么名字？", project.title ?? "未命名项目");
+    const nextName = await promptForText("把这个项目改成什么名字？", project.title ?? "未命名项目");
     if (!nextName || nextName === project.title) {
       return;
     }
@@ -4212,7 +4212,7 @@ async function handleClick(event) {
     const suggestedName = project.isSample
       ? `${project.title} 正式项目`
       : `${project.title} 副本`;
-    const nextName = promptForText("给复制出来的新项目起个名字：", suggestedName);
+    const nextName = await promptForText("给复制出来的新项目起个名字：", suggestedName);
     if (!nextName) {
       return;
     }
@@ -6080,6 +6080,24 @@ function handleGlobalKeydown(event) {
 
     const engineDialogButton =
       event.target instanceof Element ? event.target.closest(".system-dialog button") : null;
+    const engineDialogInput =
+      event.target instanceof HTMLInputElement && event.target.classList.contains("system-dialog-input")
+        ? event.target
+        : null;
+    if (event.code === "Enter" && !event.shiftKey && engineDialogInput) {
+      event.preventDefault();
+      if (activeEngineDialog?.options?.input?.required && !engineDialogInput.value.trim()) {
+        engineDialogInput.classList.add("is-invalid");
+        engineDialogInput
+          .closest(".system-dialog")
+          ?.querySelector(".system-dialog-input-hint")
+          ?.classList.add("is-visible");
+        return;
+      }
+      closeActiveEngineDialog(engineDialogInput.value);
+      return;
+    }
+
     if (event.code === "Enter" && !event.shiftKey && !engineDialogButton && !isKeyboardTypingTarget(event.target)) {
       event.preventDefault();
       closeActiveEngineDialog(true);
@@ -9189,6 +9207,7 @@ function normalizeEngineDialogOptions(options = {}) {
   const message = Array.isArray(options.message)
     ? options.message.filter(Boolean).join("\n")
     : String(options.message ?? "");
+  const input = options.input && typeof options.input === "object" ? options.input : null;
   return {
     title: String(options.title ?? "提示"),
     eyebrow: String(options.eyebrow ?? "Tony Na Engine"),
@@ -9198,6 +9217,15 @@ function normalizeEngineDialogOptions(options = {}) {
     cancelLabel: String(options.cancelLabel ?? "取消"),
     showCancel: Boolean(options.showCancel),
     allowBackdropClose: options.allowBackdropClose !== false,
+    input: input
+      ? {
+          value: String(input.value ?? ""),
+          placeholder: String(input.placeholder ?? ""),
+          maxLength: Number.isFinite(Number(input.maxLength)) ? Number(input.maxLength) : 80,
+          required: input.required !== false,
+          requiredMessage: String(input.requiredMessage ?? "这里需要填写内容。"),
+        }
+      : null,
   };
 }
 
@@ -9233,6 +9261,26 @@ function showEngineConfirm(options = {}) {
   });
 }
 
+async function showEnginePrompt(options = {}) {
+  const result = await showEngineDialog({
+    title: "输入内容",
+    tone: "info",
+    confirmLabel: "确认",
+    cancelLabel: "取消",
+    ...options,
+    showCancel: true,
+    input: {
+      value: options.defaultValue ?? options.value ?? "",
+      placeholder: options.placeholder ?? "",
+      maxLength: options.maxLength ?? 80,
+      required: options.required ?? true,
+      requiredMessage: options.requiredMessage ?? "先填一个名称，再继续。",
+      ...(options.input ?? {}),
+    },
+  });
+  return result === null || result === false ? null : String(result ?? "");
+}
+
 function showEngineDialog(options = {}) {
   return new Promise((resolve) => {
     engineDialogQueue.push({
@@ -9262,7 +9310,7 @@ function renderNextEngineDialog() {
     if (request.previousFocus?.isConnected) {
       request.previousFocus.focus({ preventScroll: true });
     }
-    request.resolve(Boolean(confirmed));
+    request.resolve(confirmed);
     renderNextEngineDialog();
   };
 
@@ -9313,6 +9361,24 @@ function renderEngineDialog(root, options, close) {
   message.className = "system-dialog-message";
   message.textContent = options.message || "操作已经完成。";
 
+  let input = null;
+  let inputHint = null;
+  if (options.input) {
+    input = document.createElement("input");
+    input.className = "system-dialog-input";
+    input.type = "text";
+    input.value = options.input.value;
+    input.placeholder = options.input.placeholder;
+    input.maxLength = options.input.maxLength;
+    input.autocomplete = "off";
+    input.spellcheck = false;
+    input.setAttribute("aria-label", options.title);
+
+    inputHint = document.createElement("div");
+    inputHint.className = "system-dialog-input-hint";
+    inputHint.textContent = options.input.requiredMessage;
+  }
+
   const actions = document.createElement("div");
   actions.className = "system-dialog-actions";
 
@@ -9321,7 +9387,7 @@ function renderEngineDialog(root, options, close) {
     cancelButton.type = "button";
     cancelButton.className = "toolbar-button";
     cancelButton.textContent = options.cancelLabel;
-    cancelButton.addEventListener("click", () => close(false));
+    cancelButton.addEventListener("click", () => close(options.input ? null : false));
     actions.append(cancelButton);
   }
 
@@ -9330,20 +9396,47 @@ function renderEngineDialog(root, options, close) {
   confirmButton.className =
     options.tone === "danger" ? "toolbar-button toolbar-button-danger" : "toolbar-button toolbar-button-primary";
   confirmButton.textContent = options.confirmLabel;
-  confirmButton.addEventListener("click", () => close(true));
+  confirmButton.addEventListener("click", () => {
+    if (options.input && options.input.required && !input.value.trim()) {
+      input.focus({ preventScroll: true });
+      inputHint.classList.add("is-visible");
+      return;
+    }
+    close(options.input ? input.value : true);
+  });
   actions.append(confirmButton);
 
-  dialog.append(halo, header, message, actions);
+  if (input) {
+    const syncInputState = () => {
+      const isInvalid = options.input.required && !input.value.trim();
+      input.classList.toggle("is-invalid", isInvalid);
+      inputHint.classList.toggle("is-visible", isInvalid);
+      confirmButton.disabled = isInvalid;
+    };
+    input.addEventListener("input", syncInputState);
+    syncInputState();
+  }
+
+  dialog.append(halo, header, message);
+  if (input) {
+    dialog.append(input);
+    dialog.append(inputHint);
+  }
+  dialog.append(actions);
   root.append(dialog);
 
   if (options.allowBackdropClose) {
-    root.onclick = () => close(false);
+    root.onclick = () => close(options.input ? null : false);
   } else {
     root.onclick = null;
   }
 
   window.requestAnimationFrame(() => {
-    confirmButton.focus({ preventScroll: true });
+    const focusTarget = input ?? confirmButton;
+    focusTarget.focus({ preventScroll: true });
+    if (input) {
+      input.select();
+    }
   });
 }
 
@@ -9360,8 +9453,8 @@ function getEngineDialogToneMark(tone) {
   return "i";
 }
 
-function closeActiveEngineDialog(confirmed = false) {
-  activeEngineDialog?.close(Boolean(confirmed));
+function closeActiveEngineDialog(result = false) {
+  activeEngineDialog?.close(result);
 }
 
 function shouldFlushPendingStoryChanges(action) {
@@ -32528,7 +32621,7 @@ async function createScene() {
   }
 
   const defaultName = `新场景 ${Math.max((chapter.sceneOrder?.length ?? 0) + 1, 1)}`;
-  const sceneName = promptForText("请输入新场景的名字。", defaultName);
+  const sceneName = await promptForText("请输入新场景的名字。", defaultName);
 
   if (sceneName === null) {
     return;
@@ -32567,7 +32660,7 @@ async function duplicateScene() {
     return;
   }
 
-  const nextName = promptForText("请输入复制后场景的名字。", `${scene.name} 副本`);
+  const nextName = await promptForText("请输入复制后场景的名字。", `${scene.name} 副本`);
 
   if (nextName === null) {
     return;
@@ -32602,7 +32695,7 @@ async function createChapter(options = {}) {
   const suggestedSceneName = options.defaultSceneName ?? `${defaultChapterName} 开场`;
   const chapterName = options.skipPrompts
     ? defaultChapterName
-    : promptForText("请输入新章节的名字。", defaultChapterName);
+    : await promptForText("请输入新章节的名字。", defaultChapterName);
 
   if (chapterName === null) {
     return;
@@ -32610,7 +32703,7 @@ async function createChapter(options = {}) {
 
   const firstSceneName = options.skipPrompts
     ? suggestedSceneName
-    : promptForText("再给这个章节的第一个场景起个名字。", suggestedSceneName);
+    : await promptForText("再给这个章节的第一个场景起个名字。", suggestedSceneName);
 
   if (firstSceneName === null) {
     return;
@@ -32661,21 +32754,21 @@ async function createStarterKit(options = {}) {
 
   if (!options.skipPrompts) {
     if (overview.missingCharacter) {
-      payload.characterName = promptForText("给第一个角色起个名字。", defaults.characterName);
+      payload.characterName = await promptForText("给第一个角色起个名字。", defaults.characterName);
       if (payload.characterName === null) {
         return;
       }
     }
 
     if (overview.missingBackground) {
-      payload.backgroundName = promptForText("给第一张背景起个名字。", defaults.backgroundName);
+      payload.backgroundName = await promptForText("给第一张背景起个名字。", defaults.backgroundName);
       if (payload.backgroundName === null) {
         return;
       }
     }
 
     if (overview.missingBgm) {
-      payload.bgmName = promptForText("给第一首 BGM 起个名字。", defaults.bgmName);
+      payload.bgmName = await promptForText("给第一首 BGM 起个名字。", defaults.bgmName);
       if (payload.bgmName === null) {
         return;
       }
@@ -32713,7 +32806,7 @@ async function createHistoryCheckpoint() {
     }
   }
 
-  const label = promptForText("给这份检查点写一句备注：", "手动检查点");
+  const label = await promptForText("给这份检查点写一句备注：", "手动检查点");
   if (label === null) {
     return;
   }
@@ -32776,7 +32869,7 @@ async function confirmRestoreProjectHistorySnapshot(snapshot, options = {}) {
 }
 
 async function renameProjectHistorySnapshot(snapshot) {
-  const nextLabel = promptForText("给这份版本换一句更容易认出来的备注：", snapshot?.label ?? "手动检查点");
+  const nextLabel = await promptForText("给这份版本换一句更容易认出来的备注：", snapshot?.label ?? "手动检查点");
   if (nextLabel === null) {
     return;
   }
@@ -32907,7 +33000,7 @@ async function duplicateChapter() {
     return;
   }
 
-  const nextName = promptForText("请输入复制后章节的名字。", `${chapter.name} 副本`);
+  const nextName = await promptForText("请输入复制后章节的名字。", `${chapter.name} 副本`);
 
   if (nextName === null) {
     return;
@@ -32981,7 +33074,7 @@ async function renameScene() {
     return;
   }
 
-  const nextName = promptForText("请输入新的场景名字。", scene.name || "未命名场景");
+  const nextName = await promptForText("请输入新的场景名字。", scene.name || "未命名场景");
 
   if (nextName === null || nextName === scene.name) {
     return;
@@ -33017,7 +33110,7 @@ async function renameChapter() {
     return;
   }
 
-  const nextName = promptForText("请输入新的章节名字。", chapter.name || "未命名章节");
+  const nextName = await promptForText("请输入新的章节名字。", chapter.name || "未命名章节");
 
   if (nextName === null || nextName === chapter.name) {
     return;
@@ -36979,16 +37072,22 @@ function getCurrentUiState() {
   };
 }
 
-function promptForText(message, defaultValue) {
-  const promptValue =
-    typeof window.prompt === "function" ? window.prompt(message, defaultValue) : defaultValue;
+async function promptForText(message, defaultValue) {
+  const promptValue = await showEnginePrompt({
+    title: "填写名称",
+    message,
+    defaultValue,
+    placeholder: defaultValue,
+    confirmLabel: "确认",
+    cancelLabel: "取消",
+  });
 
   if (promptValue === null) {
     return null;
   }
 
   const cleanValue = String(promptValue).trim();
-  return cleanValue || defaultValue;
+  return cleanValue || null;
 }
 
 async function postJson(url, payload) {

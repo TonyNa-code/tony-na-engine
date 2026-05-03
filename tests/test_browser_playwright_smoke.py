@@ -222,8 +222,22 @@ class BrowserPlaywrightSmokeTests(unittest.TestCase):
 
     def create_blank_project(self, name: str) -> None:
         self.open_editor()
-        self.page.once("dialog", lambda dialog: dialog.accept(name))
         self.page.get_by_role("button", name="新建空白项目").click()
+        dialog = self.page.locator(".system-dialog").filter(has_text="给这个新项目起个名字").first
+        dialog.wait_for(timeout=15000)
+        dialog.locator(".system-dialog-input").fill(name)
+        dialog.get_by_role("button", name="确认").click()
+        self.page.get_by_role("button", name="一键创建第一章").first.wait_for(timeout=15000)
+
+    def test_editor_system_prompt_requires_text(self) -> None:
+        self.open_editor()
+        self.page.get_by_role("button", name="新建空白项目").click()
+        dialog = self.page.locator(".system-dialog").filter(has_text="给这个新项目起个名字").first
+        dialog.wait_for(timeout=15000)
+        dialog.locator(".system-dialog-input").fill("")
+        self.assertTrue(dialog.get_by_role("button", name="确认").is_disabled())
+        dialog.locator(".system-dialog-input").fill("浏览器烟测项目_PromptRequired")
+        dialog.get_by_role("button", name="确认").click()
         self.page.get_by_role("button", name="一键创建第一章").first.wait_for(timeout=15000)
 
     def create_first_chapter(self) -> None:
