@@ -267,7 +267,29 @@ class BrowserPlaywrightSmokeTests(unittest.TestCase):
         card = self.page.locator(".project-card").filter(has_text=title).first
         card.wait_for(timeout=15000)
         card.locator("[data-action='open-project']").click()
-        self.page.get_by_role("button", name="试玩收尾").wait_for(timeout=15000)
+        self.page.wait_for_function(
+            """() => {
+                const appMain = document.querySelector("#appMain");
+                const previewButton = Array.from(document.querySelectorAll("button")).find(
+                    (button) => button.textContent?.trim() === "试玩收尾"
+                );
+                return Boolean(appMain)
+                    && !appMain.classList.contains("is-hidden")
+                    && Boolean(previewButton)
+                    && !previewButton.disabled;
+            }""",
+            timeout=15000,
+        )
+        self.dismiss_optional_recovery_prompt()
+
+    def dismiss_optional_recovery_prompt(self) -> None:
+        dialog = self.page.locator(".system-dialog").filter(has_text="恢复到这份版本").first
+        try:
+            dialog.wait_for(timeout=1200)
+        except Exception:
+            return
+        dialog.get_by_role("button", name="先不恢复").click()
+        self.page.locator(".system-dialog").wait_for(state="detached", timeout=10000)
 
     def open_inspection_screen(self) -> None:
         inspection_button = self.page.get_by_role("button", name="项目巡检").first
